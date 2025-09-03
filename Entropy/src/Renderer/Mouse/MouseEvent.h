@@ -31,7 +31,7 @@ private:
 
 public:
 	MouseEvent();
-	MouseEvent(const EventType type, const MousePoint& pos);
+	MouseEvent(const EventType type, const int x, const int y);
 	bool IsValid() const;
 	EventType GetType() const;
 	MousePoint GetPos() const;

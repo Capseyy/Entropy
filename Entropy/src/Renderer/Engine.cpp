@@ -10,30 +10,21 @@ bool Engine::ProcessMessages() {
 	return render_window.ProcessMessages();
 }	
 
-void Engine::Update() 
+void Engine::Update()
 {
-	while (!keyboard.CharBufferIsEmpty()) 
+	while (!keyboard.CharBufferIsEmpty())
 	{
 		unsigned char ch = keyboard.ReadChar();
 	}
 
-	while (!keyboard.KeyBufferIsEmpty()) 
+	while (!keyboard.KeyBufferIsEmpty())
 	{
 		KeyboardEvent kbe = keyboard.ReadKey();
 		unsigned char keycode = kbe.GetKeyCode();
 	}
+
 	while (!mouse.EventBufferIsEmpty())
 	{
 		MouseEvent me = mouse.ReadEvent();
-		if (me.GetType() == MouseEvent::EventType::WheelUp)
-		{
-			OutputDebugStringA("Mouse Wheel Up\n");
-		}
-		if (me.GetType() == MouseEvent::EventType::WheelDown)
-		{
-			OutputDebugStringA("Mouse Wheel Down\n");
-		}
 	}
-		
-
 }
