@@ -5,7 +5,14 @@
       <FullPath>C:\Users\SAM-PC\source\repos\Entropy\x64\Debug\Entropy.exe</FullPath>
     </ProjectOutput>
   </ProjectOutputs>
-  <ContentFiles />
+  <ContentFiles>
+    <ContentFile>
+      <FullPath>C:\Users\SAM-PC\source\repos\Entropy\x64\Debug\pixelshader.cso</FullPath>
+    </ContentFile>
+    <ContentFile>
+      <FullPath>C:\Users\SAM-PC\source\repos\Entropy\x64\Debug\vertexshader.cso</FullPath>
+    </ContentFile>
+  </ContentFiles>
   <SatelliteDlls />
   <NonRecipeFileRefs />
 </Project>

@@ -3,6 +3,7 @@
 #include "Renderer/Keyboard/KeyboardClass.h"
 #include "Renderer/Mouse/MouseClass.h"
 #include <memory>
+#include "Renderer/Graphics/Graphics.h"
 
 class WindowContainer
 {
@@ -13,5 +14,6 @@ protected:
 	RenderWindow render_window;
 	KeyboardClass keyboard;
 	MouseClass mouse;
+	Graphics gfx;
 };
 
