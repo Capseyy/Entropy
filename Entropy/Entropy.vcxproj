@@ -99,17 +99,32 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>$(ProjectDir)imports;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)Entropy\imports;$(ProjectDir)imports;$(IncludePath)</IncludePath>
     <LibraryPath>$(ProjectDir)imports;$(LibraryPath)</LibraryPath>
     <RunCodeAnalysis>false</RunCodeAnalysis>
+    <ExternalIncludePath>$(SolutionDir)Entropy\imports;$(ExternalIncludePath)</ExternalIncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug2|x64'">
-    <IncludePath>C:\Users\SAM-PC\source\repos\CapTinRender\imgui-1.92.1;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)Entropy\imports;C:\Users\SAM-PC\source\repos\CapTinRender\imgui-1.92.1;$(IncludePath)</IncludePath>
     <LibraryPath>C:\Users\SAM-PC\source\repos\CapTinRender\imgui-1.92.1;$(LibraryPath)</LibraryPath>
+    <ExternalIncludePath>$(SolutionDir)Entropy\imports;$(ExternalIncludePath)</ExternalIncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>$(ProjectDir)imports;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)Entropy\imports;$(ProjectDir)imports;$(IncludePath)</IncludePath>
     <LibraryPath>$(ProjectDir)imports;$(LibraryPath)</LibraryPath>
+    <ExternalIncludePath>$(SolutionDir)Entropy\imports;$(ExternalIncludePath)</ExternalIncludePath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <IncludePath>$(SolutionDir)Entropy\imports;$(VC_IncludePath);$(WindowsSDK_IncludePath);</IncludePath>
+    <ExternalIncludePath>$(SolutionDir)Entropy\imports;$(ExternalIncludePath)</ExternalIncludePath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug2|Win32'">
+    <IncludePath>$(SolutionDir)Entropy\imports;$(VC_IncludePath);$(WindowsSDK_IncludePath);</IncludePath>
+    <ExternalIncludePath>$(SolutionDir)Entropy\imports;$(ExternalIncludePath)</ExternalIncludePath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <IncludePath>$(SolutionDir)Entropy\imports;$(VC_IncludePath);$(WindowsSDK_IncludePath);</IncludePath>
+    <ExternalIncludePath>$(SolutionDir)Entropy\imports;$(ExternalIncludePath)</ExternalIncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -157,7 +172,8 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>Default</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)imports;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(SolutionDir)Entropy\imports;$(ProjectDir)imports;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>SOLUTION_DIR=LR"($(SolutionDir))";%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -175,7 +191,7 @@
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>C:\Users\SAM-PC\Documents\vcpkg\installed\x64-windows\include;$(ProjectDir)imports;$(ProjectDir)src;$(ProjectDir)imgui\backends;$(ProjectDir)imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <DebugInformationFormat>None</DebugInformationFormat>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>

@@ -2,6 +2,9 @@
 #include <Renderer/Graphics/GPUAdapter.h>
 #include "Shaders/Shaders.h"
 #include "Renderer/Graphics/Shaders/Vertex.h"
+#include "SpriteBatch.h"
+#include "SpriteFont.h"
+#include "WICTextureLoader.h"
 
 class Graphics
 {
@@ -24,5 +27,17 @@ private:
 
 
 	Microsoft::WRL::ComPtr<ID3D11Buffer> vertexBuffer;
-};
+	Microsoft::WRL::ComPtr<ID3D11Buffer> indexBuffer;
 
+	Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthStencilView;
+	Microsoft::WRL::ComPtr<ID3D11Texture2D> depthStencilBuffer;
+	Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthStencilState;
+
+	Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerState;
+
+	std::unique_ptr<DirectX::SpriteBatch> spriteBatch;
+	std::unique_ptr<DirectX::SpriteFont> spriteFont;
+
+	Microsoft::WRL::ComPtr<ID3D11SamplerState> samplerState;
+	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> myTexture;
+};
