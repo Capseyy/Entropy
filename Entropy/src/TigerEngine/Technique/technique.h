@@ -9,7 +9,6 @@
 #include <iostream>
 #include <codecvt>
 #include <locale>
-#include "TigerEngine/RenderStruct/renderstruct.h"
 
 struct STextureTag {
 	uint32_t TextureIndex;

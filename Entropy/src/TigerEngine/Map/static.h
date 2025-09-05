@@ -5,7 +5,6 @@
 #include <future>
 #include "TigerEngine/tag.h"
 #include <execution>
-#include "TigerEngine/RenderStruct/RenderStruct.h"
 
 
 struct Unk_0x14008080 {
@@ -67,4 +66,3 @@ public:
 
 };
 
-StaticRenderObject ProcessStaticMesh(TagHash);

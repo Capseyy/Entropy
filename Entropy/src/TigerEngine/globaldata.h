@@ -19,10 +19,8 @@
 #include "TigerEngine/tag.h"
 #include "TigerEngine/string/string.h"
 #include "TigerEngine/Map/static.h"
-#include "TigerEngine/RenderStruct/renderstruct.h"
 #include "TigerEngine/helpers.h"
 #include "TigerEngine/Technique/technique.h"
-#include "TigerEngine/GUI/Window.h"
 #include <DDSTextureLoader.h>
 #include <dxgidebug.h> 
 

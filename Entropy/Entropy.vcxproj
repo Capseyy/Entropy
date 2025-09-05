@@ -30,7 +30,7 @@
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{d75f0846-41f7-40d2-a041-cedaef13381a}</ProjectGuid>
-    <RootNamespace>CapTinRender</RootNamespace>
+    <RootNamespace>Entropy</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <ProjectName>Entropy</ProjectName>
   </PropertyGroup>
@@ -99,8 +99,8 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>$(ProjectDir)imports;C:\Users\SAM-PC\source\repos\CapTinRender\imgui-1.92.1;$(IncludePath)</IncludePath>
-    <LibraryPath>$(ProjectDir)imports;C:\Users\SAM-PC\source\repos\CapTinRender\imgui-1.92.1;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(ProjectDir)imports;$(IncludePath)</IncludePath>
+    <LibraryPath>$(ProjectDir)imports;$(LibraryPath)</LibraryPath>
     <RunCodeAnalysis>false</RunCodeAnalysis>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug2|x64'">
@@ -213,11 +213,9 @@
     <ClCompile Include="src\Renderer\Tools\ErrorLogger.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\Renderer\Tools\StringConverter.cpp" />
-    <ClCompile Include="src\TigerEngine\GUI\Window.cpp" />
     <ClCompile Include="src\TigerEngine\helpers.cpp" />
     <ClCompile Include="src\TigerEngine\Map\static.cpp" />
     <ClCompile Include="src\TigerEngine\package.cpp" />
-    <ClCompile Include="src\TigerEngine\RenderStruct\RenderStruct.cpp" />
     <ClCompile Include="src\TigerEngine\Technique\technique.cpp" />
     <ClCompile Include="src\TigerEngine\String\strings.cpp" />
     <ClCompile Include="src\TigerEngine\tag.cpp" />
@@ -240,11 +238,9 @@
     <ClInclude Include="imgui\backends\imgui_impl_win32.h" />
     <ClInclude Include="src\Renderer\Tools\StringConverter.h" />
     <ClInclude Include="src\TigerEngine\globaldata.h" />
-    <ClInclude Include="src\TigerEngine\GUI\Window.h" />
     <ClInclude Include="src\TigerEngine\helpers.h" />
     <ClInclude Include="src\TigerEngine\Map\static.h" />
     <ClInclude Include="src\TigerEngine\package.h" />
-    <ClInclude Include="src\TigerEngine\RenderStruct\RenderStruct.h" />
     <ClInclude Include="src\TigerEngine\Technique\technique.h" />
     <ClInclude Include="src\TigerEngine\String\string.h" />
     <ClInclude Include="src\TigerEngine\tag.h" />
