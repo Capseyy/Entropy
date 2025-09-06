@@ -12,12 +12,6 @@
 *.userosscache
 *.sln.docstates
 
-# Compiled binaries
-*.exe
-*.dll
-*.lib
-*.pdb
-
 # Build system files
 *.obj
 *.o
