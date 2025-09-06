@@ -65,7 +65,6 @@ void StaticRenderer::Process()
 		sp.PrimitiveType = mesh_struct.parts[meshGroup.part_index].PrimitiveType;
 		auto technique_tag = TagHash(static_struct.Techniques[MatIndex].Unk0);
 		auto Technique = bin::parse<STechnique>(technique_tag.data, technique_tag.size, bin::Endian::Little);
-		//Technique.Initialize();
 		sp.input_layout_index = meshGroup.input_layout_index;
 		MatIndex++;
 		parts.push_back(sp);

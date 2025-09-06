@@ -38,8 +38,8 @@ public:
     }
 
     static std::unordered_map<uint64_t, TagHash>& getH64() {
-        static std::unordered_map<uint64_t, TagHash> Hash64Map;
-        return Hash64Map;
+        static std::unordered_map<uint64_t, TagHash> h64_cache;
+        return h64_cache;
     }
 };
 

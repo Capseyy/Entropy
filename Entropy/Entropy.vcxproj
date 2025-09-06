@@ -217,6 +217,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\TigerEngine\globaldata.cpp" />
     <ClCompile Include="src\TigerEngine\Technique\input_layout.cpp" />
     <ClCompile Include="src\Renderer\Loaders\buffers.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Shaders\Shaders.cpp" />

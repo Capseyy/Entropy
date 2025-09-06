@@ -11,6 +11,7 @@
 #include <vector>
 #include <span>
 #include <limits>
+#include <chrono>
 
 int TagHash::getPkgId() {
 	uint16_t pkgID = floor((hash - 0x80800000) / 8192);
@@ -81,8 +82,16 @@ void WideHash::print() {
 	os << "}\n";
 }
 unsigned char* WideHash::getData() {
-	auto h64 = GlobalData::getH64();
-	auto toTagHash = h64[wideHashData.Hash64];
+	using clock = std::chrono::steady_clock; // monotonic => good for timing
+	const auto& h64 = GlobalData::getH64();
+	auto it = h64.find(wideHashData.Hash64);
+
+	
+	if (it == h64.end()) {
+		printf("H64 lookup failed for 0x%016 \n", wideHashData.Hash64);
+		return nullptr;
+	}
+	TagHash toTagHash = it->second;
 	toTagHash.getData();
 	printf("Resolving WideHash 0x%016" PRIx64 " to TagHash %08X\n", wideHashData.Hash64, toTagHash.hash);
 	size = toTagHash.size;
