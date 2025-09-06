@@ -7,6 +7,7 @@
 #include "package.h"
 #include "globaldata.h"
 
+
 #define _ITERATOR_DEBUG_LEVEL 2
 
 const static unsigned char AES_KEY_0[16] =
@@ -35,7 +36,7 @@ std::vector<uint32_t> GetAllTagsFromReference(uint32_t reference) {
 	std::vector<uint32_t> AllTagHashesOfType;
     for (const auto& pair : GlobalData::getMap()) {
 		int EntryID = 0;
-        for (auto entry : pair.second.Entries) {
+        for (auto& entry : pair.second.Entries) {
             if (entry.reference == reference) {
                 int Num = (0x80800000 + (pair.second.Header.pkgID << 0xD) + EntryID);
                 AllTagHashesOfType.push_back(Num);

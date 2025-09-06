@@ -18,9 +18,9 @@
 
 class WideHashData {
 public:
-    uint32_t Unk0{0};
-    uint32_t Unk4{0};
-    uint64_t Hash64{0};
+    uint32_t Unk0{ 0 };
+    uint32_t Unk4{ 0 };
+    uint64_t Hash64{ 0 };
 };
 
 class WideHash {
@@ -51,19 +51,19 @@ public:
     TagHash(uint32_t h, bool skip)
         : hash(h), data(nullptr), success(false), size(0), reference(0) {
     }
-	int getPkgId();
-	int getEntryID();
-	unsigned char* getData();
-	void print_buffer();
-	uint32_t size;
+    int getPkgId();
+    int getEntryID();
+    unsigned char* getData();
+    void print_buffer();
+    uint32_t size;
     uint32_t hash{};
     uint32_t reference;
-	bool success;
+    bool success;
     unsigned char* data;
 };
 
 struct RelativePointer64 {
-	int64_t offset;
+    int64_t offset;
 };
 
 // ---- Optional: turn on PFR if available ----
@@ -159,16 +159,16 @@ namespace bin {
         t.getData();
     }
     inline void read_into(Reader& r, WideHash& t) {
-		auto whd = WideHashData{};
-		whd.Unk0 = r.read_arith<uint32_t>();
-		whd.Unk4 = r.read_arith<uint32_t>();
-		whd.Hash64 = r.read_arith<uint64_t>();
+        auto whd = WideHashData{};
+        whd.Unk0 = r.read_arith<uint32_t>();
+        whd.Unk4 = r.read_arith<uint32_t>();
+        whd.Hash64 = r.read_arith<uint64_t>();
         t.wideHashData = whd;
         t.getData();
     }
 
     inline void read_into(Reader& r, RelativePointer64& t) {
-		auto startPos = r.pos;
+        auto startPos = r.pos;
         t.offset = r.read_arith<int64_t>() + startPos;
     }
 
@@ -221,7 +221,7 @@ namespace bin {
         if (offset > static_cast<uint64_t>(r.data.size()))
             throw std::out_of_range("vector: offset too large");
 
-        const size_t target = base + static_cast<size_t>(offset+8);
+        const size_t target = base + static_cast<size_t>(offset + 8);
         if (target > r.data.size())
             throw std::out_of_range("vector: target beyond buffer");
 
@@ -242,7 +242,7 @@ namespace bin {
             T elem{};
             read_into(r, elem);
             vec.emplace_back(std::move(elem));
-            
+
         }
 
         // Restore so parsing can continue after the header

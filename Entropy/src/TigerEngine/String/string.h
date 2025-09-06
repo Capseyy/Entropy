@@ -8,6 +8,7 @@
 #include <iostream>
 #include <codecvt>
 #include <locale>
+#include <execution>
 
 
 std::unordered_map<int, std::string> GenerateStringMap();

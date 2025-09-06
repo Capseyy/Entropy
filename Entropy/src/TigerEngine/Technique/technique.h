@@ -48,7 +48,7 @@ struct ConstantBufferHeader {
 	uint64_t FileSize;
 };
 
-struct STechnique {
+class STechnique {
 public:
 	uint64_t FileSize;
 	std::array<uint32_t,6> Unk08;
@@ -62,6 +62,8 @@ public:
 	STechniqueShader GeometryShader;
 	STechniqueShader PixelShader;
 	STechniqueShader ComputeShader;
+
+	void Initialize();
 };
 
 

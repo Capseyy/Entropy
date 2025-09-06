@@ -5,6 +5,7 @@
 #include "SpriteBatch.h"
 #include "SpriteFont.h"
 #include "WICTextureLoader.h"
+#include "Renderer/Loaders/static_loader.h"
 
 class Graphics
 {
@@ -15,6 +16,7 @@ public:
 private:
 	bool InitializeDirectX(HWND hWnd, int width, int height);
 	bool InitializeShaders();
+	bool InitializeSceneOld();
 	bool InitializeScene();
 
 	Microsoft::WRL::ComPtr<ID3D11Device>           pDevice;
@@ -25,6 +27,7 @@ private:
 	PixelShader pixelshader;
 	VertexShader vertexshader;
 
+	std::vector<StaticRenderer> static_objects_to_render;
 
 	Microsoft::WRL::ComPtr<ID3D11Buffer> vertexBuffer;
 	Microsoft::WRL::ComPtr<ID3D11Buffer> indexBuffer;

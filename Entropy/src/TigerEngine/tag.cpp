@@ -27,7 +27,7 @@ unsigned char* TagHash::getData() {
 		size = 0;
 		data = nullptr;
 		return nullptr;
-	}	
+	}
 	int pkgId = getPkgId();
 	int entryId = getEntryID();
 	auto& map = GlobalData::getMap();
@@ -46,7 +46,7 @@ unsigned char* TagHash::getData() {
 	reference = pkg->Entries[entryId].reference;
 	data = ReturnObject.data;
 	return data;
-    
+
 }
 
 void TagHash::print_buffer() {
@@ -56,7 +56,7 @@ void TagHash::print_buffer() {
 	printf("\n");
 }
 
-void WideHash::print()  {
+void WideHash::print() {
 	std::ostream& os = std::cout;
 	os << "WideHash {\n"
 		<< "  Unk0: " << wideHashData.Unk0 << "\n"

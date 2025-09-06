@@ -7,6 +7,12 @@ bool Graphics::Initialize(HWND hWnd, int width, int height)
 		return false;
 	OutputDebugStringA("DirectX initialized.\n");
 
+	//StaticRenderer static_loader;
+	//if (static_loader.Initialize(0x81029E6E)) {
+	//	static_loader.Process();
+	//	this->static_objects_to_render.push_back(static_loader);
+	//}
+	OutputDebugStringA("Statics initialized.\n");
 	if (!InitializeShaders())
 		return false;
 	OutputDebugStringA("Shaders initialized.\n");
@@ -216,18 +222,54 @@ bool Graphics::InitializeShaders()
 
 	};
 
-	UINT numElements = ARRAYSIZE(layout);
+	for (auto& static_obj : this->static_objects_to_render)
+	{
+		//todo: select layout based on model
+	}
 
-	if (!this->vertexshader.Initialize(this->pDevice, L"VertexShader.cso", layout, numElements))
-		return false;
 
-	if (!this->pixelshader.Initialize(this->pDevice, L"PixelShader.cso"))
-		return false;
+	//UINT numElements = ARRAYSIZE(layout);
+
+	//if (!this->vertexshader.Initialize(this->pDevice, L"vertexshader.cso", layout, numElements))
+	//	return false;
+
+	//if (!this->pixelshader.Initialize(this->pDevice, L"pixelshader.cso"))
+	//	return false;
 
 	return true;
 }
 
 bool Graphics::InitializeScene()
+{
+
+	for (auto& static_obj : this->static_objects_to_render)
+	{
+		//Load Index Buffers
+		for (auto &buffer_group : static_obj.buffers) {
+			D3D11_BUFFER_DESC vertexBufferDesc;
+			ZeroMemory(&vertexBufferDesc, sizeof(vertexBufferDesc));
+
+			vertexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+			vertexBufferDesc.ByteWidth = buffer_group.vertexBuffer.header.dataSize;
+			vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+			vertexBufferDesc.CPUAccessFlags = 0;
+			vertexBufferDesc.MiscFlags = 0;
+
+			D3D11_SUBRESOURCE_DATA vertexBufferData;
+			ZeroMemory(&vertexBufferData, sizeof(vertexBufferData));
+			vertexBufferData.pSysMem = buffer_group.vertexBuffer.data;
+
+			HRESULT hr = this->pDevice->CreateBuffer(&vertexBufferDesc, &vertexBufferData, this->vertexBuffer.GetAddressOf());
+
+		}
+	}
+	return true;
+	
+
+};
+
+
+bool Graphics::InitializeSceneOld()
 {
 	Vertex v[] = 
 	{

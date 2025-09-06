@@ -148,7 +148,7 @@ public:
     HMODULE hOodleDll;
     unsigned char redacted_key[16];
     unsigned char redacted_nonce[12];
-	bool hasRedactedKey = false;
+    bool hasRedactedKey = false;
     bool load(const std::string& filepath) {
         std::ifstream file(filepath, std::ios::binary);
         if (!file) {
@@ -174,17 +174,17 @@ public:
             Blocks.push_back(block);
             //block.print();
         }
-        if (!Header.hash64TableSize == 0){
+        if (!Header.hash64TableSize == 0) {
             file.seekg(Header.hash64TableOffset + 0x60, std::ios::beg);
             for (int i = 0; i < Header.hash64TableSize; i++) {
                 Hash64 h64;
                 file.read(reinterpret_cast<char*>(&h64), sizeof(Hash64));
                 h64s.emplace_back(h64);
             }
-		}
-        
+        }
+
         ModifyNonce();
-		//printf("Package loaded: %s\n", PackageName.c_str());
+        //printf("Package loaded: %s\n", PackageName.c_str());
         return true;
     }
 

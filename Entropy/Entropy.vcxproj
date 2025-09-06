@@ -187,15 +187,15 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;SOLUTION_DIR=LR"($(SolutionDir))";%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\Users\SAM-PC\Documents\vcpkg\installed\x64-windows\include;$(ProjectDir)imports;$(ProjectDir)src;$(ProjectDir)imgui\backends;$(ProjectDir)imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Users\SAM-PC\Documents\vcpkg\installed\x64-windows\include;$(ProjectDir)imports;$(ProjectDir)src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
       <AdditionalDependencies>d3d11.lib;d3dcompiler.lib;dxgi.lib;user32.lib;gdi32.lib;imm32.lib;ole32.lib;oleaut32.lib;shell32.lib;uuid.lib;DirectXTK.lib;dxguid.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
@@ -217,9 +217,12 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\TigerEngine\Technique\input_layout.cpp" />
+    <ClCompile Include="src\Renderer\Loaders\buffers.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Shaders\Shaders.cpp" />
     <ClCompile Include="src\Renderer\Graphics\GPUAdapter.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Graphics.cpp" />
+    <ClCompile Include="src\Renderer\Loaders\static_loader.cpp" />
     <ClCompile Include="src\Renderer\Mouse\MouseClass.cpp" />
     <ClCompile Include="src\Renderer\Mouse\MouseEvent.cpp" />
     <ClCompile Include="src\Renderer\Keyboard\KeyboardClass.cpp" />
@@ -238,11 +241,15 @@
     <ClCompile Include="src\TigerEngine\Technique\texture.cpp" />
     <ClCompile Include="src\Renderer\WindowContainer.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Shaders\Vertex.cpp" />
+    <ClCompile Include="src\Renderer\Loaders\technique_loader.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\TigerEngine\Technique\input_layout.h" />
+    <ClInclude Include="src\Renderer\Loaders\buffers.h" />
     <ClInclude Include="src\Renderer\Graphics\Shaders\Shaders.h" />
     <ClInclude Include="src\Renderer\Graphics\GPUAdapter.h" />
     <ClInclude Include="src\Renderer\Graphics\Graphics.h" />
+    <ClInclude Include="src\Renderer\Loaders\static_loader.h" />
     <ClInclude Include="src\Renderer\Mouse\MouseClass.h" />
     <ClInclude Include="src\Renderer\Mouse\MouseEvent.h" />
     <ClInclude Include="src\Renderer\Keyboard\KeyboardClass.h" />
@@ -263,6 +270,7 @@
     <ClInclude Include="src\TigerEngine\Technique\texture.h" />
     <ClInclude Include="src\Renderer\WindowContainer.h" />
     <ClInclude Include="src\Renderer\Graphics\Shaders\Vertex.h" />
+    <ClInclude Include="src\Renderer\Loaders\technique_loader.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
@@ -277,6 +285,8 @@
     <FxCompile Include="vertexshader.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">5.0</ShaderModel>
     </FxCompile>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
