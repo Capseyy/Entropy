@@ -217,6 +217,8 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\Renderer\Graphics\Buffers\IndexBuffer.cpp" />
+    <ClCompile Include="src\Renderer\Graphics\Camera.cpp" />
     <ClCompile Include="src\TigerEngine\globaldata.cpp" />
     <ClCompile Include="src\TigerEngine\Technique\input_layout.cpp" />
     <ClCompile Include="src\Renderer\Loaders\buffers.cpp" />
@@ -243,8 +245,12 @@
     <ClCompile Include="src\Renderer\WindowContainer.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Shaders\Vertex.cpp" />
     <ClCompile Include="src\Renderer\Loaders\technique_loader.cpp" />
+    <ClCompile Include="src\Renderer\Graphics\Buffers\VertexBuffer.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\Renderer\Graphics\Buffers\ConstantBufferTypes.h" />
+    <ClInclude Include="src\Renderer\Graphics\Buffers\IndexBuffer.h" />
+    <ClInclude Include="src\Renderer\Graphics\Camera.h" />
     <ClInclude Include="src\TigerEngine\Technique\input_layout.h" />
     <ClInclude Include="src\Renderer\Loaders\buffers.h" />
     <ClInclude Include="src\Renderer\Graphics\Shaders\Shaders.h" />
@@ -272,6 +278,7 @@
     <ClInclude Include="src\Renderer\WindowContainer.h" />
     <ClInclude Include="src\Renderer\Graphics\Shaders\Vertex.h" />
     <ClInclude Include="src\Renderer\Loaders\technique_loader.h" />
+    <ClInclude Include="src\Renderer\Graphics\Buffers\VertexBuffer.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

@@ -6,6 +6,10 @@
 #include "SpriteFont.h"
 #include "WICTextureLoader.h"
 #include "Renderer/Loaders/static_loader.h"
+#include "Renderer/Graphics/Camera.h"
+#include "Renderer/Graphics/Buffers/VertexBuffer.h"
+#include "Renderer/Graphics/Buffers/IndexBuffer.h"
+#include "Renderer/Graphics/Buffers/ConstantBufferTypes.h"
 
 class Graphics
 {
@@ -29,8 +33,11 @@ private:
 
 	std::vector<StaticRenderer> static_objects_to_render;
 
-	Microsoft::WRL::ComPtr<ID3D11Buffer> vertexBuffer;
-	Microsoft::WRL::ComPtr<ID3D11Buffer> indexBuffer;
+	UINT offset = 0;
+
+	VertexBuffer<Vertex> vertexBuffer;
+	IndexBuffer indicesBuffer;
+	Microsoft::WRL::ComPtr<ID3D11Buffer> constantBuffer;
 
 	Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthStencilView;
 	Microsoft::WRL::ComPtr<ID3D11Texture2D> depthStencilBuffer;
@@ -43,4 +50,9 @@ private:
 
 	Microsoft::WRL::ComPtr<ID3D11SamplerState> samplerState;
 	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> myTexture;
+
+	int windowWidth = 0;
+	int windowHeight = 0;
+
+	Camera camera;
 };

@@ -2,16 +2,7 @@
 #include "TigerEngine/package.h"
 #include "TigerEngine/globaldata.h"
 #include "TigerEngine/helpers.h"
-#include <cstddef>
-#include <cstdint>
-#include <cstring>
-#include <stdexcept>
-#include <tuple>
-#include <type_traits>
-#include <vector>
-#include <span>
-#include <limits>
-#include <chrono>
+
 
 int TagHash::getPkgId() {
 	uint16_t pkgID = floor((hash - 0x80800000) / 8192);

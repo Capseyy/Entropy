@@ -29,8 +29,8 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int)
 	}
 	printf("Loaded %zu packages\n", GlobalData::getMap().size());
 	printf("Loaded %zu h64 entries\n", GlobalData::getH64().size());
-	//auto StringMap = GenerateStringMap();
-	//printf("Loaded String Map with %zu entries\n", StringMap.size());
+	auto StringMap = GenerateStringMap();
+	printf("Loaded String Map with %zu entries\n", StringMap.size());
 	HRESULT hr = CoInitialize(NULL);
 	if (FAILED(hr))
 	{

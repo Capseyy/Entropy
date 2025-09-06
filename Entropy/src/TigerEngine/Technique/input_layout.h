@@ -2,11 +2,11 @@
 #include <vector>
 #include <array>
 #include <cstdint>
-#include <d3d11.h> // DXGI_FORMAT
+#include <d3d11.h>
 
 struct TigerInputLayoutElement {
     std::string hlsl_type;
-    DXGI_FORMAT DxgiFormat;   // keep your field name
+    DXGI_FORMAT DxgiFormat;
     uint32_t _stride;
     std::string semantic_name;
     uint32_t semantic_index;

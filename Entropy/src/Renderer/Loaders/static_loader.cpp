@@ -70,7 +70,4 @@ void StaticRenderer::Process()
 		parts.push_back(sp);
 	}
 	printf("Processed static with %zu buffers and %zu parts\n", buffers.size(), parts.size());
-
-
-	
 }

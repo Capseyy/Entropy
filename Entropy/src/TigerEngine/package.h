@@ -162,7 +162,7 @@ public:
         size_t PatchPos = PackageFileName.rfind("_");
         PackageName = PackageFileName.substr(0, PatchPos);
         file.seekg(Header.entryTableOffset, std::ios::beg);
-        for (int i = 0; i < Header.entryTableSize; i++) {
+        for (uint32_t i = 0; i < Header.entryTableSize; i++) {
             EntryHeaderRaw rawHeader;
             file.read(reinterpret_cast<char*>(&rawHeader), sizeof(EntryHeaderRaw));
             Entries.emplace_back(rawHeader);
@@ -184,7 +184,6 @@ public:
         }
 
         ModifyNonce();
-        //printf("Package loaded: %s\n", PackageName.c_str());
         return true;
     }
 

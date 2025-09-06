@@ -7,17 +7,17 @@ bool Graphics::Initialize(HWND hWnd, int width, int height)
 		return false;
 	OutputDebugStringA("DirectX initialized.\n");
 
-	StaticRenderer static_loader;
-	if (static_loader.Initialize(0x81029E6E)) {
-		static_loader.Process();
-		this->static_objects_to_render.push_back(static_loader);
-	}
-	OutputDebugStringA("Statics initialized.\n");
+	//StaticRenderer static_loader;
+	//if (static_loader.Initialize(0x81029E6E)) {
+	//	static_loader.Process();
+	//	this->static_objects_to_render.push_back(static_loader);
+	//}
+	//OutputDebugStringA("Statics initialized.\n");
 	if (!InitializeShaders())
 		return false;
 	OutputDebugStringA("Shaders initialized.\n");
 
-	if (!InitializeScene())
+	if (!InitializeSceneOld())
 		return false;
 	OutputDebugStringA("Scene initialized.\n");
 
@@ -27,6 +27,7 @@ bool Graphics::Initialize(HWND hWnd, int width, int height)
 void Graphics::RenderFrame()
 {
 	const float color[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+
 	this->pContext->ClearRenderTargetView(this->pRenderTargetView.Get(), color);
 	pContext->ClearDepthStencilView(this->depthStencilView.Get(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
 	pContext->IASetInputLayout(this->vertexshader.GetInputLayout());
@@ -37,12 +38,14 @@ void Graphics::RenderFrame()
 	pContext->PSSetShader(this->pixelshader.GetShader(), NULL, 0);
 	pContext->VSSetShader(this->vertexshader.GetShader(), NULL, 0);
 
-	UINT stride = sizeof(Vertex);
-	UINT offset = 0;
+	
+
+	//DirectX::XMMATRIX worldMatrix = DirectX::XMMatrixIdentity();
+
 	pContext->PSSetShaderResources(0, 1, this->myTexture.GetAddressOf());
-	pContext->IASetVertexBuffers(0, 1, vertexBuffer.GetAddressOf(), &stride, &offset);
-	pContext->IASetIndexBuffer(this->indexBuffer.Get(), DXGI_FORMAT::DXGI_FORMAT_R32_UINT, 0);
-	pContext->DrawIndexed(6, 0, 0);
+	pContext->IASetVertexBuffers(0, 1, vertexBuffer.GetAddressOf(), vertexBuffer.StridePtr(), &offset);
+	pContext->IASetIndexBuffer(indicesBuffer.Get(), DXGI_FORMAT::DXGI_FORMAT_R32_UINT, 0);
+	pContext->DrawIndexed(indicesBuffer.BufferSize(), 0, 0);
 
 	spriteBatch->Begin();
 	spriteFont->DrawString(spriteBatch.get(), L"Hello World", DirectX::XMFLOAT2(0, 0), DirectX::Colors::Wheat, 0.0f, DirectX::XMFLOAT2(0, 0), DirectX::XMFLOAT2(1.0f, 1.0f));
@@ -228,13 +231,13 @@ bool Graphics::InitializeShaders()
 	}
 
 
-	//UINT numElements = ARRAYSIZE(layout);
+	UINT numElements = ARRAYSIZE(layout);
 
-	//if (!this->vertexshader.Initialize(this->pDevice, L"vertexshader.cso", layout, numElements))
-	//	return false;
+	if (!this->vertexshader.Initialize(this->pDevice, L"vertexshader.cso", layout, numElements))
+		return false;
 
-	//if (!this->pixelshader.Initialize(this->pDevice, L"pixelshader.cso"))
-	//	return false;
+	if (!this->pixelshader.Initialize(this->pDevice, L"pixelshader.cso"))
+		return false;
 
 	return true;
 }
@@ -259,7 +262,7 @@ bool Graphics::InitializeScene()
 			ZeroMemory(&vertexBufferData, sizeof(vertexBufferData));
 			vertexBufferData.pSysMem = buffer_group.vertexBuffer.data;
 
-			HRESULT hr = this->pDevice->CreateBuffer(&vertexBufferDesc, &vertexBufferData, this->vertexBuffer.GetAddressOf());
+			//HRESULT hr = this->pDevice->CreateBuffer(&vertexBufferDesc, &vertexBufferData, vertexBuffer.GetAddressOf());
 
 		}
 	}
@@ -288,40 +291,24 @@ bool Graphics::InitializeSceneOld()
 
 
 
-	D3D11_BUFFER_DESC vertexBufferDesc;
-	ZeroMemory(&vertexBufferDesc, sizeof(vertexBufferDesc));
-
-	vertexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-	vertexBufferDesc.ByteWidth = sizeof(Vertex) * ARRAYSIZE(v);
-	vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-	vertexBufferDesc.CPUAccessFlags = 0;
-	vertexBufferDesc.MiscFlags = 0;
-
-	D3D11_SUBRESOURCE_DATA vertexBufferData;
-	ZeroMemory(&vertexBufferData, sizeof(vertexBufferData));
-	vertexBufferData.pSysMem = v;
-
-	HRESULT hr = this->pDevice->CreateBuffer(&vertexBufferDesc, &vertexBufferData,this->vertexBuffer.GetAddressOf());
-
-	//Load Index Buffer
-	D3D11_BUFFER_DESC indexBufferDesc;
-	ZeroMemory(&indexBufferDesc, sizeof(indexBufferDesc));
-	indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-	indexBufferDesc.ByteWidth = sizeof(DWORD) * ARRAYSIZE(indices);
-	indexBufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
-	indexBufferDesc.CPUAccessFlags = 0;
-	indexBufferDesc.MiscFlags = 0;
-
-	D3D11_SUBRESOURCE_DATA indexBufferData;
-	indexBufferData.pSysMem = indices;
-
-	hr = this->pDevice->CreateBuffer(&indexBufferDesc, &indexBufferData, this->indexBuffer.GetAddressOf());
+	HRESULT hr = this->vertexBuffer.Initialize(pDevice.Get(), v, ARRAYSIZE(v));
 
 	if (FAILED(hr))
 	{
 		ErrorLogger::Log(hr, "Failed to create vertex buffer.");
 		return false;
 	}
+
+	//Load Index Buffer
+
+	hr = indicesBuffer.Initialize(pDevice.Get(), indices, ARRAYSIZE(indices));
+
+	if (FAILED(hr))
+	{
+		ErrorLogger::Log(hr, "Failed to create index buffer.");
+		return false;
+	}
+
 	std::filesystem::path tex_path = std::filesystem::path(SOLUTION_DIR) / "Data" / "Textures" / "myTex.png";
 	hr = DirectX::CreateWICTextureFromFile(
 		this->pDevice.Get(),
@@ -334,6 +321,28 @@ bool Graphics::InitializeSceneOld()
 		ErrorLogger::Log(hr, "Failed to load texture.");
 		return false;
 	}
+
+	D3D11_BUFFER_DESC desc;
+	ZeroMemory(&desc, sizeof(desc));
+
+	desc.Usage = D3D11_USAGE_DYNAMIC;
+	desc.ByteWidth = static_cast<UINT>(sizeof(CB_VS_vertexshader) + (16 - (sizeof(CB_VS_vertexshader))));
+	desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+	desc.StructureByteStride = 0;
+	desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+	desc.MiscFlags = 0;
+
+	hr = pDevice->CreateBuffer(&desc, 0, constantBuffer.GetAddressOf());
+
+	if (FAILED(hr))
+	{
+		ErrorLogger::Log(hr, "Failed to initialize constant buffer.");
+		return false;
+	}
+
+
+	//camera.SetPosition(0.0f, 0.0f, -2.0f);
+	//camera.SetProjectionValues(90.0f, static_cast<float>(windowWidth) / static_cast<float>(windowHeight), 0.01f, 1000.0f);
 
 	return true;
 }
