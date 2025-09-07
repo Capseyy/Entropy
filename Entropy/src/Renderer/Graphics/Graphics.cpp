@@ -10,11 +10,11 @@ bool Graphics::Initialize(HWND hWnd, int width, int height)
 		return false;
 	OutputDebugStringA("DirectX initialized.\n");
 
-	//StaticRenderer static_loader;
-	//if (static_loader.Initialize(0x81029E6E)) {
-	//	static_loader.Process();
-	//	this->static_objects_to_render.push_back(static_loader);
-	//}
+	StaticRenderer static_loader;
+	if (static_loader.Initialize(0x81029E6E)) {
+		static_loader.Process();
+		this->static_objects_to_render.push_back(static_loader);
+	}
 	//OutputDebugStringA("Statics initialized.\n");
 	if (!InitializeShaders())
 		return false;
