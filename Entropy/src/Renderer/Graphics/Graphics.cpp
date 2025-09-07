@@ -3,7 +3,10 @@
 
 bool Graphics::Initialize(HWND hWnd, int width, int height)
 {
-	if (!InitializeDirectX(hWnd, width, height))
+	this->windowWidth = width;
+	this->windowHeight = height;
+
+	if (!InitializeDirectX(hWnd))
 		return false;
 	OutputDebugStringA("DirectX initialized.\n");
 
@@ -20,6 +23,14 @@ bool Graphics::Initialize(HWND hWnd, int width, int height)
 	if (!InitializeSceneOld())
 		return false;
 	OutputDebugStringA("Scene initialized.\n");
+
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+	ImGuiIO& io = ImGui::GetIO();
+	ImGui_ImplWin32_Init(hWnd);
+	ImGui_ImplDX11_Init(this->pDevice.Get(), this->pContext.Get());
+	ImGui::StyleColorsDark();
+
 
 	return true;
 }	
@@ -38,8 +49,18 @@ void Graphics::RenderFrame()
 	pContext->PSSetShader(this->pixelshader.GetShader(), NULL, 0);
 	pContext->VSSetShader(this->vertexshader.GetShader(), NULL, 0);
 
-	
+	UINT offset = 0;
 
+	//Update Constant Buffer
+	DirectX::XMMATRIX world = DirectX::XMMatrixIdentity();
+
+	constantBuffer.data.mat = world * camera.GetViewMatrix() * camera.GetProjectionMatrix();
+	constantBuffer.data.mat = DirectX::XMMatrixTranspose(constantBuffer.data.mat);
+	
+	if (!constantBuffer.ApplyChanges()) {
+		return;
+	}
+	this->pContext->VSSetConstantBuffers(0, 1, this->constantBuffer.GetAddressOf());
 	//DirectX::XMMATRIX worldMatrix = DirectX::XMMatrixIdentity();
 
 	pContext->PSSetShaderResources(0, 1, this->myTexture.GetAddressOf());
@@ -47,14 +68,49 @@ void Graphics::RenderFrame()
 	pContext->IASetIndexBuffer(indicesBuffer.Get(), DXGI_FORMAT::DXGI_FORMAT_R32_UINT, 0);
 	pContext->DrawIndexed(indicesBuffer.BufferSize(), 0, 0);
 
+	//Text
+	if (!fpsTimer.isrunning) 
+	{
+		fpsTimer.Start();
+	}
+	static int fpsCounter = 0;
+	static std::string fpsString = "FPS: 0";
+	fpsCounter++;
+	if (fpsTimer.GetMilisecondsElapsed() > 1000)
+	{
+		fpsString = "FPS: " + std::to_string(fpsCounter);
+		fpsCounter = 0;
+		fpsTimer.Restart();
+	}
+	auto CameraPos = camera.GetPositionFloat3();
+	std::string CameraPrint = std::format("X: {:.2f}  Y: {:.2f}  Z: {:.2f}",
+		CameraPos.x, CameraPos.y, CameraPos.z);
 	spriteBatch->Begin();
-	spriteFont->DrawString(spriteBatch.get(), L"Hello World", DirectX::XMFLOAT2(0, 0), DirectX::Colors::Wheat, 0.0f, DirectX::XMFLOAT2(0, 0), DirectX::XMFLOAT2(1.0f, 1.0f));
+	spriteFont->DrawString(spriteBatch.get(),StringConverter::StringToWide(fpsString).c_str(), DirectX::XMFLOAT2(0, 0), DirectX::Colors::Wheat, 0.0f, DirectX::XMFLOAT2(0, 0), DirectX::XMFLOAT2(1.0f, 1.0f));
+	spriteFont->DrawString(spriteBatch.get(), StringConverter::StringToWide(CameraPrint).c_str(), DirectX::XMFLOAT2(0, 50), DirectX::Colors::Wheat, 0.0f, DirectX::XMFLOAT2(0, 0), DirectX::XMFLOAT2(1.0f, 1.0f));
 	spriteBatch->End();
 
-	pSwapChain->Present(1, NULL);
+
+
+
+	//IMGUI
+	ImGui_ImplDX11_NewFrame();
+	ImGui_ImplWin32_NewFrame();
+	ImGui::NewFrame();
+
+	ImGui::Begin("Test");
+	ImGui::End();
+
+	ImGui::Render();
+
+	ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+
+
+	pSwapChain->Present(0, NULL);
+
 }
 
-bool Graphics::InitializeDirectX(HWND hWnd, int width, int height)
+bool Graphics::InitializeDirectX(HWND hWnd)
 {
 	std::vector<GPUAdapter> adapters = GPUReader::GetAdapterData();
 
@@ -69,9 +125,9 @@ bool Graphics::InitializeDirectX(HWND hWnd, int width, int height)
 #endif
 	DXGI_SWAP_CHAIN_DESC scd;
 	ZeroMemory(&scd, sizeof(DXGI_SWAP_CHAIN_DESC));
-	scd.BufferDesc.Width = width;
-	scd.BufferDesc.Height = height;
-	scd.BufferDesc.RefreshRate.Numerator = 240;
+	scd.BufferDesc.Width = this->windowWidth;
+	scd.BufferDesc.Height = this->windowHeight;
+	scd.BufferDesc.RefreshRate.Numerator = 60;
 	scd.BufferDesc.RefreshRate.Denominator = 1;
 	scd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 	scd.BufferDesc.ScanlineOrdering = DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED;
@@ -125,8 +181,8 @@ bool Graphics::InitializeDirectX(HWND hWnd, int width, int height)
 	}
 
 	D3D11_TEXTURE2D_DESC depthStencilDesc;
-	depthStencilDesc.Width = width;
-	depthStencilDesc.Height = height;
+	depthStencilDesc.Width = this->windowWidth;
+	depthStencilDesc.Height = this->windowHeight;
 	depthStencilDesc.MipLevels = 1;
 	depthStencilDesc.ArraySize = 1;
 	depthStencilDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
@@ -171,8 +227,8 @@ bool Graphics::InitializeDirectX(HWND hWnd, int width, int height)
 	ZeroMemory(&viewport, sizeof(D3D11_VIEWPORT));
 	viewport.TopLeftX = 0;
 	viewport.TopLeftY = 0;
-	viewport.Width = float(width);
-	viewport.Height = float(height);
+	viewport.Width = float(this->windowWidth);
+	viewport.Height = float(this->windowHeight);
 	viewport.MinDepth = 0.0f;
 	viewport.MaxDepth = 1.0f;
 
@@ -276,10 +332,10 @@ bool Graphics::InitializeSceneOld()
 {
 	Vertex v[] = 
 	{
-		Vertex(-0.5f, -0.5f, 1.0f, 0.0f, 1.0f),//BL 0
-		Vertex(-0.5f, 0.5f, 1.0f, 0.0f, 0.0f),//TL  1
-		Vertex(0.5f, 0.5f, 1.0f, 1.0f, 0.0f),//TR   2
-		Vertex(0.5f, -0.5f, 1.0f, 1.0f, 1.0f)//BR   3
+		Vertex(-0.5f, -0.5f, 0.0f, 0.0f, 1.0f),//BL 0
+		Vertex(-0.5f, 0.5f, 0.0f, 0.0f, 0.0f),//TL  1
+		Vertex(0.5f, 0.5f, 0.0f, 1.0f, 0.0f),//TR   2
+		Vertex(0.5f, -0.5f, 0.0f, 1.0f, 1.0f)//BR   3
 
 	};
 
@@ -322,18 +378,8 @@ bool Graphics::InitializeSceneOld()
 		return false;
 	}
 
-	D3D11_BUFFER_DESC desc;
-	ZeroMemory(&desc, sizeof(desc));
 
-	desc.Usage = D3D11_USAGE_DYNAMIC;
-	desc.ByteWidth = static_cast<UINT>(sizeof(CB_VS_vertexshader) + (16 - (sizeof(CB_VS_vertexshader))));
-	desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-	desc.StructureByteStride = 0;
-	desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-	desc.MiscFlags = 0;
-
-	hr = pDevice->CreateBuffer(&desc, 0, constantBuffer.GetAddressOf());
-
+	hr = this->constantBuffer.Initialize(this->pDevice.Get(), this->pContext.Get());
 	if (FAILED(hr))
 	{
 		ErrorLogger::Log(hr, "Failed to initialize constant buffer.");
@@ -341,8 +387,8 @@ bool Graphics::InitializeSceneOld()
 	}
 
 
-	//camera.SetPosition(0.0f, 0.0f, -2.0f);
-	//camera.SetProjectionValues(90.0f, static_cast<float>(windowWidth) / static_cast<float>(windowHeight), 0.01f, 1000.0f);
+	camera.SetPosition(0.0f, 0.0f, -2.0f);
+	camera.SetProjectionValues(90.0f, static_cast<float>(windowWidth) / static_cast<float>(windowHeight), 0.01f, 1000.0f);
 
 	return true;
 }

@@ -1,0 +1,22 @@
+{
+    "version": 1,
+    "revision": 0,
+    "rules": [
+        {
+            "primary-output": "x64\\Debug\\ConstantBuffer.obj",
+            "outputs": [
+                "x64\\Debug\\ConstantBuffer.h_52AEC24BF412172C.ifc.dt.module.json",
+                "x64\\Debug\\ConstantBuffer.h_52AEC24BF412172C.ifc.dt.d.json",
+                "x64\\Debug\\ConstantBuffer.h.ifc"
+            ],
+            "provides": [
+                {
+                    "logical-name": "C:\\Users\\SAM-PC\\source\\repos\\Entropy\\Entropy\\src\\Renderer\\Graphics\\Buffers\\ConstantBuffer.h",
+                    "source-path": "c:\\users\\sam-pc\\source\\repos\\entropy\\entropy\\src\\renderer\\graphics\\buffers\\constantbuffer.h",
+                    "lookup-method": "absolute"
+                }
+            ],
+            "requires": []
+        }
+    ]
+}

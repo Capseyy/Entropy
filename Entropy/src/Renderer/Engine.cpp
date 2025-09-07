@@ -20,6 +20,8 @@ bool Engine::ProcessMessages() {
 
 void Engine::Update()
 {
+	float dt = timer.GetMilisecondsElapsed();
+	timer.Restart();
 	while (!keyboard.CharBufferIsEmpty())
 	{
 		unsigned char ch = keyboard.ReadChar();
@@ -34,7 +36,45 @@ void Engine::Update()
 	while (!mouse.EventBufferIsEmpty())
 	{
 		MouseEvent me = mouse.ReadEvent();
+		if (mouse.IsRightDown())
+		{
+			if (me.GetType() == MouseEvent::EventType::RAW_MOVE)
+			{
+				this->gfx.camera.AdjustPosition((float)me.GetPosX() * 0.01, (float)me.GetPosY() * -0.01, 0);
+			}
+		}
 	}
+
+	const float cameraSpeed = 0.006f;
+	
+	if (keyboard.KeyIsPressed('W'))
+	{
+		DirectX::XMVECTOR forward = gfx.camera.GetForwardVector();     // XMVECTOR
+		DirectX::XMVECTOR delta = DirectX::XMVectorScale(forward, cameraSpeed * dt); // scale by scalar
+		this->gfx.camera.AdjustPosition(delta);               // whatever type it expects
+	}
+
+	if (keyboard.KeyIsPressed('S'))
+	{
+		DirectX::XMVECTOR backward = gfx.camera.GetBackwardVector();     // XMVECTOR
+		DirectX::XMVECTOR delta = DirectX::XMVectorScale(backward, cameraSpeed * dt); // scale by scalar
+		this->gfx.camera.AdjustPosition(delta);               // whatever type it expects
+	}
+
+	if (keyboard.KeyIsPressed('A'))
+	{
+		DirectX::XMVECTOR left = gfx.camera.GetLeftVector();     // XMVECTOR
+		DirectX::XMVECTOR delta = DirectX::XMVectorScale(left, cameraSpeed * dt); // scale by scalar
+		this->gfx.camera.AdjustPosition(delta);               // whatever type it expects
+	}
+
+	if (keyboard.KeyIsPressed('D'))
+	{
+		DirectX::XMVECTOR right = gfx.camera.GetRightVector();     // XMVECTOR
+		DirectX::XMVECTOR delta = DirectX::XMVectorScale(right, cameraSpeed * dt); // scale by scalar
+		this->gfx.camera.AdjustPosition(delta);               // whatever type it expects
+	}
+	
 }
 
 void Engine::RenderFrame()

@@ -19,11 +19,17 @@ public:
     void SetPosition(float x, float y, float z);
     void AdjustPosition(const DirectX::XMVECTOR& pos);
     void AdjustPosition(float dx, float dy, float dz);
+    void SetLookAtPos(DirectX::XMFLOAT3 lookAtPos);
 
     void SetRotation(const DirectX::XMVECTOR& rot);
     void SetRotation(float pitch, float yaw, float roll);
     void AdjustRotation(const DirectX::XMVECTOR& delta);
     void AdjustRotation(float dpitch, float dyaw, float droll);
+
+    const DirectX::XMVECTOR& GetForwardVector();
+    const DirectX::XMVECTOR& GetRightVector();
+    const DirectX::XMVECTOR& GetBackwardVector();
+    const DirectX::XMVECTOR& GetLeftVector();
 
 private:
     // Recalculate the view matrix from pos/rot
@@ -39,4 +45,12 @@ private:
     // Safe static constants for default directions
     const DirectX::XMVECTOR DEFAULT_FORWARD_VECTOR = DirectX::XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
     const DirectX::XMVECTOR DEFAULT_UP_VECTOR = DirectX::XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+    const DirectX::XMVECTOR DEFAULT_BACKWARD_VECTOR = DirectX::XMVectorSet(0.0f, 0.0f, -1.0f, 0.0f);
+    const DirectX::XMVECTOR DEFAULT_LEFT_VECTOR = DirectX::XMVectorSet(-1.0f, 0.0f, 0.0f, 0.0f);
+    const DirectX::XMVECTOR DEFAULT_RIGHT_VECTOR = DirectX::XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
+
+    DirectX::XMVECTOR vec_forward;
+    DirectX::XMVECTOR vec_left;
+    DirectX::XMVECTOR vec_right;
+    DirectX::XMVECTOR vec_backward;
 };

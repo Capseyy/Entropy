@@ -217,8 +217,13 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="src\Renderer\Graphics\Buffers\IndexBuffer.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Camera.cpp" />
+    <ClCompile Include="src\Renderer\Graphics\ImGui\imgui.cpp" />
+    <ClCompile Include="src\Renderer\Graphics\ImGui\imgui_draw.cpp" />
+    <ClCompile Include="src\Renderer\Graphics\ImGui\imgui_impl_dx11.cpp" />
+    <ClCompile Include="src\Renderer\Graphics\ImGui\imgui_impl_win32.cpp" />
+    <ClCompile Include="src\Renderer\Graphics\ImGui\imgui_tables.cpp" />
+    <ClCompile Include="src\Renderer\Graphics\ImGui\imgui_widgets.cpp" />
     <ClCompile Include="src\TigerEngine\globaldata.cpp" />
     <ClCompile Include="src\TigerEngine\Technique\input_layout.cpp" />
     <ClCompile Include="src\Renderer\Loaders\buffers.cpp" />
@@ -245,12 +250,21 @@
     <ClCompile Include="src\Renderer\WindowContainer.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Shaders\Vertex.cpp" />
     <ClCompile Include="src\Renderer\Loaders\technique_loader.cpp" />
-    <ClCompile Include="src\Renderer\Graphics\Buffers\VertexBuffer.cpp" />
+    <ClCompile Include="src\Renderer\Timer.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\Renderer\Graphics\Buffers\ConstantBuffer.h" />
     <ClInclude Include="src\Renderer\Graphics\Buffers\ConstantBufferTypes.h" />
     <ClInclude Include="src\Renderer\Graphics\Buffers\IndexBuffer.h" />
     <ClInclude Include="src\Renderer\Graphics\Camera.h" />
+    <ClInclude Include="src\Renderer\Graphics\ImGui\imconfig.h" />
+    <ClInclude Include="src\Renderer\Graphics\ImGui\imgui.h" />
+    <ClInclude Include="src\Renderer\Graphics\ImGui\imgui_impl_dx11.h" />
+    <ClInclude Include="src\Renderer\Graphics\ImGui\imgui_impl_win32.h" />
+    <ClInclude Include="src\Renderer\Graphics\ImGui\imgui_internal.h" />
+    <ClInclude Include="src\Renderer\Graphics\ImGui\imstb_rectpack.h" />
+    <ClInclude Include="src\Renderer\Graphics\ImGui\imstb_textedit.h" />
+    <ClInclude Include="src\Renderer\Graphics\ImGui\imstb_truetype.h" />
     <ClInclude Include="src\TigerEngine\Technique\input_layout.h" />
     <ClInclude Include="src\Renderer\Loaders\buffers.h" />
     <ClInclude Include="src\Renderer\Graphics\Shaders\Shaders.h" />
@@ -264,8 +278,6 @@
     <ClInclude Include="src\Renderer\Engine.h" />
     <ClInclude Include="src\Renderer\RenderWindow.h" />
     <ClInclude Include="src\Renderer\Tools\ErrorLogger.h" />
-    <ClInclude Include="imgui\backends\imgui_impl_dx11.h" />
-    <ClInclude Include="imgui\backends\imgui_impl_win32.h" />
     <ClInclude Include="src\Renderer\Tools\StringConverter.h" />
     <ClInclude Include="src\TigerEngine\globaldata.h" />
     <ClInclude Include="src\TigerEngine\helpers.h" />
@@ -279,6 +291,7 @@
     <ClInclude Include="src\Renderer\Graphics\Shaders\Vertex.h" />
     <ClInclude Include="src\Renderer\Loaders\technique_loader.h" />
     <ClInclude Include="src\Renderer\Graphics\Buffers\VertexBuffer.h" />
+    <ClInclude Include="src\Renderer\Timer.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

@@ -10,6 +10,11 @@
 #include "Renderer/Graphics/Buffers/VertexBuffer.h"
 #include "Renderer/Graphics/Buffers/IndexBuffer.h"
 #include "Renderer/Graphics/Buffers/ConstantBufferTypes.h"
+#include "Renderer/Graphics/Buffers/ConstantBuffer.h"
+#include "Renderer/Timer.h";
+#include "Renderer/Graphics/ImGui/imgui.h"
+#include "Renderer/Graphics/ImGui/imgui_impl_win32.h"
+#include "Renderer/Graphics/ImGui/imgui_impl_dx11.h"
 
 class Graphics
 {
@@ -17,8 +22,10 @@ public:
 	bool Initialize(HWND hWnd, int width, int height);
 	void RenderFrame();
 
+	Camera camera;
+
 private:
-	bool InitializeDirectX(HWND hWnd, int width, int height);
+	bool InitializeDirectX(HWND hWnd);
 	bool InitializeShaders();
 	bool InitializeSceneOld();
 	bool InitializeScene();
@@ -37,7 +44,7 @@ private:
 
 	VertexBuffer<Vertex> vertexBuffer;
 	IndexBuffer indicesBuffer;
-	Microsoft::WRL::ComPtr<ID3D11Buffer> constantBuffer;
+	ConstantBuffer<CB_VS_vertexshader> constantBuffer;
 
 	Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthStencilView;
 	Microsoft::WRL::ComPtr<ID3D11Texture2D> depthStencilBuffer;
@@ -54,5 +61,5 @@ private:
 	int windowWidth = 0;
 	int windowHeight = 0;
 
-	Camera camera;
+	Timer fpsTimer;
 };

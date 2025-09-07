@@ -38,7 +38,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int)
 		return -1;
 	}
 	Engine engine;
-	if (engine.Initialize(hInstance, "Entropy", "EntropyEngineWindowClass", 1600, 1200))
+	if (engine.Initialize(hInstance, "Entropy", "EntropyEngineWindowClass", 1920, 1080))
 	{
 		while (engine.ProcessMessages() == true)
 		{

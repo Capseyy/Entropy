@@ -117,4 +117,58 @@ void Camera::UpdateViewMatrix()
 	DirectX::XMVECTOR upDir = DirectX::XMVector3TransformCoord(DEFAULT_UP_VECTOR, camRotationMatrix);
 	// Create the view matrix
 	viewMatrix = DirectX::XMMatrixLookAtLH(posVector, camTarget, upDir);
+
+	DirectX::XMMATRIX vecRotaionMatrix = DirectX::XMMatrixRotationRollPitchYaw(0.0f,rot.y,0.0f);
+	vec_forward = DirectX::XMVector3TransformCoord(DEFAULT_FORWARD_VECTOR, vecRotaionMatrix);
+	vec_backward = DirectX::XMVector3TransformCoord(DEFAULT_BACKWARD_VECTOR, vecRotaionMatrix);
+	vec_left = DirectX::XMVector3TransformCoord(DEFAULT_LEFT_VECTOR, vecRotaionMatrix);
+	vec_right = DirectX::XMVector3TransformCoord(DEFAULT_RIGHT_VECTOR, vecRotaionMatrix);
+
+}
+
+void Camera::SetLookAtPos(DirectX::XMFLOAT3 lookAtPos)
+{
+	if (lookAtPos.x == this->pos.x && lookAtPos.y == this->pos.y && lookAtPos.z == this->pos.z)
+		return;
+
+	lookAtPos.x = this->pos.x - lookAtPos.x;
+	lookAtPos.y = this->pos.y - lookAtPos.y;
+	lookAtPos.z = this->pos.z - lookAtPos.z;
+
+	float pitch = 0.0f;
+	if (lookAtPos.y != 0.0f)
+	{
+		const float distance = sqrt(lookAtPos.x * lookAtPos.x + lookAtPos.y * lookAtPos.y + lookAtPos.z * lookAtPos.z);
+		pitch = atan(lookAtPos.y / distance);
+	}
+
+	float yaw = 0.0f;
+	if (lookAtPos.x != 0.0f)
+	{
+		yaw = atan(lookAtPos.x / lookAtPos.z);
+	}
+	if (lookAtPos.z > 0)
+		yaw += DirectX::XM_PI;
+
+	this->SetRotation(pitch, yaw, 0.0f);
+}
+
+const DirectX::XMVECTOR & Camera::GetRightVector()
+{
+	return this->vec_right;
+}
+
+const DirectX::XMVECTOR& Camera::GetLeftVector()
+{
+	return this->vec_left;
+}
+
+const DirectX::XMVECTOR& Camera::GetForwardVector()
+{
+	return this->vec_forward;
+}
+
+const DirectX::XMVECTOR& Camera::GetBackwardVector()
+{
+	return this->vec_backward;
 }
