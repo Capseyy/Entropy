@@ -1,56 +1,57 @@
 #pragma once
 #include <DirectXMath.h>
+using namespace DirectX;
 
-class Camera {
+class Camera
+{
 public:
 	Camera();
+	void SetProjectionValues(float fovDegrees, float aspectRatio, float nearZ, float farZ);
 
-    void SetProjectionValues(float fovDegrees, float aspectRatio, float nearZ, float farZ);
+	const XMMATRIX& GetViewMatrix() const;
+	const XMMATRIX& GetProjectionMatrix() const;
 
-    const DirectX::XMMATRIX& GetViewMatrix() const;
-    const DirectX::XMMATRIX& GetProjectionMatrix() const;
+	const XMVECTOR& GetPositionVector() const;
+	const XMFLOAT3& GetPositionFloat3() const;
+	const XMVECTOR& GetRotationVector() const;
+	const XMFLOAT3& GetRotationFloat3() const;
 
-    const DirectX::XMVECTOR& GetPositionVector() const;
-    const DirectX::XMFLOAT3& GetPositionFloat3() const;
-    const DirectX::XMVECTOR& GetRotationVector() const;
-    const DirectX::XMFLOAT3& GetRotationFloat3() const;
-
-    void SetPosition(const DirectX::XMVECTOR& pos);
-    void SetPosition(float x, float y, float z);
-    void AdjustPosition(const DirectX::XMVECTOR& pos);
-    void AdjustPosition(float dx, float dy, float dz);
-    void SetLookAtPos(DirectX::XMFLOAT3 lookAtPos);
-
-    void SetRotation(const DirectX::XMVECTOR& rot);
-    void SetRotation(float pitch, float yaw, float roll);
-    void AdjustRotation(const DirectX::XMVECTOR& delta);
-    void AdjustRotation(float dpitch, float dyaw, float droll);
-
-    const DirectX::XMVECTOR& GetForwardVector();
-    const DirectX::XMVECTOR& GetRightVector();
-    const DirectX::XMVECTOR& GetBackwardVector();
-    const DirectX::XMVECTOR& GetLeftVector();
-
+	void SetPosition(const XMVECTOR& pos);
+	void SetPosition(float x, float y, float z);
+	void AdjustPosition(const XMVECTOR& pos);
+	void AdjustPosition(float x, float y, float z);
+	void SetRotation(const XMVECTOR& rot);
+	void SetRotation(float x, float y, float z);
+	void AdjustRotation(const XMVECTOR& rot);
+	void AdjustRotation(float x, float y, float z);
+	void SetLookAtPos(XMFLOAT3 lookAtPos);
+	const XMVECTOR& GetForwardVector();
+	const XMVECTOR& GetRightVector();
+	const XMVECTOR& GetBackwardVector();
+	const XMVECTOR& GetLeftVector();
+	float GetSpeed();
+	float SetSpeed(float speed);
+	float CameraSpeed = 0.006f;
+	float speed_base = 0.006f;
 private:
-    // Recalculate the view matrix from pos/rot
-    void UpdateViewMatrix();
-    // State
-    DirectX::XMVECTOR posVector;
-    DirectX::XMVECTOR rotVector;
-    DirectX::XMFLOAT3 pos;
-    DirectX::XMFLOAT3 rot;
-    DirectX::XMMATRIX viewMatrix;
-    DirectX::XMMATRIX projectionMatrix;
+	void UpdateViewMatrix();
+	XMVECTOR posVector;
+	XMVECTOR rotVector;
+	XMFLOAT3 pos;
+	XMFLOAT3 rot;
+	XMMATRIX viewMatrix;
+	XMMATRIX projectionMatrix;
 
-    // Safe static constants for default directions
-    const DirectX::XMVECTOR DEFAULT_FORWARD_VECTOR = DirectX::XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
-    const DirectX::XMVECTOR DEFAULT_UP_VECTOR = DirectX::XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-    const DirectX::XMVECTOR DEFAULT_BACKWARD_VECTOR = DirectX::XMVectorSet(0.0f, 0.0f, -1.0f, 0.0f);
-    const DirectX::XMVECTOR DEFAULT_LEFT_VECTOR = DirectX::XMVectorSet(-1.0f, 0.0f, 0.0f, 0.0f);
-    const DirectX::XMVECTOR DEFAULT_RIGHT_VECTOR = DirectX::XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
+	
 
-    DirectX::XMVECTOR vec_forward;
-    DirectX::XMVECTOR vec_left;
-    DirectX::XMVECTOR vec_right;
-    DirectX::XMVECTOR vec_backward;
+	const XMVECTOR DEFAULT_FORWARD_VECTOR = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
+	const XMVECTOR DEFAULT_UP_VECTOR = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+	const XMVECTOR DEFAULT_BACKWARD_VECTOR = XMVectorSet(0.0f, 0.0f, -1.0f, 0.0f);
+	const XMVECTOR DEFAULT_LEFT_VECTOR = XMVectorSet(-1.0f, 0.0f, 0.0f, 0.0f);
+	const XMVECTOR DEFAULT_RIGHT_VECTOR = XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
+
+	XMVECTOR vec_forward;
+	XMVECTOR vec_left;
+	XMVECTOR vec_right;
+	XMVECTOR vec_backward;
 };

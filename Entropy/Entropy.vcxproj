@@ -217,6 +217,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\Renderer\Graphics\Model.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Camera.cpp" />
     <ClCompile Include="src\Renderer\Graphics\ImGui\imgui.cpp" />
     <ClCompile Include="src\Renderer\Graphics\ImGui\imgui_draw.cpp" />
@@ -253,6 +254,8 @@
     <ClCompile Include="src\Renderer\Timer.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\Renderer\Graphics\Model.h" />
+    <ClInclude Include="src\Renderer\Tools\COMException.h" />
     <ClInclude Include="src\Renderer\Graphics\Buffers\ConstantBuffer.h" />
     <ClInclude Include="src\Renderer\Graphics\Buffers\ConstantBufferTypes.h" />
     <ClInclude Include="src\Renderer\Graphics\Buffers\IndexBuffer.h" />

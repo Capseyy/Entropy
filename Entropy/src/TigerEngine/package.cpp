@@ -44,6 +44,7 @@ std::vector<uint32_t> GetAllTagsFromReference(uint32_t reference) {
             EntryID++;
         }
     }
+    printf("Finished Collecting for type %08X \n", reference);
     return AllTagHashesOfType;
 }
 
@@ -247,6 +248,7 @@ std::unordered_map<int, Package> GeneratePackageCache(std::unordered_map<int, Re
     }
     for (const auto& pair : PatchFinder) {
         Package pkg;
+        //printf("Loading Package - %s _ %s .pkg\n", PackageNames[pair.first].c_str(), std::to_string(pair.second).c_str());
         pkg.load(PackagePath + "/" + PackageNames[pair.first] + "_" + std::to_string(pair.second) + ".pkg");
         if (Redacted_Keys.contains(pkg.Header.packageGroupId)) {
 			memcpy(pkg.redacted_nonce, Redacted_Keys[pkg.Header.packageGroupId].nonce, 12);

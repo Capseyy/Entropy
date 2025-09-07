@@ -60,6 +60,7 @@ public:
     uint32_t reference;
     bool success;
     unsigned char* data;
+    void free();
 };
 
 struct RelativePointer64 {

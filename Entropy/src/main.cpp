@@ -37,6 +37,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int)
 		ErrorLogger::Log(hr, "Failed to initialize COM library.");
 		return -1;
 	}
+
 	Engine engine;
 	if (engine.Initialize(hInstance, "Entropy", "EntropyEngineWindowClass", 1920, 1080))
 	{

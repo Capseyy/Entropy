@@ -1,20 +1,17 @@
 #pragma once
 #include <Renderer/Graphics/GPUAdapter.h>
 #include "Shaders/Shaders.h"
-#include "Renderer/Graphics/Shaders/Vertex.h"
 #include "SpriteBatch.h"
 #include "SpriteFont.h"
 #include "WICTextureLoader.h"
 #include "Renderer/Loaders/static_loader.h"
 #include "Renderer/Graphics/Camera.h"
-#include "Renderer/Graphics/Buffers/VertexBuffer.h"
-#include "Renderer/Graphics/Buffers/IndexBuffer.h"
 #include "Renderer/Graphics/Buffers/ConstantBufferTypes.h"
-#include "Renderer/Graphics/Buffers/ConstantBuffer.h"
 #include "Renderer/Timer.h";
 #include "Renderer/Graphics/ImGui/imgui.h"
 #include "Renderer/Graphics/ImGui/imgui_impl_win32.h"
 #include "Renderer/Graphics/ImGui/imgui_impl_dx11.h"
+#include "Model.h"
 
 class Graphics
 {
@@ -27,7 +24,6 @@ public:
 private:
 	bool InitializeDirectX(HWND hWnd);
 	bool InitializeShaders();
-	bool InitializeSceneOld();
 	bool InitializeScene();
 
 	Microsoft::WRL::ComPtr<ID3D11Device>           pDevice;
@@ -42,8 +38,8 @@ private:
 
 	UINT offset = 0;
 
-	VertexBuffer<Vertex> vertexBuffer;
-	IndexBuffer indicesBuffer;
+	Model model;
+
 	ConstantBuffer<CB_VS_vertexshader> constantBuffer;
 
 	Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthStencilView;
@@ -51,6 +47,7 @@ private:
 	Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthStencilState;
 
 	Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerState;
+	Microsoft::WRL::ComPtr<ID3D11BlendState> blendState;
 
 	std::unique_ptr<DirectX::SpriteBatch> spriteBatch;
 	std::unique_ptr<DirectX::SpriteFont> spriteFont;

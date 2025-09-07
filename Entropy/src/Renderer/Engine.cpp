@@ -40,13 +40,20 @@ void Engine::Update()
 		{
 			if (me.GetType() == MouseEvent::EventType::RAW_MOVE)
 			{
-				this->gfx.camera.AdjustPosition((float)me.GetPosX() * 0.01, (float)me.GetPosY() * -0.01, 0);
+				this->gfx.camera.AdjustRotation((float)me.GetPosY()/8 * 0.01f, (float)me.GetPosX()/10 * 0.01f, 0);
 			}
 		}
 	}
+	float cameraSpeed;
+	if (keyboard.KeyIsPressed(VK_SHIFT))
+	{
+		cameraSpeed = gfx.camera.GetSpeed() * 2;
+	}
+	else
+	{
+		cameraSpeed = gfx.camera.GetSpeed();
+	}
 
-	const float cameraSpeed = 0.006f;
-	
 	if (keyboard.KeyIsPressed('W'))
 	{
 		DirectX::XMVECTOR forward = gfx.camera.GetForwardVector();     // XMVECTOR

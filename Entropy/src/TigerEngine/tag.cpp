@@ -73,7 +73,6 @@ void WideHash::print() {
 	os << "}\n";
 }
 unsigned char* WideHash::getData() {
-	using clock = std::chrono::steady_clock; // monotonic => good for timing
 	const auto& h64 = GlobalData::getH64();
 	auto it = h64.find(wideHashData.Hash64);
 
@@ -93,3 +92,18 @@ unsigned char* WideHash::getData() {
 	return toTagHash.data;
 
 }
+
+void TagHash::free()
+{
+	if (data != nullptr) {
+		// If getData() used malloc/realloc:
+		std::free(data);
+		// If getData() used new[] instead, use: delete[] data;
+
+		data = nullptr;
+		size = 0;
+		success = false;
+		reference = 0;
+	}
+}
+

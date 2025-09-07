@@ -79,5 +79,6 @@ std::unordered_map<int, std::string> ProcessStringContainer(int Hash) {
         StringMap[StringHash] = asciiStr;
         stringIndex++;
     }
+    sc.Language.free();
 	return StringMap;
 }
