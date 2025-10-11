@@ -2,6 +2,9 @@
 #include <openssl/core_names.h>
 #include <thread>
 #include <cstdio>
+#include <map>
+#include <array>
+
 
 
 // Hard-coded AES keys (if they were global before)
@@ -41,22 +44,37 @@ static EVP_CIPHER_CTX* get_ctx(const unsigned char* key,
     return slot;
 }
 
+static thread_local std::map<std::array<unsigned char, 16>, EVP_CIPHER_CTX*> tls_ctx_map;
+
+static EVP_CIPHER_CTX* get_ctx_for_key(const unsigned char* key)
+{
+    std::array<unsigned char, 16> k{};
+    std::memcpy(k.data(), key, 16);
+
+    auto it = tls_ctx_map.find(k);
+    if (it != tls_ctx_map.end())
+        return it->second;
+
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+    EVP_DecryptInit_ex(ctx, EVP_aes_128_gcm(), nullptr, nullptr, nullptr);
+    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_IVLEN, 12, nullptr);
+    EVP_DecryptInit_ex(ctx, nullptr, nullptr, key, nullptr);
+    tls_ctx_map[k] = ctx;
+    return ctx;
+}
+
 bool AESGCM_Decrypt(const unsigned char* key,
     const unsigned char* nonce,
     const unsigned char* gcmTag,
     unsigned char* buffer,
     size_t size,
-    std::string pname)
+    const std::string& pname)
 {
-    EVP_CIPHER_CTX* ctx = nullptr;
-
     // Pick correct thread-local context
-    if (key == AES_KEY_0)
-        ctx = get_ctx(AES_KEY_0, tls_ctx0);
-    else if (key == AES_KEY_1)
-        ctx = get_ctx(AES_KEY_1, tls_ctx1);
-    else
-        ctx = get_ctx(key, tls_ctx_custom);
+    EVP_CIPHER_CTX* ctx =
+        (key == AES_KEY_0) ? get_ctx_for_key(AES_KEY_0) :
+        (key == AES_KEY_1) ? get_ctx_for_key(AES_KEY_1) :
+        get_ctx_for_key(key);
 
     if (!ctx) return false;
 
@@ -86,6 +104,10 @@ bool AESGCM_Decrypt(const unsigned char* key,
         std::fprintf(stderr, "and IV : ");
         for (int i = 0; i < 12; ++i)
             std::fprintf(stderr, "%02X", nonce[i]);
+		std::fprintf(stderr, "\nFor GCMTAG: ");
+        for (int i = 0; i < 16; ++i)
+            std::fprintf(stderr, "%02X", gcmTag[i]);
+        
 		std::fprintf(stderr, " for package %s", pname.c_str());
         std::fprintf(stderr, "\n");
         return false;

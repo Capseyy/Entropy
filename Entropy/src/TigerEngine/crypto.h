@@ -23,4 +23,4 @@ bool AESGCM_Decrypt(const unsigned char* key,
     const unsigned char* gcmTag,
     unsigned char* buffer,
     size_t size,
-    std::string pname);
+    const std::string& pname);

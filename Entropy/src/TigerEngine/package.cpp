@@ -18,7 +18,7 @@ static OodleLZ64_DecompressDef      g_oodle_decomp = nullptr;
 
 static std::once_flag    g_aes_once;
 
-const int BLOCK_SIZE = 0x40000;
+constexpr size_t BLOCK_SIZE = 0x40000u;
 
 
 struct MappedPkg {
