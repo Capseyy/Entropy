@@ -13,7 +13,7 @@ void StaticRenderer::Process()
 	auto static_struct = bin::parse<SStaticModel>(static_tag.data, static_tag.size, bin::Endian::Little);
 	auto mesh_tag = TagHash(static_struct.opaque_meshes);
 	auto mesh_struct = bin::parse<SStaticMeshData>(mesh_tag.data, mesh_tag.size, bin::Endian::Little);
-	int max_detail = 0xff;;
+	int max_detail = 0xff;
 	for (auto group : mesh_struct.mesh_groups) {
 		if (group.TfxRenderStage < max_detail) {
 			max_detail = group.TfxRenderStage;
@@ -30,24 +30,28 @@ void StaticRenderer::Process()
 			auto ib_buffer = TagHash(buffer_group.IndexBuffer.reference).data;
 			sb.indexBuffer.data = ib_buffer;
 			sb.indexBuffer.header = ibh;
+			sb.indexBuffer.TagInt = buffer_group.IndexBuffer.hash;
 		}
 		if (buffer_group.VertexBuffer.hash != 0xffffffff) {
 			auto vbh=bin::parse<VertexBufferHeader>(buffer_group.VertexBuffer.data, buffer_group.VertexBuffer.size, bin::Endian::Little);
 			auto vb_buffer = TagHash(buffer_group.VertexBuffer.reference).data;
 			sb.vertexBuffer.data = vb_buffer;
 			sb.vertexBuffer.header = vbh;
+			sb.vertexBuffer.TagInt = buffer_group.VertexBuffer.hash;
 		}
 		if (buffer_group.UVBuffer.hash != 0xffffffff) {
 			auto uvbh=bin::parse<VertexBufferHeader>(buffer_group.UVBuffer.data, buffer_group.UVBuffer.size, bin::Endian::Little);
 			auto uv_buffer = TagHash(buffer_group.UVBuffer.reference).data;
 			sb.uvBuffer.data = uv_buffer;
 			sb.uvBuffer.header = uvbh;
+			sb.uvBuffer.TagInt = buffer_group.UVBuffer.hash;
 		}
 		if (buffer_group.VertexColourBuffer.hash != 0xffffffff) {
 			auto vcbh=bin::parse<VertexBufferHeader>(buffer_group.VertexColourBuffer.data, buffer_group.VertexColourBuffer.size, bin::Endian::Little);
 			auto vc_buffer = TagHash(buffer_group.VertexColourBuffer.reference).data;
 			sb.vertexColourBuffer.data = vc_buffer;
 			sb.vertexColourBuffer.header = vcbh;
+			sb.vertexColourBuffer.TagInt = buffer_group.VertexColourBuffer.hash;
 		}
 		buffers.push_back(sb);
 	}
@@ -66,8 +70,38 @@ void StaticRenderer::Process()
 		auto technique_tag = TagHash(static_struct.Techniques[MatIndex].Unk0);
 		auto Technique = bin::parse<STechnique>(technique_tag.data, technique_tag.size, bin::Endian::Little);
 		sp.input_layout_index = meshGroup.input_layout_index;
+		sp.material = Technique;
 		MatIndex++;
-		parts.push_back(sp);
+		if ((mesh_struct.parts[meshGroup.part_index].LodCatagory) == 1)
+			parts.push_back(sp);
 	}
 	printf("Processed static with %zu buffers and %zu parts\n", buffers.size(), parts.size());
+}
+
+bool StaticRenderer::InitializeRender(ID3D11Device* device,ID3D11DeviceContext* deviceContext)
+{
+
+	for (auto part : this->parts)
+	{
+		auto input_desc = INPUT_LAYOUTS[part.input_layout_index];
+		Microsoft::WRL::ComPtr<ID3D11InputLayout> outLayout;
+		D3D11_INPUT_ELEMENT_DESC outDesc;
+		HRESULT hr = CreateInputLayoutFromTigerLayout(device, input_desc, outLayout, outDesc);
+		if (FAILED(hr))
+			ErrorLogger::Log(hr, L"Failed CreateInputLayoutFromTigerLayout on return");
+		part.material.Initialize(device, deviceContext, &outDesc, INPUT_LAYOUTS[part.input_layout_index].elements.size());
+	}
+	
+	this->buffers[0].indexBuffer.Initialize(device);
+	this->buffers[0].vertexBuffer.Initialize(device);
+	this->buffers[0].uvBuffer.Initialize(device);
+		
+	this->UpdateWorldMatrix();
+	return true;
+
+}
+
+void StaticRenderer::UpdateWorldMatrix()
+{
+	this->worldMatrix = XMMatrixIdentity();
 }

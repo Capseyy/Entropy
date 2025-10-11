@@ -23,6 +23,8 @@ public:
     uint64_t Hash64{ 0 };
 };
 
+class Package;
+
 class WideHash {
 public:
     WideHash() : size(0), reference(0), success(false), data(nullptr) {}
@@ -61,6 +63,8 @@ public:
     bool success;
     unsigned char* data;
     void free();
+    unsigned char* getDatawithPkg(Package* pkg);
+    unsigned char* getDatawithPkg(const Package* pkg);
 };
 
 struct RelativePointer64 {

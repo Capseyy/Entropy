@@ -41,6 +41,22 @@ unsigned char* TagHash::getData() {
 
 }
 
+unsigned char* TagHash::getDatawithPkg(Package* pkg) {
+	if (hash == 0u || hash == 0xFFFFFFFFu) { size = 0; data = nullptr; return nullptr; }
+	const int entryId = getEntryID();
+	auto ret = pkg->ExtractEntry(entryId);
+	success = ret.success;
+	size = pkg->Entries[entryId].file_size;
+	reference = pkg->Entries[entryId].reference;
+	data = ret.data;        // NOTE: this buffer must be owned/freed somewhere!
+	return data;
+}
+
+// const overload (just forwards via const_cast)
+unsigned char* TagHash::getDatawithPkg(const Package* pkg) {
+	return getDatawithPkg(const_cast<Package*>(pkg));
+}
+
 void TagHash::print_buffer() {
 	for (size_t i = 0; i < size; ++i) {
 		printf("%02X", data[i]); // print each byte as two-digit hex

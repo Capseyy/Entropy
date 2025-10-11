@@ -3,6 +3,11 @@
 #include <array>
 #include <cstdint>
 #include <d3d11.h>
+#include <wrl/client.h>
+#include "Renderer/Tools/ErrorLogger.h"
+#include <d3dcompiler.h>
+#include <format>
+
 
 struct TigerInputLayoutElement {
     std::string hlsl_type;
@@ -147,3 +152,4 @@ const std::array<TigerInputLayout, 77> INPUT_LAYOUTS = {
     },
 };
 
+HRESULT CreateInputLayoutFromTigerLayout(ID3D11Device* device, const TigerInputLayout& layout, Microsoft::WRL::ComPtr<ID3D11InputLayout>& outLayout, D3D11_INPUT_ELEMENT_DESC& outDesc);

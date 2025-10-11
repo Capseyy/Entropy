@@ -9,6 +9,8 @@
 #include <iostream>
 #include <codecvt>
 #include <locale>
+#include "Renderer/Graphics/Shaders/Shaders.h"
+#include "Renderer/Graphics/Shaders/material.h"
 
 struct STextureTag {
 	uint32_t TextureIndex;
@@ -63,7 +65,7 @@ public:
 	STechniqueShader PixelShader;
 	STechniqueShader ComputeShader;
 
-	void Initialize();
+	void Initialize(ID3D11Device* device, ID3D11DeviceContext* deviceContext, D3D11_INPUT_ELEMENT_DESC* desc, UINT numElements);
 };
 
 
@@ -102,6 +104,7 @@ struct UT_SamplerRaw
 	float    MaxLOD;          // 0 or negative can mean “no clamp”
 };
 // size should be 52 on MSVC; keep pack(1) so it matches your blob
+
 #pragma pack(pop)
 
 

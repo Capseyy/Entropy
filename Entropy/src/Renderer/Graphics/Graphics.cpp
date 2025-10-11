@@ -41,14 +41,18 @@ void Graphics::RenderFrame()
 
 	this->pContext->ClearRenderTargetView(this->pRenderTargetView.Get(), color);
 	pContext->ClearDepthStencilView(this->depthStencilView.Get(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
-	pContext->IASetInputLayout(this->vertexshader.GetInputLayout());
 	pContext->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY::D3D10_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	pContext->RSSetState(this->rasterizerState.Get());
 	pContext->OMSetDepthStencilState(this->depthStencilState.Get(), 0);
 	pContext->PSSetSamplers(0, 1, this->samplerState.GetAddressOf());
-	pContext->PSSetShader(this->pixelshader.GetShader(), NULL, 0);
-	pContext->VSSetShader(this->vertexshader.GetShader(), NULL, 0);
+	//pContext->PSSetShader(this->pixelshader.GetShader(), NULL, 0);
+	//pContext->VSSetShader(this->vertexshader.GetShader(), NULL, 0);
+	//pContext->IASetInputLayout(this->vertexshader.GetInputLayout());
 
+	for (auto Static : this->static_objects_to_render)
+	{
+		
+	}
 	UINT offset = 0;
 
 	//Update Constant Buffer
@@ -62,10 +66,6 @@ void Graphics::RenderFrame()
 	}
 	this->pContext->VSSetConstantBuffers(0, 1, this->constantBuffer.GetAddressOf());
 	//DirectX::XMMATRIX worldMatrix = DirectX::XMMatrixIdentity();
-
-	{
-		this->model.Draw(camera.GetViewMatrix()*camera.GetProjectionMatrix());
-	}
 
 	//Text
 	if (!fpsTimer.isrunning) 
@@ -260,25 +260,26 @@ bool Graphics::InitializeScene()
 {	
 	try {
 
-		std::filesystem::path tex_path = std::filesystem::path(SOLUTION_DIR) / "Data" / "Textures" / "myTex.png";
-		HRESULT hr = DirectX::CreateWICTextureFromFile(
-			this->pDevice.Get(),
-			tex_path.c_str(),
-			nullptr,
-			this->myTexture.GetAddressOf()
-		);
+		//std::filesystem::path tex_path = std::filesystem::path(SOLUTION_DIR) / "Data" / "Textures" / "myTex.png";
+		//HRESULT hr = DirectX::CreateWICTextureFromFile(
+		//	this->pDevice.Get(),
+		//	tex_path.c_str(),
+		//	nullptr,
+		//	this->myTexture.GetAddressOf()
+		//);
 
-		COM_ERROR_IF_FAILED(hr, "Failed to Load Texture");
+		//COM_ERROR_IF_FAILED(hr, "Failed to Load Texture");
 
-		hr = this->constantBuffer.Initialize(this->pDevice.Get(), this->pContext.Get());
+		HRESULT hr = this->constantBuffer.Initialize(this->pDevice.Get(), this->pContext.Get());
 		COM_ERROR_IF_FAILED(hr, "Failed to initialize constant buffer");
 
-		if (!model.Initialize(pDevice.Get(), pContext.Get(), this->myTexture.Get(), this->constantBuffer))
-		{
-			return false;
-		};
 		camera.SetPosition(0.0f, 0.0f, -2.0f);
 		camera.SetProjectionValues(90.0f, static_cast<float>(windowWidth) / static_cast<float>(windowHeight), 0.01f, 1000.0f);
+
+		for (auto Static : this->static_objects_to_render)
+		{
+			Static.InitializeRender(pDevice.Get(), pContext.Get());
+		}
 	}
 	catch (COMException& exception)
 	{

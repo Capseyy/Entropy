@@ -13,6 +13,7 @@
 #include <fstream>
 #include <cstdint>
 #include "TigerEngine/tag.h"
+#include <execution>
 
 namespace fs = std::filesystem;
 
@@ -149,6 +150,7 @@ public:
     unsigned char redacted_key[16];
     unsigned char redacted_nonce[12];
     bool hasRedactedKey = false;
+    BCRYPT_KEY_HANDLE hRedactedKey = nullptr;
     bool load(const std::string& filepath) {
         std::ifstream file(filepath, std::ios::binary);
         if (!file) {
@@ -156,9 +158,8 @@ public:
             return false;
         }
         file.read(reinterpret_cast<char*>(&Header), sizeof(PkgHeader));
-        std::string PackageFileName;
         size_t NamePos = filepath.rfind("\\");
-        PackageFileName = filepath.substr(NamePos + 1);
+        auto PackageFileName = filepath.substr(NamePos + 1);
         size_t PatchPos = PackageFileName.rfind("_");
         PackageName = PackageFileName.substr(0, PatchPos);
         file.seekg(Header.entryTableOffset, std::ios::beg);
@@ -219,3 +220,7 @@ std::unordered_map<int, Package> GeneratePackageCache(std::unordered_map<int, Re
 std::unordered_map<int, Redacted_Key_Pair> Read_Redacted_Keys();
 
 std::vector<uint32_t> GetAllTagsFromReference(uint32_t reference);
+
+static inline bool SearchTag(uint32_t tag, uint32_t value, const Package*);
+
+void SearchBungieFiles(uint32_t value);
