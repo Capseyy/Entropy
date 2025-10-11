@@ -1,5 +1,4 @@
 #pragma once
-#pragma comment(lib, "bcrypt.lib")
 #define PACKAGE_H
 #include <string>
 #include <vector>
@@ -7,13 +6,14 @@
 #include <windows.h>
 #include <stdlib.h>
 #include <filesystem>
-#include <bcrypt.h>
 #include <iostream>
 #include <unordered_map>
 #include <fstream>
 #include <cstdint>
 #include "TigerEngine/tag.h"
 #include <execution>
+#include <shared_mutex>
+#include "TigerEngine/crypto.h"
 
 namespace fs = std::filesystem;
 
@@ -150,7 +150,6 @@ public:
     unsigned char redacted_key[16];
     unsigned char redacted_nonce[12];
     bool hasRedactedKey = false;
-    BCRYPT_KEY_HANDLE hRedactedKey = nullptr;
     bool load(const std::string& filepath) {
         std::ifstream file(filepath, std::ios::binary);
         if (!file) {

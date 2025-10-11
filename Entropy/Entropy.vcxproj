@@ -224,6 +224,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\TigerEngine\crypto.cpp" />
     <ClCompile Include="src\TigerEngine\mapped_file.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Shaders\material.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Camera.cpp" />
@@ -261,6 +262,7 @@
     <ClCompile Include="src\Renderer\Timer.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\TigerEngine\crypto.h" />
     <ClInclude Include="src\TigerEngine\mapped_file.h" />
     <ClInclude Include="src\Renderer\Graphics\Shaders\material.h" />
     <ClInclude Include="src\Renderer\Tools\COMException.h" />

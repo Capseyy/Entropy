@@ -6,7 +6,7 @@
 #include "tag.h"
 #include "package.h"
 #include "globaldata.h"
-
+#undef min
 #include <mutex>
 
 using OodleLZ64_DecompressDef = int64_t(*)(unsigned char*, int64_t, unsigned char*, int64_t,
@@ -17,38 +17,9 @@ static HMODULE                      g_oodle_dll = nullptr;
 static OodleLZ64_DecompressDef      g_oodle_decomp = nullptr;
 
 static std::once_flag    g_aes_once;
-static BCRYPT_ALG_HANDLE g_aes_alg = nullptr;
-static BCRYPT_KEY_HANDLE g_key0 = nullptr; // AES_KEY_0
-static BCRYPT_KEY_HANDLE g_key1 = nullptr; // AES_KEY_1
-
-
-const static unsigned char AES_KEY_0[16] =
-{
-	0xD6, 0x2A, 0xB2, 0xC1, 0x0C, 0xC0, 0x1B, 0xC5, 0x35, 0xDB, 0x7B, 0x86, 0x55, 0xC7, 0xDC, 0x3B,
-};
-
-const static unsigned char AES_KEY_1[16] =
-{
-	0x3A, 0x4A, 0x5D, 0x36, 0x73, 0xA6, 0x60, 0x58, 0x7E, 0x63, 0xE6, 0x76, 0xE4, 0x08, 0x92, 0xB5,
-};
 
 const int BLOCK_SIZE = 0x40000;
 
-static BCRYPT_KEY_HANDLE ImportAesKey(BCRYPT_ALG_HANDLE alg, const unsigned char key[16]) {
-    alignas(alignof(BCRYPT_KEY_DATA_BLOB_HEADER)) unsigned char blob[sizeof(BCRYPT_KEY_DATA_BLOB_HEADER) + 16];
-    auto* hdr = reinterpret_cast<BCRYPT_KEY_DATA_BLOB_HEADER*>(blob);
-    hdr->dwMagic = BCRYPT_KEY_DATA_BLOB_MAGIC;
-    hdr->dwVersion = BCRYPT_KEY_DATA_BLOB_VERSION1;
-    hdr->cbKeyData = 16;
-    std::memcpy(hdr + 1, key, 16);
-
-    BCRYPT_KEY_HANDLE hKey = nullptr;
-    NTSTATUS st = BCryptImportKey(alg, nullptr, BCRYPT_KEY_DATA_BLOB, &hKey,
-        nullptr, 0, blob, sizeof(blob), 0);
-    return (st >= 0) ? hKey : nullptr;
-}
-
-#include <windows.h>
 
 struct MappedPkg {
     HANDLE hFile = INVALID_HANDLE_VALUE;
@@ -84,31 +55,6 @@ void print_hex(const unsigned char* data, size_t length) {
         printf("%02X", data[i]); // print each byte as two-digit hex
     }
     printf("\n");
-}
-
-static void InitAesOnce()
-{
-    if (BCryptOpenAlgorithmProvider(&g_aes_alg, BCRYPT_AES_ALGORITHM, nullptr, 0) < 0) return;
-    (void)BCryptSetProperty(g_aes_alg, BCRYPT_CHAINING_MODE,
-        (PUCHAR)BCRYPT_CHAIN_MODE_GCM,
-        (ULONG)sizeof(BCRYPT_CHAIN_MODE_GCM), 0);
-    g_key0 = ImportAesKey(g_aes_alg, AES_KEY_0);
-    g_key1 = ImportAesKey(g_aes_alg, AES_KEY_1);
-}
-
-// Per-thread duplicated handles (avoid lock contention inside CNG)
-static thread_local BCRYPT_KEY_HANDLE tls_key0 = nullptr;
-static thread_local BCRYPT_KEY_HANDLE tls_key1 = nullptr;
-static thread_local BCRYPT_KEY_HANDLE tls_red = nullptr;
-
-static void EnsureTlsKeys(class Package* pkg) {
-    std::call_once(g_aes_once, InitAesOnce);
-    if (!g_aes_alg) return;
-    if (!tls_key0 && g_key0) BCryptDuplicateKey(g_key0, &tls_key0, nullptr, 0, 0);
-    if (!tls_key1 && g_key1) BCryptDuplicateKey(g_key1, &tls_key1, nullptr, 0, 0);
-    if (pkg && pkg->hasRedactedKey && pkg->hRedactedKey) {
-        if (!tls_red) BCryptDuplicateKey(pkg->hRedactedKey, &tls_red, nullptr, 0, 0);
-    }
 }
 
 std::vector<uint32_t> GetAllTagsFromReference(uint32_t reference) {
@@ -194,42 +140,40 @@ bool Package::decryptBlock(const Block block, unsigned char* ioBuffer /*in-place
 {
     decryptBuffer = ioBuffer;
 
-    EnsureTlsKeys(this);
-    BCRYPT_KEY_HANDLE hKey = nullptr;
+    const unsigned char* key = hasRedactedKey ? redacted_key : (block.bitFlag & 0x4) ? AES_KEY_1 : AES_KEY_0;
+    const unsigned char* iv = hasRedactedKey ? redacted_nonce : nonce;
+    const unsigned char* tag = block.gcmTag;
 
-    if (hasRedactedKey) {
-        // Ensure package key imported once; then TLS-dupe
-        if (!hRedactedKey && g_aes_alg)
-            hRedactedKey = ImportAesKey(g_aes_alg, redacted_key);
-        EnsureTlsKeys(this);
-        hKey = tls_red ? tls_red : hRedactedKey;
-    }
-    else {
-        hKey = (block.bitFlag & 0x4) ? tls_key1 : tls_key0;
-    }
-
-    if (!hKey) { std::fprintf(stderr, "AES key handle missing\n"); return false; }
-
-    BCRYPT_AUTHENTICATED_CIPHER_MODE_INFO info;
-    BCRYPT_INIT_AUTH_MODE_INFO(info);
-    info.pbTag = (PUCHAR)block.gcmTag;
-    info.cbTag = 0x10;
-    info.pbNonce = hasRedactedKey ? redacted_nonce : nonce;
-    info.cbNonce = 0x0C;
-
-    ULONG outSize = 0;
-    NTSTATUS st = BCryptDecrypt(hKey,
-        ioBuffer, (ULONG)block.size,
-        &info,
-        nullptr, 0,
-        ioBuffer, (ULONG)block.size,  // in-place
-        &outSize,
-        0);
-    if (st < 0) {
-        std::fprintf(stderr, "BCryptDecrypt failed 0x%08X\n", (unsigned)st);
+    if (!AESGCM_Decrypt(key, iv, tag, ioBuffer, block.size, PackageName)) {
         return false;
     }
     return true;
+}
+
+static std::mutex g_mapMux;
+struct MappedRec { std::unique_ptr<MappedPkg> mp; };
+static std::unordered_map<std::string, MappedRec> g_mapped;
+
+static const MappedPkg* MapPkgOnce(const std::string& fullPathUtf8) {
+    if (auto it = g_mapped.find(fullPathUtf8); it != g_mapped.end())
+        return it->second.mp.get();
+
+    std::lock_guard<std::mutex> lk(g_mapMux);
+    if (auto it = g_mapped.find(fullPathUtf8); it != g_mapped.end())
+        return it->second.mp.get();
+
+    auto rec = MappedRec{};
+    rec.mp = std::make_unique<MappedPkg>();
+    std::filesystem::path p(fullPathUtf8);
+    if (!rec.mp->open(p.wstring())) return nullptr;
+
+#if _WIN32_WINNT >= 0x0602
+    WIN32_MEMORY_RANGE_ENTRY r{ (PVOID)rec.mp->base, (SIZE_T)rec.mp->size };
+    PrefetchVirtualMemory(GetCurrentProcess(), 1, &r, 0);
+#endif
+    const MappedPkg* out = rec.mp.get();
+    g_mapped.emplace(fullPathUtf8, std::move(rec));
+    return out;
 }
 
 void Package::ModifyNonce() {
@@ -237,114 +181,174 @@ void Package::ModifyNonce() {
     nonce[11] ^= Header.pkgID & 0xFF;
 }
 
-
-ExtractResult Package::ExtractEntry(const int EntryNumber) {
+ExtractResult Package::ExtractEntry(const int EntryNumber)
+{
     const Entry entry = Entries[EntryNumber];
-    ExtractResult ret; ret.success = true;
+    ExtractResult ret;
+    ret.success = false;
+
+    // ---- allocate destination ----
     unsigned char* fileBuffer = new unsigned char[entry.file_size];
     ret.data = fileBuffer;
-    int currentBlockId = entry.starting_block;
-    const int blockCount = (int)std::floor((entry.starting_block_offset + entry.file_size - 1) / double(BLOCK_SIZE));
-    const int lastBlockID = currentBlockId + blockCount;
 
+    // ---- block range ----
+    const int firstBlock = entry.starting_block;
+    const int blocksNeeded =
+        static_cast<int>((entry.starting_block_offset + entry.file_size + BLOCK_SIZE - 1) / BLOCK_SIZE);
+    const int lastBlock = firstBlock + blocksNeeded - 1;
+
+    // ---- detect features ----
     bool needsOodle = false, needsOtherPkg = false;
-    {
-        uint32_t firstBlock = entry.starting_block;
-        uint32_t blocksNeeded = (uint32_t)((entry.starting_block_offset + entry.file_size + BLOCK_SIZE - 1) / BLOCK_SIZE);
-        uint32_t lastBlock = firstBlock + blocksNeeded - 1;
-        for (uint32_t b = firstBlock; b <= lastBlock; ++b) {
-            needsOodle |= (Blocks[b].bitFlag & 0x1);
-            needsOtherPkg |= (Blocks[b].patchID != Header.patchID);
-            if (needsOodle && needsOtherPkg) break;
-        }
+    for (int b = firstBlock; b <= lastBlock; ++b) {
+        needsOodle |= (Blocks[b].bitFlag & 0x1);
+        needsOtherPkg |= (Blocks[b].patchID != Header.patchID);
+        if (needsOodle && needsOtherPkg) break;
     }
     if (needsOodle && !initOodle()) {
         std::fprintf(stderr, "Failed to initialize Oodle\n");
-        delete[] fileBuffer; return { nullptr, false };
+        delete[] fileBuffer;
+        return { nullptr, false };
     }
 
-    // ---- Reused buffers (no per-block allocs) ----
-    std::vector<unsigned char> blockBuf;
-    std::vector<unsigned char> decompBuf(BLOCK_SIZE);
+    // ---- map each patch file once ----
+    struct PidMap { uint32_t pid; const MappedPkg* mp; };
+    std::vector<PidMap> maps;
+    maps.reserve(4);
 
-    // ---- Reuse FILE* per patchID ----
-    FILE* pFileGlobal = nullptr;
-    std::unordered_map<uint32_t, FILE*> patchFiles;
+    uint32_t prev = 0xFFFFFFFFu;
+    for (int b = firstBlock; b <= lastBlock; ++b) {
+        uint32_t pid = Blocks[b].patchID;
+        if (pid != prev) { maps.push_back({ pid, nullptr }); prev = pid; }
+    }
 
-    auto getFile = [&](uint32_t patchID) -> FILE* {
-        if (!needsOtherPkg) return pFileGlobal;
-        auto it = patchFiles.find(patchID);
-        if (it != patchFiles.end()) return it->second;
-        const std::string filename = PackageName + "_" + std::to_string(patchID) + ".pkg";
-        FILE* f = _fsopen(filename.c_str(), "rb", _SH_DENYNO);
-        if (!f) { std::fprintf(stderr, "Failed to open %s\n", filename.c_str()); return (FILE*)nullptr; }
-        patchFiles.emplace(patchID, f);
-        return f;
+    for (auto& m : maps) {
+        const std::string full = PackageName + "_" + std::to_string(m.pid) + ".pkg";
+        m.mp = MapPkgOnce(full);              // uses global mmap cache keyed by full path
+        if (!m.mp) {
+            std::fprintf(stderr, "Failed to mmap %s\n", full.c_str());
+            delete[] fileBuffer;
+            return { nullptr, false };
+        }
+    }
+
+    auto mp_for = [&](uint32_t pid) -> const MappedPkg* {
+        for (auto& m : maps) if (m.pid == pid) return m.mp;
+        return nullptr;
         };
 
-    if (!needsOtherPkg) {
-        const std::string filename = PackageName + "_" + std::to_string(Header.patchID) + ".pkg";
-        pFileGlobal = _fsopen(filename.c_str(), "rb", _SH_DENYNO);
-        if (!pFileGlobal) {
-            std::fprintf(stderr, "Failed to open %s\n", filename.c_str());
-            delete[] fileBuffer; return { nullptr, false };
-        }
-    }
+    // ---- scratch buffers ----
+    std::vector<unsigned char> workBuf;
+    std::vector<unsigned char> decompBuf(BLOCK_SIZE);
+    size_t dstOff = 0;
 
-    size_t currentBufferOffset = 0;
+    auto copy_from_mmap = [&](const MappedPkg* mp, const Block& blk,
+        size_t offInBlk, size_t n) {
+            const uint8_t* src = mp->ptr(blk.offset + offInBlk);
+            std::memcpy(fileBuffer + dstOff, src, n);
+            dstOff += n;
+        };
 
-    while (currentBlockId <= lastBlockID) {
-        const Block& blk = Blocks[currentBlockId];
+    auto process_hot_block = [&](const MappedPkg* mp, const Block& blk,
+        size_t takeFrom, size_t n) -> bool {
+            if (workBuf.size() < blk.size) workBuf.resize(blk.size);
+            const uint8_t* src = mp->ptr(blk.offset);
+            std::memcpy(workBuf.data(), src, blk.size);
 
-        // ensure buffer capacity once per block size
-        if (blockBuf.size() < blk.size) blockBuf.resize(blk.size);
-        unsigned char* io = blockBuf.data();
+            unsigned char* io = workBuf.data();
+            unsigned char* out = io;
+            if (blk.bitFlag & 0x8 and this->hasRedactedKey == false) {
+                std::fprintf(stderr, "No Key in place for redacted pkg %s\n",PackageName.c_str());
+                return false;
+			}
+            if (blk.bitFlag & 0x2) {
+                unsigned char* dummy = io;
+                if (!decryptBlock(blk, io, dummy))
+                {
+                    return false;
+                }
+            }
+            if (blk.bitFlag & 0x1) {
+                unsigned char* de = decompBuf.data();
+                decompressBlock(blk, io, de);
+                out = de;
+            }
+            std::memcpy(fileBuffer + dstOff, out + takeFrom, n);
+            dstOff += n;
+            return true;
+        };
 
-        FILE* f = getFile(blk.patchID);
-        if (!f) { ret.success = false; break; }
-
-        if (_fseeki64(f, static_cast<long long>(blk.offset), SEEK_SET) != 0) {
-            std::fputs("Seek error\n", stderr); ret.success = false; break;
-        }
-        size_t got = std::fread(io, 1, blk.size, f);
-        if (got != blk.size) { std::fputs("Read error\n", stderr); ret.success = false; break; }
-
-        // decrypt in-place if needed
-        unsigned char* decryptPtr = io; // API needs it, but we keep it in-place
-        if (blk.bitFlag & 0x2) {
-            if (!decryptBlock(blk, io, decryptPtr)) { ret.success = false; break; }
-        }
-
-        // decompress if needed
-        unsigned char* out = decryptPtr;
-        if (blk.bitFlag & 0x1) {
-            unsigned char* de = decompBuf.data();
-            decompressBlock(blk, decryptPtr, de);
-            out = de;
-        }
-
-        // stitch into final buffer
-        if (currentBlockId == entry.starting_block) {
-            const size_t cpy = (currentBlockId == lastBlockID)
-                ? entry.file_size
-                : (BLOCK_SIZE - entry.starting_block_offset);
-            std::memcpy(fileBuffer, out + entry.starting_block_offset, cpy);
-            currentBufferOffset += cpy;
-        }
-        else if (currentBlockId == lastBlockID) {
-            std::memcpy(fileBuffer + currentBufferOffset, out, entry.file_size - currentBufferOffset);
+    // ---- first block ----
+    {
+        const Block& blk = Blocks[firstBlock];
+        const MappedPkg* mp = mp_for(blk.patchID);
+        const size_t take = std::min(
+            (size_t)(BLOCK_SIZE - entry.starting_block_offset),
+            (size_t)entry.file_size);
+        if ((blk.bitFlag & 0x3) == 0) {
+            copy_from_mmap(mp, blk, entry.starting_block_offset, take);
         }
         else {
-            std::memcpy(fileBuffer + currentBufferOffset, out, BLOCK_SIZE);
-            currentBufferOffset += BLOCK_SIZE;
+            if (!process_hot_block(mp, blk, entry.starting_block_offset, take)) {
+                delete[] fileBuffer;
+                return { nullptr, false };
+            }
         }
-
-        ++currentBlockId;
     }
 
-    if (pFileGlobal) std::fclose(pFileGlobal);
-    for (auto& kv : patchFiles) if (kv.second) std::fclose(kv.second);
+    // ---- middle blocks ----
+    int b = firstBlock + 1;
+    while (b <= lastBlock - 1) {
+        const Block& blk = Blocks[b];
+        if ((blk.bitFlag & 0x3) == 0) {
+            // coalesce run of plain contiguous blocks
+            const uint32_t pid = blk.patchID;
+            const MappedPkg* mp = mp_for(pid);
+            uint64_t expected = blk.offset;
+            size_t runBytes = 0;
+            int runStart = b;
 
+            while (b <= lastBlock - 1) {
+                const Block& cur = Blocks[b];
+                if ((cur.bitFlag & 0x3) != 0 ||
+                    cur.patchID != pid ||
+                    cur.offset != expected)
+                    break;
+                runBytes += (size_t)cur.size;       // advance by cur.size
+                expected += (uint64_t)cur.size;
+                ++b;
+            }
+
+            const uint8_t* src = mp->ptr(Blocks[runStart].offset);
+            std::memcpy(fileBuffer + dstOff, src, runBytes);
+            dstOff += runBytes;
+        }
+        else {
+            const MappedPkg* mp = mp_for(blk.patchID);
+            if (!process_hot_block(mp, blk, 0, BLOCK_SIZE)) {
+                delete[] fileBuffer;
+                return { nullptr, false };
+            }
+            ++b;
+        }
+    }
+
+    // ---- last block (if >1 block total) ----
+    if (firstBlock != lastBlock) {
+        const Block& blk = Blocks[lastBlock];
+        const MappedPkg* mp = mp_for(blk.patchID);
+        const size_t tail = entry.file_size - dstOff;
+        if ((blk.bitFlag & 0x3) == 0) {
+            copy_from_mmap(mp, blk, 0, tail);
+        }
+        else {
+            if (!process_hot_block(mp, blk, 0, tail)) {
+                delete[] fileBuffer;
+                return { nullptr, false };
+            }
+        }
+    }
+
+    ret.success = true;
     return ret;
 }
 
@@ -396,10 +400,6 @@ std::unordered_map<int, Package> GeneratePackageCache(std::unordered_map<int, Re
             std::memcpy(pkg.redacted_nonce, Redacted_Keys[pkg.Header.packageGroupId].nonce, 12);
             std::memcpy(pkg.redacted_key, Redacted_Keys[pkg.Header.packageGroupId].key, 16);
             pkg.hasRedactedKey = true;
-
-            std::call_once(g_aes_once, InitAesOnce);
-            if (g_aes_alg)
-                pkg.hRedactedKey = ImportAesKey(g_aes_alg, pkg.redacted_key); // <--- import ONCE
         }
 
         PackageMap[pair.first] = pkg;
