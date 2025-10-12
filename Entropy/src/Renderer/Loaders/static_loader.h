@@ -8,6 +8,7 @@
 #include "Renderer/Graphics/Buffers/IndexBuffer.h"
 #include "Renderer/Graphics/Buffers/ConstantBuffer.h"
 #include "Renderer/Graphics/Shaders/material.h"
+#include "TigerEngine/Technique/texture.h"
 
 using namespace DirectX;
 

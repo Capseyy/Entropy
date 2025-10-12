@@ -1,14 +1,13 @@
+Texture2D    tex0  : register(t0);
+SamplerState samp1 : register(s1); // bind sampler to s1 on CPU
+
 struct PS_INPUT
 {
-    float4 inPosition : SV_POSITION;
-    float2 inTexCoord : TEXCOORD;
+    float4 pos : SV_Position;
+    float2 uv  : TEXCOORD0;
 };
 
-Texture2D objTexture : TEXTURE : register(t0);
-SamplerState objSamplerState : SAMPLER : register(s0);
-
-float4 main(PS_INPUT input) : SV_Target
+float4 main(PS_INPUT i) : SV_Target
 {
-    float3 pixelColor = objTexture.Sample(objSamplerState, input.inTexCoord.xy).rgb;
-    return float4(pixelColor, 1.0f);
+    return tex0.Sample(samp1, i.uv);
 }

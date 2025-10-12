@@ -1,5 +1,4 @@
 #pragma once
-
 #include <string>
 #include <unordered_map>
 #include "string.h"
@@ -66,27 +65,6 @@ public:
 	STechniqueShader ComputeShader;
 	Material Initialize(ID3D11Device* device, ID3D11DeviceContext* deviceContext, D3D11_INPUT_ELEMENT_DESC* desc, UINT numElements);
 };
-
-
-
-struct STextureHeader {
-public:
-	uint32_t dataSize;
-	uint32_t dxgiFormat;
-	std::array<uint32_t,6> _unk08;
-	uint16_t cafe;
-	uint16_t width;
-	uint16_t height;
-	uint16_t depth;
-	uint16_t arraySize;
-	uint16_t tileCount;
-	uint8_t unk2c;
-	uint8_t mipCount;
-	std::array<uint8_t,10> _unk2e;
-	uint32_t unk38;
-	TagHash large_buffer;
-};
-
 
 #pragma pack(push, 1)
 struct UT_SamplerRaw

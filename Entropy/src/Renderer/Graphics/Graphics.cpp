@@ -37,101 +37,124 @@ bool Graphics::Initialize(HWND hWnd, int width, int height)
 
 void Graphics::RenderFrame()
 {
-	const float color[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	const float clear[4] = { 0, 0, 0, 1 };
 
-	this->pContext->ClearRenderTargetView(this->pRenderTargetView.Get(), color);
-	pContext->ClearDepthStencilView(this->depthStencilView.Get(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
-	pContext->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY::D3D10_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	pContext->RSSetState(this->rasterizerState.Get());
-	pContext->OMSetDepthStencilState(this->depthStencilState.Get(), 0);
-	pContext->PSSetSamplers(0, 1, this->samplerState.GetAddressOf());
-	//pContext->PSSetShader(this->pixelshader.GetShader(), NULL, 0);
-	//pContext->VSSetShader(this->vertexshader.GetShader(), NULL, 0);
-	//pContext->IASetInputLayout(this->vertexshader.GetInputLayout());
+	// Clear & fixed pipeline state
+	pContext->ClearRenderTargetView(pRenderTargetView.Get(), clear);
+	pContext->ClearDepthStencilView(depthStencilView.Get(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
+	pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	pContext->RSSetState(rasterizerState.Get());
+	pContext->OMSetDepthStencilState(depthStencilState.Get(), 0);
 
+	// ---- 1) UPDATE + BIND VS CONSTANT BUFFER (b0) BEFORE ANY DRAWS ----
+	{
+		using namespace DirectX;
+		XMMATRIX world = XMMatrixIdentity();
+		constantBuffer.data.mat = XMMatrixTranspose(world * camera.GetViewMatrix() * camera.GetProjectionMatrix());
+		if (!constantBuffer.ApplyChanges()) return;
+		ID3D11Buffer* vsCB = constantBuffer.Get();
+		pContext->VSSetConstantBuffers(0, 1, &vsCB); // VS b0
+	}
+
+	// Bind a default sampler (to s0; mirror to s1 if your PS expects s1)
+	{
+		ID3D11SamplerState* s = samplerState.Get();
+		pContext->PSSetSamplers(0, 1, &s); // s0
+		// If your PS uses register(s1), also bind to slot 1:
+		// pContext->PSSetSamplers(1, 1, &s);
+	}
+
+	// ---- 2) DRAW STATIC OBJECTS ----
 	for (auto& Static : static_objects_to_render)
 	{
 		for (auto& part : Static.parts)
 		{
-			ID3D11Buffer* vbs[] = { Static.buffers[part.buffer_index].vertexBuffer.Get(), Static.buffers[part.buffer_index].uvBuffer.Get()};
-			UINT strides[] = {
-				Static.buffers[part.buffer_index].vertexBuffer.header.stride, // slot 0 stride
-				Static.buffers[part.buffer_index].uvBuffer.header.stride  // slot 1 stride (or its own stride)
-			};
-			UINT offsets[] = { 0, 0 };
+			// Shaders
 			auto* vs = part.materialRender.vs.GetShader();
 			auto* ps = part.materialRender.ps.GetShader();
 			if (!vs) { OutputDebugStringA("VS is null\n"); continue; }
 			if (!ps) { OutputDebugStringA("PS is null\n"); continue; }
+			pContext->VSSetShader(vs, nullptr, 0);
+			pContext->PSSetShader(ps, nullptr, 0);
 
-			this->pContext->VSSetShader(vs, nullptr, 0);
-			this->pContext->PSSetShader(ps, nullptr, 0);
-			this->pContext->IASetInputLayout(part.inputLayout.Get());
-			this->pContext->IASetVertexBuffers(0, 2, vbs, strides, offsets);
-			this->pContext->IASetIndexBuffer(Static.buffers[part.buffer_index].indexBuffer.Get(), DXGI_FORMAT::DXGI_FORMAT_R16_UINT, 0);
-			this->pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			this->pContext->DrawIndexed(part.index_count, part.index_start, 0);
+			// Per-material PS constant buffer (assume PS cbuffer is b0)
+			if (part.materialRender.cbuffer_ps)
+			{
+				ID3D11Buffer* psCB = part.materialRender.cbuffer_ps.Get();
+				pContext->PSSetConstantBuffers(part.material.PixelShader.constant_buffer_slot, 1, &psCB); // PS b0 (NOT 1)
+			}
+
+			// PS SRVs (assume shader uses t0..tN)
+			std::vector<ID3D11ShaderResourceView*> rawSrvs;
+			rawSrvs.reserve(part.materialRender.ps_textures.size());
+			for (auto& s : part.materialRender.ps_textures)
+				rawSrvs.push_back(s.Get());
+			if (!rawSrvs.empty())
+				pContext->PSSetShaderResources(0, (UINT)rawSrvs.size(), rawSrvs.data()); // t0+
+
+			// Input Assembler: layout + vertex/index buffers
+			pContext->IASetInputLayout(part.inputLayout.Get());
+
+			ID3D11Buffer* vbs[] = {
+				Static.buffers[part.buffer_index].vertexBuffer.Get(), // slot 0
+				Static.buffers[part.buffer_index].uvBuffer.Get()      // slot 1
+			};
+			UINT strides[] = {
+				Static.buffers[part.buffer_index].vertexBuffer.header.stride,
+				Static.buffers[part.buffer_index].uvBuffer.header.stride
+			};
+			UINT offsets[] = { 0, 0 };
+			pContext->IASetVertexBuffers(0, 2, vbs, strides, offsets);
+			pContext->IASetIndexBuffer(Static.buffers[part.buffer_index].indexBuffer.Get(), DXGI_FORMAT_R16_UINT, 0);
+
+			// Draw
+			using namespace DirectX;
+			XMMATRIX world = XMMatrixIdentity();
+			XMMATRIX wvp = XMMatrixTranspose(world * camera.GetViewMatrix() * camera.GetProjectionMatrix());
+			constantBuffer.data.mat = wvp;
+			if (!constantBuffer.ApplyChanges()) return;
+
+			ID3D11Buffer* vsCB = constantBuffer.Get();
+			pContext->VSSetConstantBuffers(0, 1, &vsCB);       // VS b0  <-- before any Draw()
+			pContext->DrawIndexed(part.index_count, part.index_start, 0);
 		}
 	}
-	UINT offset = 0;
 
-	//Update Constant Buffer
-	DirectX::XMMATRIX world = DirectX::XMMatrixIdentity();
-
-	constantBuffer.data.mat = world * camera.GetViewMatrix() * camera.GetProjectionMatrix();
-	constantBuffer.data.mat = DirectX::XMMatrixTranspose(constantBuffer.data.mat);
-	
-	if (!constantBuffer.ApplyChanges()) {
-		return;
-	}
-	this->pContext->VSSetConstantBuffers(0, 1, this->constantBuffer.GetAddressOf());
-	//DirectX::XMMATRIX worldMatrix = DirectX::XMMatrixIdentity();
-
-	//Text
-	if (!fpsTimer.isrunning) 
-	{
-		fpsTimer.Start();
-	}
-
+	// HUD/Text (after your 3D draws)
+	if (!fpsTimer.isrunning) fpsTimer.Start();
 	static int fpsCounter = 0;
 	static std::string fpsString = "FPS: 0";
 	fpsCounter++;
-	if (fpsTimer.GetMilisecondsElapsed() > 1000)
-	{
+	if (fpsTimer.GetMilisecondsElapsed() > 1000) {
 		fpsString = "FPS: " + std::to_string(fpsCounter);
 		fpsCounter = 0;
 		fpsTimer.Restart();
 	}
 	auto CameraPos = camera.GetPositionFloat3();
-	std::string CameraPrint = std::format("X: {:.2f}  Y: {:.2f}  Z: {:.2f}",
-		CameraPos.x, CameraPos.y, CameraPos.z);
+	std::string CameraPrint = std::format("X: {:.2f}  Y: {:.2f}  Z: {:.2f}", CameraPos.x, CameraPos.y, CameraPos.z);
+
 	spriteBatch->Begin();
-	spriteFont->DrawString(spriteBatch.get(),StringConverter::StringToWide(fpsString).c_str(), DirectX::XMFLOAT2(0, 0), DirectX::Colors::Wheat, 0.0f, DirectX::XMFLOAT2(0, 0), DirectX::XMFLOAT2(1.0f, 1.0f));
-	spriteFont->DrawString(spriteBatch.get(), StringConverter::StringToWide(CameraPrint).c_str(), DirectX::XMFLOAT2(0, 50), DirectX::Colors::Wheat, 0.0f, DirectX::XMFLOAT2(0, 0), DirectX::XMFLOAT2(1.0f, 1.0f));
+	spriteFont->DrawString(spriteBatch.get(), StringConverter::StringToWide(fpsString).c_str(),
+		DirectX::XMFLOAT2(0, 0), DirectX::Colors::Wheat);
+	spriteFont->DrawString(spriteBatch.get(), StringConverter::StringToWide(CameraPrint).c_str(),
+		DirectX::XMFLOAT2(0, 50), DirectX::Colors::Wheat);
 	spriteBatch->End();
 
-
-
-
-	//IMGUI
+	// ImGui
 	ImGui_ImplDX11_NewFrame();
 	ImGui_ImplWin32_NewFrame();
 	ImGui::NewFrame();
 	ImGui::Begin("Test");
 	static float value = 50.0f;
-	if (ImGui::DragFloat("Speed X:", &value, 1, 0.0f, 100.0f, "%.0f%%")) {
-		camera.SetSpeed(value/10.0f);
-	}
+	if (ImGui::DragFloat("Speed X:", &value, 1, 0.0f, 100.0f, "%.0f%%"))
+		camera.SetSpeed(value / 10.0f);
 	ImGui::End();
-
 	ImGui::Render();
-
 	ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 
-
-	pSwapChain->Present(0, NULL);
-
+	pSwapChain->Present(1, 0);
 }
+
 
 bool Graphics::InitializeDirectX(HWND hWnd)
 {
@@ -253,9 +276,9 @@ bool Graphics::InitializeShaders()
 {
 	D3D11_INPUT_ELEMENT_DESC layout[] =
 	{
-		{"POSITION", 0, DXGI_FORMAT::DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
-		{"TEXCOORD", 0, DXGI_FORMAT::DXGI_FORMAT_R32G32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0},
-
+		{ "POSITION", 0, DXGI_FORMAT_R16G16B16A16_SNORM, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 }, // slot 0, offset 0
+		{ "TANGENT",  0, DXGI_FORMAT_R16G16B16A16_SNORM, 0, 8, D3D11_INPUT_PER_VERTEX_DATA, 0 }, // slot 0, offset 8
+		{ "TEXCOORD", 0, DXGI_FORMAT_R16G16_SNORM,       1, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 }, // slot 1, offset 0
 	};
 
 	for (auto& static_obj : this->static_objects_to_render)

@@ -5,8 +5,9 @@ cbuffer mycBuffer : register(b0)
 
 struct VS_INPUT
 {
-	float3 pos : POSITION;
-    float2 inTexCoord : TEXCOORD;
+	float4 pos : POSITION;
+    float4 tangent : TANGENT;
+    float2 uv : TEXCOORD;
 };
 
 struct VS_OUTPUT
@@ -18,7 +19,8 @@ struct VS_OUTPUT
 VS_OUTPUT main(VS_INPUT input)
 {
     VS_OUTPUT output;
-    output.outPosition = mul(float4(input.pos, 1.0f), mat);
-    output.outTexCoord = input.inTexCoord;
+    float4 p = float4(input.pos.xyz, 1.0);
+    output.outPosition = mul(mat, p);
+    output.outTexCoord = input.uv;
     return output;
 };

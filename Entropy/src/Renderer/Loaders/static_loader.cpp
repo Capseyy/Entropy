@@ -81,7 +81,7 @@ void StaticRenderer::Process()
 bool StaticRenderer::InitializeRender(ID3D11Device* device,ID3D11DeviceContext* deviceContext)
 {
 	for (auto& part : this->parts)
-	{
+	{   //needs to load techniques seperately cos they are shared a lot
 		auto input_desc = INPUT_LAYOUTS[part.input_layout_index];
 		Microsoft::WRL::ComPtr<ID3D11InputLayout> outLayout;
 		D3D11_INPUT_ELEMENT_DESC outDesc;
@@ -95,8 +95,24 @@ bool StaticRenderer::InitializeRender(ID3D11Device* device,ID3D11DeviceContext* 
 		printf("PSs Tag: %08X\n", part.materialRender.ps.tag.hash);
 		part.materialRender.vs.Initialize(device, &outDesc, input_desc.elements.size());
 		part.materialRender.ps.Initialize(device);
+		for (auto tex : part.material.PixelShader.Textures) {
+			TigerTexture tigerTex;
+			auto HeaderTag = TagHash(tex.Texture.tagHash32);
+			auto smallTag = TagHash(HeaderTag.reference);
+			STextureHeader th = bin::parse<STextureHeader>(HeaderTag.data, HeaderTag.size);
+			tigerTex.textureIndex = tex.TextureIndex;
+			tigerTex.smallBuffer = smallTag;
+			tigerTex.header = th;
+			tigerTex.Initialize(device, HeaderTag);
+			if (part.material.PixelShader.contstant_buffer.hash != 0xffffffff)
+			{
+				part.materialRender.InitializeCBuffer(device, th.dataSize, TagHash(part.material.PixelShader.contstant_buffer.reference));
+			}
+			part.materialRender.ps_textures.push_back(tigerTex.GetTexture());
+		}
+			
+		
 	}
-	
 	this->buffers[0].indexBuffer.Initialize(device);
 	this->buffers[0].vertexBuffer.Initialize(device);
 	this->buffers[0].uvBuffer.Initialize(device);

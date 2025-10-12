@@ -12,5 +12,7 @@ public:
 	D2PixelShader ps;
 	std::vector<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>> ps_textures;
 	Microsoft::WRL::ComPtr<ID3D11Buffer> cbuffer_ps;
+	void InitializeCBuffer(ID3D11Device* device, UINT byteWidth, TagHash cbuffer);
+
 };
 
