@@ -80,8 +80,7 @@ void StaticRenderer::Process()
 
 bool StaticRenderer::InitializeRender(ID3D11Device* device,ID3D11DeviceContext* deviceContext)
 {
-
-	for (auto part : this->parts)
+	for (auto& part : this->parts)
 	{
 		auto input_desc = INPUT_LAYOUTS[part.input_layout_index];
 		Microsoft::WRL::ComPtr<ID3D11InputLayout> outLayout;
@@ -89,7 +88,13 @@ bool StaticRenderer::InitializeRender(ID3D11Device* device,ID3D11DeviceContext* 
 		HRESULT hr = CreateInputLayoutFromTigerLayout(device, input_desc, outLayout, outDesc);
 		if (FAILED(hr))
 			ErrorLogger::Log(hr, L"Failed CreateInputLayoutFromTigerLayout on return");
-		part.material.Initialize(device, deviceContext, &outDesc, INPUT_LAYOUTS[part.input_layout_index].elements.size());
+		part.inputLayout = outLayout;
+		part.materialRender.vs.tag = TagHash(part.material.VertexShader.ShaderTag.reference);
+		printf("VSs Tag: %08X\n", part.materialRender.vs.tag.hash);
+		part.materialRender.ps.tag = TagHash(part.material.PixelShader.ShaderTag.reference);
+		printf("PSs Tag: %08X\n", part.materialRender.ps.tag.hash);
+		part.materialRender.vs.Initialize(device, &outDesc, input_desc.elements.size());
+		part.materialRender.ps.Initialize(device);
 	}
 	
 	this->buffers[0].indexBuffer.Initialize(device);

@@ -129,20 +129,17 @@ ID3D10Blob* PixelShader::GetBuffer() {
 }
 
 
-bool D2VertexShader::Initialize(Microsoft::WRL::ComPtr<ID3D11Device>& device, D3D11_INPUT_ELEMENT_DESC* layoutDesc, UINT numElements) {
+bool D2VertexShader::Initialize(ID3D11Device* device, D3D11_INPUT_ELEMENT_DESC* layoutDesc, UINT numElements) {
 	HRESULT hr = device->CreateVertexShader(
-		shader_buffer->GetBufferPointer(),
-		shader_buffer->GetBufferSize(),
+		tag.data,
+		tag.size,
 		NULL,
 		shader.GetAddressOf()
 	);
-	hr = device->CreateInputLayout(
-		layoutDesc,
-		numElements,
-		shader_buffer->GetBufferPointer(),
-		shader_buffer->GetBufferSize(),
-		inputLayout.GetAddressOf()
-	);
+	if (FAILED(hr)) {
+		ErrorLogger::Log(hr, "Failed to create D2 vertex shader from tag data");
+		return false;
+	}
 	return true;
 }
 
@@ -158,13 +155,17 @@ ID3D11InputLayout* D2VertexShader::GetInputLayout() {
 	return inputLayout.Get();
 }
 
-bool D2PixelShader::Initialize(Microsoft::WRL::ComPtr<ID3D11Device>& device) {
+bool D2PixelShader::Initialize(ID3D11Device* device) {
 	HRESULT hr = device->CreatePixelShader(
-		shader_buffer->GetBufferPointer(),
-		shader_buffer->GetBufferSize(),
+		tag.data,
+		tag.size,
 		NULL,
 		shader.GetAddressOf()
 	);
+	if (FAILED(hr)) {
+		ErrorLogger::Log(hr, "Failed to create D2 pixel shader from tag data");
+		return false;
+	}
 	return true;
 }
 

@@ -49,9 +49,29 @@ void Graphics::RenderFrame()
 	//pContext->VSSetShader(this->vertexshader.GetShader(), NULL, 0);
 	//pContext->IASetInputLayout(this->vertexshader.GetInputLayout());
 
-	for (auto Static : this->static_objects_to_render)
+	for (auto& Static : static_objects_to_render)
 	{
-		
+		for (auto& part : Static.parts)
+		{
+			ID3D11Buffer* vbs[] = { Static.buffers[part.buffer_index].vertexBuffer.Get(), Static.buffers[part.buffer_index].uvBuffer.Get()};
+			UINT strides[] = {
+				Static.buffers[part.buffer_index].vertexBuffer.header.stride, // slot 0 stride
+				Static.buffers[part.buffer_index].uvBuffer.header.stride  // slot 1 stride (or its own stride)
+			};
+			UINT offsets[] = { 0, 0 };
+			auto* vs = part.materialRender.vs.GetShader();
+			auto* ps = part.materialRender.ps.GetShader();
+			if (!vs) { OutputDebugStringA("VS is null\n"); continue; }
+			if (!ps) { OutputDebugStringA("PS is null\n"); continue; }
+
+			this->pContext->VSSetShader(vs, nullptr, 0);
+			this->pContext->PSSetShader(ps, nullptr, 0);
+			this->pContext->IASetInputLayout(part.inputLayout.Get());
+			this->pContext->IASetVertexBuffers(0, 2, vbs, strides, offsets);
+			this->pContext->IASetIndexBuffer(Static.buffers[part.buffer_index].indexBuffer.Get(), DXGI_FORMAT::DXGI_FORMAT_R16_UINT, 0);
+			this->pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			this->pContext->DrawIndexed(part.index_count, part.index_start, 0);
+		}
 	}
 	UINT offset = 0;
 
@@ -276,9 +296,10 @@ bool Graphics::InitializeScene()
 		camera.SetPosition(0.0f, 0.0f, -2.0f);
 		camera.SetProjectionValues(90.0f, static_cast<float>(windowWidth) / static_cast<float>(windowHeight), 0.01f, 1000.0f);
 
-		for (auto Static : this->static_objects_to_render)
+		for (auto& Static : this->static_objects_to_render)
 		{
 			Static.InitializeRender(pDevice.Get(), pContext.Get());
+
 		}
 	}
 	catch (COMException& exception)

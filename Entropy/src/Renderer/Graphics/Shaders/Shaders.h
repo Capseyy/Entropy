@@ -35,13 +35,14 @@ private:
 class D2VertexShader
 {
 public:
-	bool Initialize(Microsoft::WRL::ComPtr<ID3D11Device>& device,D3D11_INPUT_ELEMENT_DESC* layoutDesc, UINT numElements);
+	bool Initialize(ID3D11Device* device,D3D11_INPUT_ELEMENT_DESC* layoutDesc, UINT numElements);
 	bool InitializeBlob(Microsoft::WRL::ComPtr<ID3D11Device>& device,D3D11_INPUT_ELEMENT_DESC* layoutDesc, UINT numElements);
 	ID3D11VertexShader* GetShader();
 	ID3D10Blob* GetBuffer();
 	ID3D11InputLayout* GetInputLayout();
 	TagHash tag;
 	std::vector<TagHash> vs_texs;
+	void SetShader(Microsoft::WRL::ComPtr<ID3D11PixelShader> newShader);
 private:
 	Microsoft::WRL::ComPtr<ID3D11VertexShader> shader;
 	Microsoft::WRL::ComPtr<ID3D10Blob> shader_buffer;
@@ -51,7 +52,7 @@ private:
 class D2PixelShader
 {
 public:
-	bool Initialize(Microsoft::WRL::ComPtr<ID3D11Device>& device);
+	bool Initialize(ID3D11Device* device);
 	ID3D11PixelShader* GetShader();
 	ID3D10Blob* GetBuffer();
 	TagHash tag;

@@ -28,6 +28,10 @@ struct StaticPart {
 	uint8_t PrimitiveType;
 	STechnique material;
 	uint8_t input_layout_index;
+	Microsoft::WRL::ComPtr<ID3D11InputLayout> inputLayout;
+	Microsoft::WRL::ComPtr<ID3D11VertexShader> vertexShader;
+	Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShader;
+	Material materialRender;
 };
 
 class StaticRenderer

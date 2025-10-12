@@ -64,8 +64,7 @@ public:
 	STechniqueShader GeometryShader;
 	STechniqueShader PixelShader;
 	STechniqueShader ComputeShader;
-
-	void Initialize(ID3D11Device* device, ID3D11DeviceContext* deviceContext, D3D11_INPUT_ELEMENT_DESC* desc, UINT numElements);
+	Material Initialize(ID3D11Device* device, ID3D11DeviceContext* deviceContext, D3D11_INPUT_ELEMENT_DESC* desc, UINT numElements);
 };
 
 

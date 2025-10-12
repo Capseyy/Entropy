@@ -103,6 +103,7 @@
     <LibraryPath>$(ProjectDir)imports;$(LibraryPath)</LibraryPath>
     <RunCodeAnalysis>false</RunCodeAnalysis>
     <ExternalIncludePath>$(SolutionDir)Entropy\imports;$(ExternalIncludePath)</ExternalIncludePath>
+    <LinkIncremental>false</LinkIncremental>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug2|x64'">
     <IncludePath>$(SolutionDir)Entropy\imports;C:\Users\SAM-PC\source\repos\CapTinRender\imgui-1.92.1;$(IncludePath)</IncludePath>
@@ -234,7 +235,6 @@
     <ClCompile Include="src\Renderer\Graphics\ImGui\imgui_impl_win32.cpp" />
     <ClCompile Include="src\Renderer\Graphics\ImGui\imgui_tables.cpp" />
     <ClCompile Include="src\Renderer\Graphics\ImGui\imgui_widgets.cpp" />
-    <ClCompile Include="src\TigerEngine\globaldata.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Shaders\Shaders.cpp" />
     <ClCompile Include="src\Renderer\Graphics\GPUAdapter.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Graphics.cpp" />

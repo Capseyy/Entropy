@@ -268,9 +268,17 @@ ExtractResult Package::ExtractEntry(const int EntryNumber)
                 }
             }
             if (blk.bitFlag & 0x1) {
-                unsigned char* de = decompBuf.data();
-                decompressBlock(blk, io, de);
-                out = de;
+                if (takeFrom == 0 && n == BLOCK_SIZE) {
+                    unsigned char* dest = fileBuffer + dstOff;     // capture from outer scope (lambda -> make a small inline function if needed)
+                    decompressBlock(blk, io, dest);                // change decompressBlock signature to accept out pointer directly
+                    dstOff += BLOCK_SIZE;
+                    return true;
+                }
+                else {
+                    unsigned char* de = decompBuf.data();
+                    decompressBlock(blk, io, de);
+                    out = de;
+                }
             }
             std::memcpy(fileBuffer + dstOff, out + takeFrom, n);
             dstOff += n;
@@ -324,9 +332,22 @@ ExtractResult Package::ExtractEntry(const int EntryNumber)
         }
         else {
             const MappedPkg* mp = mp_for(blk.patchID);
-            if (!process_hot_block(mp, blk, 0, BLOCK_SIZE)) {
-                delete[] fileBuffer;
-                return { nullptr, false };
+
+            const bool decryptOnly = (blk.bitFlag & 0x2) && !(blk.bitFlag & 0x1);
+            const bool fullBlock = (BLOCK_SIZE == BLOCK_SIZE) && /* middle block */ true;
+
+            if (decryptOnly && fullBlock) {
+                // copy ciphertext straight into destination slice, then decrypt in place
+                unsigned char* dst = fileBuffer + dstOff;
+                std::memcpy(dst, mp->ptr(blk.offset), blk.size);
+                unsigned char* ignored = dst;
+                if (!decryptBlock(blk, dst, ignored)) { delete[] fileBuffer; return { nullptr,false }; }
+                dstOff += BLOCK_SIZE;
+            }
+            else {
+                if (!process_hot_block(mp, blk, 0, BLOCK_SIZE)) {
+                    delete[] fileBuffer; return { nullptr, false };
+                }
             }
             ++b;
         }
@@ -517,7 +538,6 @@ void SearchBungieFiles(uint32_t value)
     std::printf("Collected Tags in %.3f seconds\n", elapsed.count());
 
     start = std::chrono::high_resolution_clock::now();
-
     std::vector<uint8_t> found(hashes.size());
     std::transform(std::execution::par_unseq,
         hashes.begin(), hashes.end(),

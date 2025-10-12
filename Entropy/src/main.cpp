@@ -29,9 +29,13 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int)
 	}
 	printf("Loaded %zu packages\n", GlobalData::getMap().size());
 	printf("Loaded %zu h64 entries\n", GlobalData::getH64().size());
-	//auto StringMap = GenerateStringMap();
-	//printf("Loaded String Map with %zu entries\n", StringMap.size());
-	SearchBungieFiles(0x5646232F);
+	auto start = std::chrono::high_resolution_clock::now();
+	auto StringMap = GenerateStringMap();
+	auto end = std::chrono::high_resolution_clock::now();
+	std::chrono::duration<double> elapsed = end - start;
+	printf("Loaded String Map with %zu entries in %.3f seconds\n",
+		StringMap.size(), elapsed.count());
+	//SearchBungieFiles(0x5646232F);
 	HRESULT hr = CoInitialize(NULL);
 	if (FAILED(hr))
 	{
