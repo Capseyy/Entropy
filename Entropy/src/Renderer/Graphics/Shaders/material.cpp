@@ -19,3 +19,34 @@ void Material::InitializeCBuffer(ID3D11Device* device, UINT byteWidth, TagHash c
 		throw std::runtime_error("Failed to create constant buffer for material.");
 	}
 }
+
+void Material::InitializeSampler(ID3D11Device* device, UT_SamplerRaw sampTag)
+{
+    if (!device) throw std::runtime_error("InitializeSampler: device is null");
+
+    D3D11_SAMPLER_DESC sd = {};
+    // Cast raw numeric enums from your game data to D3D11 types (with light sanitization)
+    sd.Filter = static_cast<D3D11_FILTER>(sampTag.Filter);
+    sd.AddressU = static_cast<D3D11_TEXTURE_ADDRESS_MODE>(sampTag.AddressU);
+    sd.AddressV = static_cast<D3D11_TEXTURE_ADDRESS_MODE>(sampTag.AddressV);
+    sd.AddressW = static_cast<D3D11_TEXTURE_ADDRESS_MODE>(sampTag.AddressW);
+
+    sd.MipLODBias = sampTag.MipLODBias;
+    sd.MaxAnisotropy = std::clamp(sampTag.MaxAnisotropy, 1u, 16u);
+
+    sd.ComparisonFunc = static_cast<D3D11_COMPARISON_FUNC>(sampTag.ComparisonFunc);
+
+    sd.BorderColor[0] = sampTag.BorderColor[0];
+    sd.BorderColor[1] = sampTag.BorderColor[1];
+    sd.BorderColor[2] = sampTag.BorderColor[2];
+    sd.BorderColor[3] = sampTag.BorderColor[3];
+
+    sd.MinLOD = sampTag.MinLOD;
+    sd.MaxLOD = (sampTag.MaxLOD <= 0.0f) ? D3D11_FLOAT32_MAX : sampTag.MaxLOD;
+
+    // If filter isn’t anisotropic, driver ignores MaxAnisotropy; if it IS comparison filter, use SampleCmp in HLSL.
+
+    HRESULT hr = device->CreateSamplerState(&sd, &sampler);
+    if (FAILED(hr))
+        throw std::runtime_error("Failed to create sampler state.");
+}

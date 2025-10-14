@@ -33,6 +33,11 @@ struct StaticPart {
 	Microsoft::WRL::ComPtr<ID3D11VertexShader> vertexShader;
 	Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShader;
 	Material materialRender;
+	std::array<float_t, 3> mesh_offset;
+	float_t mesh_scale;
+	float_t texture_coordinate_scale;
+	std::array<float_t, 2> texture_coordinate_offset;
+	uint32_t max_colour_index;
 };
 
 class StaticRenderer

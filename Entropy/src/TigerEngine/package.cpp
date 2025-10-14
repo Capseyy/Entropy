@@ -74,7 +74,7 @@ std::vector<uint32_t> GetAllTagsFromReference(uint32_t reference) {
     return AllTagHashesOfType;
 }
 
-std::vector<std::pair<uint32_t, const Package*>> GetAllTagsOfType(uint16_t type) {
+std::vector<std::pair<uint32_t, const Package*>> GetAllTagsOfType(uint16_t type, uint16_t subtype) {
     std::cout << "Collect all type function cast for - " << type << std::endl;
 
     std::vector<std::pair<uint32_t, const Package*>> out;
@@ -85,7 +85,7 @@ std::vector<std::pair<uint32_t, const Package*>> GetAllTagsOfType(uint16_t type)
         size_t entryID = 0;
 
         for (const auto& entry : pkg.Entries) {    // const is fine
-            if (entry.file_type == type) {
+            if (entry.file_type == type && entry.file_subtype == subtype) {
                 const uint32_t num = 0x80800000u
                     + (static_cast<uint32_t>(pkg.Header.pkgID) << 13)
                     + static_cast<uint32_t>(entryID);
@@ -526,12 +526,12 @@ int getEntryID(uint32_t hash) {
 void SearchBungieFiles(uint32_t value)
 {
     auto start = std::chrono::high_resolution_clock::now();
-    auto hashes = GetAllTagsOfType(8);
-    auto hashes16 = GetAllTagsOfType(16);
-    for (auto hash : hashes16)
-    {
-        hashes.push_back(hash);
-    }
+    auto hashes = GetAllTagsOfType(40,7);
+    //auto hashes16 = GetAllTagsOfType(16);
+    //for (auto hash : hashes16)
+    //{
+     //   hashes.push_back(hash);
+    //}
     std::printf("Collected %zu Hashes for Type %d\n", hashes.size(), 8);
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = end - start;

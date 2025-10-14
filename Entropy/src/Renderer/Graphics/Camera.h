@@ -33,7 +33,10 @@ public:
 	float SetSpeed(float speed);
 	float CameraSpeed = 0.006f;
 	float speed_base = 0.006f;
+	float GetNearZ() const { return nearZ; }
+	float GetFarZ()  const { return farZ; }
 private:
+	float fov, aspectRatio, nearZ, farZ;
 	void UpdateViewMatrix();
 	XMVECTOR posVector;
 	XMVECTOR rotVector;

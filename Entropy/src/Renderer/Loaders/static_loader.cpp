@@ -71,6 +71,12 @@ void StaticRenderer::Process()
 		auto Technique = bin::parse<STechnique>(technique_tag.data, technique_tag.size, bin::Endian::Little);
 		sp.input_layout_index = meshGroup.input_layout_index;
 		sp.material = Technique;
+		sp.mesh_offset = mesh_struct.mesh_offset;
+		sp.mesh_scale = mesh_struct.mesh_scale;
+		sp.texture_coordinate_scale = mesh_struct.texture_coordinate_scale;
+		sp.texture_coordinate_offset = mesh_struct.texture_coordinate_offset;
+		sp.max_colour_index = mesh_struct.max_colour_index;
+
 		MatIndex++;
 		if ((mesh_struct.parts[meshGroup.part_index].LodCatagory) == 1)
 			parts.push_back(sp);
@@ -107,6 +113,11 @@ bool StaticRenderer::InitializeRender(ID3D11Device* device,ID3D11DeviceContext* 
 			if (part.material.PixelShader.contstant_buffer.hash != 0xffffffff)
 			{
 				part.materialRender.InitializeCBuffer(device, th.dataSize, TagHash(part.material.PixelShader.contstant_buffer.reference));
+			}
+			for (auto& samp : part.material.PixelShader.Samplers) {
+				auto SamplerTag = TagHash(samp.sampler.reference);
+				auto sampler = bin::parse<UT_SamplerRaw>(SamplerTag.data, SamplerTag.size);
+				part.materialRender.InitializeSampler(device, sampler);
 			}
 			part.materialRender.ps_textures.push_back(tigerTex.GetTexture());
 		}

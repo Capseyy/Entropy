@@ -35,7 +35,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int)
 	std::chrono::duration<double> elapsed = end - start;
 	printf("Loaded String Map with %zu entries in %.3f seconds\n",
 		StringMap.size(), elapsed.count());
-	//SearchBungieFiles(0x5646232F);
+	//SearchBungieFiles(0x3D2BDBAC);
 	HRESULT hr = CoInitialize(NULL);
 	if (FAILED(hr))
 	{
