@@ -11,6 +11,7 @@
 #include "Renderer/Graphics/ImGui/imgui.h"
 #include "Renderer/Graphics/ImGui/imgui_impl_win32.h"
 #include "Renderer/Graphics/ImGui/imgui_impl_dx11.h"
+#include "Renderer/Graphics/Scope/view.h"
 #include "Model.h"
 
 class Graphics
@@ -39,6 +40,8 @@ private:
 	UINT offset = 0;
 
 	Model model;
+
+	CD3D11_VIEWPORT viewport;
 
 	ConstantBuffer<CB_VS_vertexshader> constantBuffer;
 

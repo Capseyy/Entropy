@@ -114,6 +114,9 @@ bool StaticRenderer::InitializeRender(ID3D11Device* device,ID3D11DeviceContext* 
 			{
 				part.materialRender.InitializeCBuffer(device, th.dataSize, TagHash(part.material.PixelShader.contstant_buffer.reference));
 			}
+			else {
+				part.materialRender.InitializeCBufferFallback(device, th.dataSize, part.material.PixelShader.SamplerFallback);
+			}
 			for (auto& samp : part.material.PixelShader.Samplers) {
 				auto SamplerTag = TagHash(samp.sampler.reference);
 				auto sampler = bin::parse<UT_SamplerRaw>(SamplerTag.data, SamplerTag.size);

@@ -20,6 +20,24 @@ void Material::InitializeCBuffer(ID3D11Device* device, UINT byteWidth, TagHash c
 	}
 }
 
+void Material::InitializeCBufferFallback(ID3D11Device* device, UINT byteWidth, std::vector<Unk_90008080> fallbackBytes)
+{
+	D3D11_BUFFER_DESC bd{};
+	bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+	bd.ByteWidth = (UINT)fallbackBytes.size()*16;
+	bd.Usage = D3D11_USAGE_DEFAULT;   // or D3D11_USAGE_IMMUTABLE if never changes
+	bd.CPUAccessFlags = 0;
+
+	D3D11_SUBRESOURCE_DATA init{};
+	init.pSysMem = fallbackBytes.data();               // can be smaller than ByteWidth; driver reads blobSize
+
+	HRESULT hr = device->CreateBuffer(&bd, &init, &this->cbuffer_ps_fallback);
+	if (FAILED(hr))
+	{
+		throw std::runtime_error("Failed to create constant buffer for material.");
+	}
+}
+
 void Material::InitializeSampler(ID3D11Device* device, UT_SamplerRaw sampTag)
 {
     if (!device) throw std::runtime_error("InitializeSampler: device is null");

@@ -3,18 +3,12 @@
 
 
 static inline float asfloat_u32(std::uint32_t u) {
-#if __cpp_lib_bit_cast
 	return std::bit_cast<float>(u);
-#else
-	float f;
-	static_assert(sizeof(f) == sizeof(u), "sizes must match");
-	std::memcpy(&f, &u, sizeof(f));
-	return f;
-#endif
 }
 
+
 // Max instances you plan to send per draw (<= 63 to stay within 4KB)
-constexpr uint32_t MAX_INST = 63;
+constexpr uint32_t MAX_INST = 1;
 
 // Raw cb1 payload = 32 bytes header + 64 bytes per instance * MAX_INST.
 // 32 + 64*63 = 4064 bytes (fits <= 4096).
@@ -62,32 +56,23 @@ void UpdateCB1(
 	const uint32_t count = (uint32_t)std::min<std::size_t>(worlds.size(), MAX_INST);
 
 	for (uint32_t i = 0; i < count; ++i) {
-		// Get ROWS of world: we can extract from the XMMATRIX directly.
-		// XMMATRIX stores rows in r[0]..r[3].
-		XMFLOAT4 r0, r1, r2, r3;
-		XMMATRIX W = worlds[i];            // your world transform
-		// Ensure W is the world you intend (no transpose); we need rows for cb1.
-		XMStoreFloat4(&r0, W.r[0]);        // [m00 m01 m02 m03]  (m03 == tx)
-		XMStoreFloat4(&r1, W.r[1]);        // [m10 m11 m12 m13]  (m13 == ty)
-		XMStoreFloat4(&r2, W.r[2]);        // [m20 m21 m22 m23]  (m23 == tz)
-		XMStoreFloat4(&r3, W.r[3]);        // [m30 m31 m32 m33]  (usually 0,0,0,1)
+		const uint32_t base = 4u * i;
 
-		// Write rows into cb1 (with a flag row as base+3)
-		const uint32_t base = 4 * i;
-		cb->rows[base + 0] = r0;                 // translation.x is r0.w
-		cb->rows[base + 1] = r1;                 // translation.y is r1.w
-		cb->rows[base + 2] = r2;                 // translation.z is r2.w
-		cb->rows[base + 3] = flagRow;            // special row w/ flag (matches shader)
+		DirectX::XMFLOAT4 r0f, r1f, r2f, r3f;
+		const DirectX::XMMATRIX W = worlds[i];      // NO transpose
+		XMStoreFloat4(&r0f, W.r[0]);                // m00 m01 m02 m03
+		XMStoreFloat4(&r1f, W.r[1]);                // m10 m11 m12 m13
+		XMStoreFloat4(&r2f, W.r[2]);                // m20 m21 m22 m23
+		XMStoreFloat4(&r3f, W.r[3]);                // tx  ty  tz  1
+
+		// Proper 3x4: translation lives in .w of each row (no bit twiddling)
+		cb->rows[base + 0] = { r0f.x, r0f.y, r0f.z, r3f.x };  // tx
+		cb->rows[base + 1] = { r1f.x, r1f.y, r1f.z, r3f.y };  // ty
+		cb->rows[base + 2] = { r2f.x, r2f.y, r2f.z, r3f.z };  // tz
+		cb->rows[base + 3] = { 0,0,0,1 };                    // padding (keep stride = 4)
 	}
 
-	// (Optional) zero out any unused instances
-	for (uint32_t i = (uint32_t)worlds.size(); i < MAX_INST; ++i) {
-		const uint32_t base = 4 * i;
-		cb->rows[base + 0] = XMFLOAT4(1, 0, 0, 0);
-		cb->rows[base + 1] = XMFLOAT4(0, 1, 0, 0);
-		cb->rows[base + 2] = XMFLOAT4(0, 0, 1, 0);
-		cb->rows[base + 3] = flagRow;
-	}
+
 
 	ctx->Unmap(g_cb1.Get(), 0);
 
@@ -96,58 +81,18 @@ void UpdateCB1(
 	ctx->VSSetConstantBuffers(1, 1, &b);
 }
 
-void PrintPSInputs(ID3DBlob* psBlob) {
-	Microsoft::WRL::ComPtr<ID3D11ShaderReflection> r;
-	D3DReflect(psBlob->GetBufferPointer(), psBlob->GetBufferSize(), IID_PPV_ARGS(&r));
-	D3D11_SHADER_DESC sd{}; r->GetDesc(&sd);
-	printf("PS needs:\n");
-	for (UINT i = 0; i < sd.InputParameters; ++i) {
-		D3D11_SIGNATURE_PARAMETER_DESC d{};
-		r->GetInputParameterDesc(i, &d);
-		printf("  %s%d (mask=%u)\n", d.SemanticName, d.SemanticIndex, d.Mask);
-	}
-}
-
-// print VS outputs (what you currently write)
-void PrintVSOutputs(ID3DBlob* vsBlob) {
-	Microsoft::WRL::ComPtr<ID3D11ShaderReflection> r;
-	D3DReflect(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), IID_PPV_ARGS(&r));
-	D3D11_SHADER_DESC sd{}; r->GetDesc(&sd);
-	printf("VS outputs:\n");
-	for (UINT i = 0; i < sd.OutputParameters; ++i) {
-		D3D11_SIGNATURE_PARAMETER_DESC d{};
-		r->GetOutputParameterDesc(i, &d);
-		printf("  %s%d\n", d.SemanticName, d.SemanticIndex);
-	}
-}
-
-struct ScopeViewCB12_VS
-{
-	// c0..c3: world_to_projective (VP) columns
-	XMFLOAT4 world_to_projective_c0; // c0
-	XMFLOAT4 world_to_projective_c1; // c1
-	XMFLOAT4 world_to_projective_c2; // c2
-	XMFLOAT4 world_to_projective_c3; // c3
-
-	// c4..c7: camera_to_world columns
-	XMFLOAT4 camera_to_world_c0;     // c4
-	XMFLOAT4 camera_to_world_c1;     // c5
-	XMFLOAT4 camera_to_world_c2;     // c6
-	XMFLOAT4 camera_to_world_c3;     // c7
-
-	// c8..c10
-	XMFLOAT4 target;                 // c8  (width, height, 1/width, 1/height)
-	XMFLOAT4 view_miscellaneous;     // c9  (x=max_depth_pre_proj, y=is_first_person, z=0, w=0)
-	XMFLOAT4 view_unk20;             // c10 (leave 0 unless you know it)
-
-	// c11..c14: camera_to_projective (Projection) columns
-	XMFLOAT4 camera_to_projective_c0; // c11
-	XMFLOAT4 camera_to_projective_c1; // c12
-	XMFLOAT4 camera_to_projective_c2; // c13
-	XMFLOAT4 camera_to_projective_c3; // c14
-};
-
 Microsoft::WRL::ComPtr<ID3D11Buffer> g_scopeView_b12;
+
+struct alignas(16) ScopeViewCB12_VS
+{
+	DirectX::XMFLOAT4X4 world_to_projective;   // c0..c3
+	DirectX::XMFLOAT4X4 camera_to_world;       // c4..c7
+	DirectX::XMFLOAT4   target;                // c8
+	DirectX::XMFLOAT4   view_miscellaneous;    // c9
+	DirectX::XMFLOAT4   view_unk20;            // c10
+	DirectX::XMFLOAT4X4 camera_to_projective;  // c11..c14
+};
+static_assert(sizeof(ScopeViewCB12_VS) % 16 == 0, "cb must be 16-byte aligned");
 
 void CreateScopeViewCB12(ID3D11Device* dev)
 {
@@ -157,99 +102,40 @@ void CreateScopeViewCB12(ID3D11Device* dev)
 	bd.Usage = D3D11_USAGE_DYNAMIC;
 	bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 
-	ScopeViewCB12_VS zero{};
+	ScopeViewCB12_VS zero{}; // start zeroed
 	D3D11_SUBRESOURCE_DATA init{ &zero, 0, 0 };
 	dev->CreateBuffer(&bd, &init, g_scopeView_b12.GetAddressOf());
 }
 
-inline void UpdateScopeViewCB12_VS(
+inline void UploadScopeViewCB12_All(
 	ID3D11DeviceContext* ctx,
-	const DirectX::XMMATRIX& view,     // world->camera
-	const DirectX::XMMATRIX& proj,     // camera->clip
+	const View& view,
 	float targetWidth,
-	float targetHeight,
-	float maxDepthPreProj,             // farZ
-	float viewIsFirstPerson)           // 0 or 1
+	float targetHeight)
 {
 	using namespace DirectX;
-
-	// Matrices
-	const XMMATRIX VP = view * proj;                 // world->clip
-	const XMMATRIX CW = XMMatrixInverse(nullptr, view); // camera->world
-
-	// Transpose for HLSL column-major cbuffers
-	const XMMATRIX VP_T = XMMatrixTranspose(VP);
-	const XMMATRIX P_T = XMMatrixTranspose(proj);
-	const XMMATRIX CW_T = XMMatrixTranspose(CW);
-
 	D3D11_MAPPED_SUBRESOURCE m{};
 	ctx->Map(g_scopeView_b12.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &m);
+
 	auto* cb = reinterpret_cast<ScopeViewCB12_VS*>(m.pData);
+	cb->world_to_projective = view.world_to_projective;
+	cb->camera_to_world = view.camera_to_world;
+	cb->camera_to_projective = view.camera_to_projective;
 
-	// c0..c3: world_to_projective (VP)
-	XMStoreFloat4(&cb->world_to_projective_c0, VP_T.r[0]);
-	XMStoreFloat4(&cb->world_to_projective_c1, VP_T.r[1]);
-	XMStoreFloat4(&cb->world_to_projective_c2, VP_T.r[2]);
-	XMStoreFloat4(&cb->world_to_projective_c3, VP_T.r[3]);
+	const float invW = targetWidth ? 1.0f / targetWidth : 0.0f;
+	const float invH = targetHeight ? 1.0f / targetHeight : 0.0f;
+	cb->target = { targetWidth, targetHeight, invW, invH };
 
-	// c4..c7: camera_to_world (inverse view)
-	XMStoreFloat4(&cb->camera_to_world_c0, CW_T.r[0]);
-	XMStoreFloat4(&cb->camera_to_world_c1, CW_T.r[1]);
-	XMStoreFloat4(&cb->camera_to_world_c2, CW_T.r[2]);
-	XMStoreFloat4(&cb->camera_to_world_c3, CW_T.r[3]); // cb12[7] -> camera position after transpose in shader
-
-	// c8..c10
-	cb->target = { targetWidth, targetHeight,
-				   targetWidth ? 1.0f / targetWidth : 0.0f,
-				   targetHeight ? 1.0f / targetHeight : 0.0f };
-	cb->view_miscellaneous = { 0.0f, 1.0f, 0.0f, 0.0f };
-	cb->view_unk20 = { 5.3f,0.15f,0.1f,1.0f };
-
-	// c11..c14: camera_to_projective (P)
-	XMStoreFloat4(&cb->camera_to_projective_c0, P_T.r[0]);
-	XMStoreFloat4(&cb->camera_to_projective_c1, P_T.r[1]);
-	XMStoreFloat4(&cb->camera_to_projective_c2, P_T.r[2]);
-	XMStoreFloat4(&cb->camera_to_projective_c3, P_T.r[3]);
+	cb->view_miscellaneous = view.view_miscellaneous;               // keep your values
+	cb->view_unk20 = { 4.15325f, 1.24929f, -1.49012e-8f, 1.0f };
 
 	ctx->Unmap(g_scopeView_b12.Get(), 0);
 
-	ID3D11Buffer* buf = g_scopeView_b12.Get();
-	ctx->VSSetConstantBuffers(12, 1, &buf);
-	ctx->GSSetConstantBuffers(12, 1, &buf);
+	ID3D11Buffer* b = g_scopeView_b12.Get();
+	ctx->VSSetConstantBuffers(12, 1, &b);
+	ctx->PSSetConstantBuffers(12, 1, &b);
+	ctx->GSSetConstantBuffers(12, 1, &b); // if GS uses it
 }
-bool Graphics::Initialize(HWND hWnd, int width, int height)
-{
-	this->windowWidth = width;
-	this->windowHeight = height;
-
-	if (!InitializeDirectX(hWnd))
-		return false;
-	OutputDebugStringA("DirectX initialized.\n");
-
-	StaticRenderer static_loader;
-	if (static_loader.Initialize(0x81029E6E)) {
-		static_loader.Process();
-		this->static_objects_to_render.push_back(static_loader);
-	}
-	//OutputDebugStringA("Statics initialized.\n");
-	if (!InitializeShaders())
-		return false;
-	OutputDebugStringA("Shaders initialized.\n");
-
-	if (!InitializeScene())
-		return false;
-	OutputDebugStringA("Scene initialized.\n");
-
-	IMGUI_CHECKVERSION();
-	ImGui::CreateContext();
-	ImGuiIO& io = ImGui::GetIO();
-	ImGui_ImplWin32_Init(hWnd);
-	ImGui_ImplDX11_Init(this->pDevice.Get(), this->pContext.Get());
-	ImGui::StyleColorsDark();
-
-
-	return true;
-}	
 
 // Must match the HLSL constant buffer layout exactly (16-byte alignment)
 struct VSConstants
@@ -264,9 +150,6 @@ inline float float_from_bits(std::uint32_t bits) {
 
 void Graphics::RenderFrame()
 {
-	// ---------------------------------------------------------------------
-	// Frame setup
-	// ---------------------------------------------------------------------
 	const float clear[4] = { 0,0,0,1 };
 	pContext->ClearRenderTargetView(pRenderTargetView.Get(), clear);
 	pContext->ClearDepthStencilView(depthStencilView.Get(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
@@ -277,31 +160,10 @@ void Graphics::RenderFrame()
 
 	const XMMATRIX view = camera.GetViewMatrix();
 	const XMMATRIX proj = camera.GetProjectionMatrix();
-
-	// Fill scope_view exactly like the game does (VS/GS path)
 	const float targetW = float(windowWidth);
 	const float targetH = float(windowHeight);
-
-	// If your Camera class exposes farZ, use it; else hardcode the one you set in SetProjectionValues
 	const float farZ = camera.GetFarZ();
-
-	// y = 1.0 if the view is first-person; else 0.0 (tweak as needed)
 	const float isFirstPerson = 0.0f;
-
-	UpdateScopeViewCB12_VS(
-		pContext.Get(),
-		camera.GetViewMatrix(),
-		camera.GetProjectionMatrix(),
-		(float)windowWidth,
-		(float)windowHeight,
-		camera.GetFarZ(),   // not a ternary
-		0.0f                // viewIsFirstPerson
-	);
-
-
-	// ---------------------------------------------------------------------
-	// A small, persistent VS constant buffer for b1 (mesh header + instance[0])
-	// ---------------------------------------------------------------------
 	static Microsoft::WRL::ComPtr<ID3D11Buffer> s_vsCB; // b1
 
 	if (!s_vsCB) {
@@ -316,13 +178,11 @@ void Graphics::RenderFrame()
 		pDevice->CreateBuffer(&cbDesc, &initData, s_vsCB.GetAddressOf());
 	}
 
-	// ---------------------------------------------------------------------
-	// Draw everything
-	// ---------------------------------------------------------------------
 	for (auto& Static : static_objects_to_render)
 	{
 		for (auto& part : Static.parts)
 		{
+
 			ID3D11VertexShader* vs = part.materialRender.vs.GetShader();
 			ID3D11PixelShader* ps = part.materialRender.ps.GetShader();
 			if (!vs || !ps) continue;
@@ -330,7 +190,6 @@ void Graphics::RenderFrame()
 			pContext->VSSetShader(vs, nullptr, 0);
 			pContext->PSSetShader(ps, nullptr, 0);
 
-			// Vertex/index streams
 			ID3D11Buffer* vbs[] = {
 				Static.buffers[part.buffer_index].vertexBuffer.Get(),
 				Static.buffers[part.buffer_index].uvBuffer.Get()
@@ -359,10 +218,7 @@ void Graphics::RenderFrame()
 			std::vector<DirectX::XMMATRIX> worlds;
 			worlds.reserve(1);
 
-			// Example: single identity instance
 			worlds.push_back(DirectX::XMMatrixIdentity());
-
-			// Or: if you have per-child transforms, push each child’s world here.
 
 			UpdateCB1(
 				pContext.Get(),
@@ -374,9 +230,23 @@ void Graphics::RenderFrame()
 				/*maxColorOrClampBits*/ (std::uint32_t)part.max_colour_index, // or the exact u32 you need
 				worlds
 			);
-			// -----------------------------------------------------------------
-			// PS resources (unchanged)
-			// -----------------------------------------------------------------
+
+			View viewState_ps{};
+
+			// fill required fields
+			XMStoreFloat4x4(&viewState_ps.world_to_camera, camera.GetViewMatrix());
+			XMStoreFloat4x4(&viewState_ps.camera_to_projective, camera.GetProjectionMatrix());
+
+			// derive the rest (use your C++ port of derive_matrices or do it inline)
+			viewState_ps.derive_matrices_vs(Viewport{ { (float)windowWidth, (float)windowHeight } });
+
+			// now upload
+			UploadScopeViewCB12_All(
+				pContext.Get(),
+				viewState_ps,                 // <-- View struct, not XMMATRIX
+				(float)windowWidth,
+				(float)windowHeight
+			);
 
 			ID3D11Buffer* b1 = g_cb1.Get();
 			pContext->VSSetConstantBuffers(1, 1, &b1);
@@ -387,16 +257,20 @@ void Graphics::RenderFrame()
 				for (auto& t : part.materialRender.ps_textures) srvs.push_back(t.Get());
 				pContext->PSSetShaderResources(0, (UINT)srvs.size(), srvs.data());
 			}
-			if (part.materialRender.cbuffer_ps) {
+			if (part.material.PixelShader.contstant_buffer.hash != 0xffffffff) {
 				ID3D11Buffer* psCB = part.materialRender.cbuffer_ps.Get();
+				pContext->PSSetConstantBuffers(part.material.PixelShader.constant_buffer_slot, 1, &psCB);
+			}
+			else {
+				printf("Using fallback pixel shader cbuffer\n");
+				ID3D11Buffer* psCB = part.materialRender.cbuffer_ps_fallback.Get();
 				pContext->PSSetConstantBuffers(part.material.PixelShader.constant_buffer_slot, 1, &psCB);
 			}
 			if (part.materialRender.sampler) {
 				ID3D11SamplerState* samp = part.materialRender.sampler.Get();
 				pContext->PSSetSamplers(1, 1, &samp);
 			}
-
-			// Draw
+			
 			pContext->DrawIndexedInstanced(
 				part.index_count,
 				1,            // InstanceCount
@@ -406,9 +280,6 @@ void Graphics::RenderFrame()
 		}
 	}
 
-	// ---------------------------------------------------------------------
-	// HUD & ImGui (unchanged)
-	// ---------------------------------------------------------------------
 	if (!fpsTimer.isrunning) { fpsTimer.Start(); }
 	static int fpsCounter = 0;
 	static std::string fpsString = "FPS: 0";
@@ -445,6 +316,39 @@ void Graphics::RenderFrame()
 	pSwapChain->Present(1, 0);
 }
 
+bool Graphics::Initialize(HWND hWnd, int width, int height)
+{
+	this->windowWidth = width;
+	this->windowHeight = height;
+
+	if (!InitializeDirectX(hWnd))
+		return false;
+	OutputDebugStringA("DirectX initialized.\n");
+
+	StaticRenderer static_loader;
+	if (static_loader.Initialize(0x81029E6E)) {
+		static_loader.Process();
+		this->static_objects_to_render.push_back(static_loader);
+	}
+	//OutputDebugStringA("Statics initialized.\n");
+	if (!InitializeShaders())
+		return false;
+	OutputDebugStringA("Shaders initialized.\n");
+
+	if (!InitializeScene())
+		return false;
+	OutputDebugStringA("Scene initialized.\n");
+
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+	ImGuiIO& io = ImGui::GetIO();
+	ImGui_ImplWin32_Init(hWnd);
+	ImGui_ImplDX11_Init(this->pDevice.Get(), this->pContext.Get());
+	ImGui::StyleColorsDark();
+
+
+	return true;
+}
 
 bool Graphics::InitializeDirectX(HWND hWnd)
 {
@@ -532,7 +436,7 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		pContext->RSSetViewports(1, &viewport);
 
 		CD3D11_RASTERIZER_DESC rasterizerDesc(D3D11_DEFAULT);
-		rasterizerDesc.CullMode = D3D11_CULL_MODE::D3D11_CULL_NONE;
+		rasterizerDesc.CullMode = D3D11_CULL_MODE::D3D11_CULL_BACK;
 
 		hr = this->pDevice->CreateRasterizerState(&rasterizerDesc, this->rasterizerState.GetAddressOf());
 
@@ -594,21 +498,10 @@ bool Graphics::InitializeShaders()
 bool Graphics::InitializeScene()
 {	
 	try {
-
-		//std::filesystem::path tex_path = std::filesystem::path(SOLUTION_DIR) / "Data" / "Textures" / "myTex.png";
-		//HRESULT hr = DirectX::CreateWICTextureFromFile(
-		//	this->pDevice.Get(),
-		//	tex_path.c_str(),
-		//	nullptr,
-		//	this->myTexture.GetAddressOf()
-		//);
-
-		//COM_ERROR_IF_FAILED(hr, "Failed to Load Texture");
-
 		HRESULT hr = this->constantBuffer.Initialize(this->pDevice.Get(), this->pContext.Get());
 		COM_ERROR_IF_FAILED(hr, "Failed to initialize constant buffer");
 
-		camera.SetPosition(0.0f, 0.0f, 0.0f);
+		camera.SetPosition(3.0f, 0.0f, 0.0f);
 		camera.SetProjectionValues(90.0f, static_cast<float>(windowWidth) / static_cast<float>(windowHeight), 0.01f, 1000.0f);
 
 		for (auto& Static : this->static_objects_to_render)
@@ -617,7 +510,7 @@ bool Graphics::InitializeScene()
 
 		}
 	}
-	catch (COMException& exception)
+	catch (COMException& exception) 
 	{
 		ErrorLogger::Log(exception);
 		return false;

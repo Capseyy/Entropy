@@ -24,6 +24,10 @@ struct UT_SamplerRaw
 
 #pragma pack(pop)
 
+struct Unk_90008080 {
+	std::array<float_t, 4> vec;
+};
+
 
 class Material
 {
@@ -33,10 +37,12 @@ public:
 	D2PixelShader ps;
 	std::vector<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>> ps_textures;
 	Microsoft::WRL::ComPtr<ID3D11Buffer> cbuffer_ps;
+	Microsoft::WRL::ComPtr<ID3D11Buffer> cbuffer_ps_fallback;
 	void InitializeCBuffer(ID3D11Device* device, UINT byteWidth, TagHash cbuffer);
 	Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler;
 	void InitializeSampler(ID3D11Device* device, UT_SamplerRaw sampTag);
 	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> vs_srv_t0; // register(t0)
 	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> vs_srv_t1; // register(t1)
+	void InitializeCBufferFallback(ID3D11Device* device, UINT byteWidth, std::vector<Unk_90008080> fallbackBytes);
 };
 

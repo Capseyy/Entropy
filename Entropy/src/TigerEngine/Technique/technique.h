@@ -37,7 +37,7 @@ public:
 	std::vector<Unk_09008080> TFX_Bytecode;
 	std::array<float_t, 4> TFX_Constants; //TODO
 	std::vector<Unk_3f018080> Samplers; //TODO#
-	std::array<float_t, 4> Unk38; //TODO
+	std::vector<Unk_90008080> SamplerFallback; //TODO
 	std::array<uint32_t, 4> Unk48; //TODO
 	int32_t constant_buffer_slot;
 	TagHash contstant_buffer;
