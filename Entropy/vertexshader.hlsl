@@ -1,4 +1,5 @@
 #include "view.hlsli"
+#include "frame.hlsli"
 
 cbuffer scope_alk_debugshape : register(b0) {
     float4x4 local_to_world;

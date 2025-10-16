@@ -117,11 +117,14 @@ bool StaticRenderer::InitializeRender(ID3D11Device* device,ID3D11DeviceContext* 
 			else {
 				part.materialRender.InitializeCBufferFallback(device, th.dataSize, part.material.PixelShader.SamplerFallback);
 			}
+			int sampler_index = 1;	
 			for (auto& samp : part.material.PixelShader.Samplers) {
 				auto SamplerTag = TagHash(samp.sampler.reference);
 				auto sampler = bin::parse<UT_SamplerRaw>(SamplerTag.data, SamplerTag.size);
-				part.materialRender.InitializeSampler(device, sampler);
+				part.materialRender.InitializeSampler(device, sampler, sampler_index);
+				sampler_index++;
 			}
+
 			part.materialRender.ps_textures.push_back(tigerTex.GetTexture());
 		}
 			
@@ -130,6 +133,8 @@ bool StaticRenderer::InitializeRender(ID3D11Device* device,ID3D11DeviceContext* 
 	this->buffers[0].indexBuffer.Initialize(device);
 	this->buffers[0].vertexBuffer.Initialize(device);
 	this->buffers[0].uvBuffer.Initialize(device);
+	//this->buffers[0].vertexColourBuffer.Initialize(device);
+	this->buffers[0].vertexColourBuffer.InitializeAsSRV(device);
 		
 	this->UpdateWorldMatrix();
 	return true;

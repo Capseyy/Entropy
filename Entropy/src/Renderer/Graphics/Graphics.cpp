@@ -157,6 +157,8 @@ void Graphics::RenderFrame()
 	pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	pContext->RSSetState(rasterizerState.Get());
 	pContext->OMSetDepthStencilState(depthStencilState.Get(), 0);
+	pContext->OMSetBlendState(bsOpaque.Get(), nullptr, 0xFFFFFFFF);
+
 
 	const XMMATRIX view = camera.GetViewMatrix();
 	const XMMATRIX proj = camera.GetProjectionMatrix();
@@ -251,6 +253,12 @@ void Graphics::RenderFrame()
 			ID3D11Buffer* b1 = g_cb1.Get();
 			pContext->VSSetConstantBuffers(1, 1, &b1);
 
+			if (part.material.Unk08[1] == 2)
+			{
+				ID3D11ShaderResourceView* colSrvs[] = { Static.buffers[part.buffer_index].vertexColourBuffer.GetSRV()};
+				pContext->VSSetShaderResources(0, 1, colSrvs);
+			}
+
 			if (!part.materialRender.ps_textures.empty()) {
 				std::vector<ID3D11ShaderResourceView*> srvs;
 				srvs.reserve(part.materialRender.ps_textures.size());
@@ -262,13 +270,12 @@ void Graphics::RenderFrame()
 				pContext->PSSetConstantBuffers(part.material.PixelShader.constant_buffer_slot, 1, &psCB);
 			}
 			else {
-				printf("Using fallback pixel shader cbuffer\n");
 				ID3D11Buffer* psCB = part.materialRender.cbuffer_ps_fallback.Get();
 				pContext->PSSetConstantBuffers(part.material.PixelShader.constant_buffer_slot, 1, &psCB);
 			}
-			if (part.materialRender.sampler) {
-				ID3D11SamplerState* samp = part.materialRender.sampler.Get();
-				pContext->PSSetSamplers(1, 1, &samp);
+			for (auto& samp : part.materialRender.MatSamplers) {
+				ID3D11SamplerState* s = samp.sampler.Get();
+				pContext->PSSetSamplers((UINT)samp.slot, 1, &s);
 			}
 			
 			pContext->DrawIndexedInstanced(
@@ -326,7 +333,7 @@ bool Graphics::Initialize(HWND hWnd, int width, int height)
 	OutputDebugStringA("DirectX initialized.\n");
 
 	StaticRenderer static_loader;
-	if (static_loader.Initialize(0x81029E6E)) {
+	if (static_loader.Initialize(0x80FB86F3)) {//5482E880
 		static_loader.Process();
 		this->static_objects_to_render.push_back(static_loader);
 	}
@@ -437,6 +444,7 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 
 		CD3D11_RASTERIZER_DESC rasterizerDesc(D3D11_DEFAULT);
 		rasterizerDesc.CullMode = D3D11_CULL_MODE::D3D11_CULL_BACK;
+		rasterizerDesc.FrontCounterClockwise = FALSE;
 
 		hr = this->pDevice->CreateRasterizerState(&rasterizerDesc, this->rasterizerState.GetAddressOf());
 
@@ -454,6 +462,16 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
 
 		hr = this->pDevice->CreateSamplerState(&samplerDesc, this->samplerState.GetAddressOf());
+
+		D3D11_BLEND_DESC desc = {};
+		desc.AlphaToCoverageEnable = FALSE;
+		desc.IndependentBlendEnable = FALSE;
+
+		auto& rt = desc.RenderTarget[0];
+		rt.BlendEnable = FALSE;                          // <-- this line
+		rt.RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+
+		pDevice->CreateBlendState(&desc, &bsOpaque);
 
 		COM_ERROR_IF_FAILED(hr, "Failed to create device sampler state.");
 	}

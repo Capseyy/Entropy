@@ -38,7 +38,7 @@ void Material::InitializeCBufferFallback(ID3D11Device* device, UINT byteWidth, s
 	}
 }
 
-void Material::InitializeSampler(ID3D11Device* device, UT_SamplerRaw sampTag)
+void Material::InitializeSampler(ID3D11Device* device, UT_SamplerRaw sampTag, int64_t slot)
 {
     if (!device) throw std::runtime_error("InitializeSampler: device is null");
 
@@ -63,8 +63,12 @@ void Material::InitializeSampler(ID3D11Device* device, UT_SamplerRaw sampTag)
     sd.MaxLOD = (sampTag.MaxLOD <= 0.0f) ? D3D11_FLOAT32_MAX : sampTag.MaxLOD;
 
     // If filter isn’t anisotropic, driver ignores MaxAnisotropy; if it IS comparison filter, use SampleCmp in HLSL.
-
+	Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler;
     HRESULT hr = device->CreateSamplerState(&sd, &sampler);
     if (FAILED(hr))
         throw std::runtime_error("Failed to create sampler state.");
+	SamplerBind bind{};
+	bind.sampler = sampler;
+	bind.slot = slot; // unassigned
+	this->MatSamplers.push_back(bind);
 }
