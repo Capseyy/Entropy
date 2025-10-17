@@ -5,6 +5,7 @@
 #include <future>
 #include "TigerEngine/tag.h"
 #include <execution>
+#include <glm/glm.hpp>
 
 
 struct Unk_0x14008080 {
@@ -63,6 +64,30 @@ public:
 	std::array<float_t,2> texture_coordinate_offset;
 	uint32_t max_colour_index;
 
-
 };
 
+struct SStaticInstanceTransform
+{
+	std::array<float_t, 4> rotation;
+	std::array<float_t, 3> translation;
+	std::array<float_t, 3> scale;
+	std::array<float_t, 6> _unk28;
+};
+
+struct SStaticMeshInstanceGroup {
+	uint16_t instance_count;
+	uint16_t instance_start;
+	uint16_t static_intex;
+	uint16_t unk6;
+};
+
+struct SStaticMeshInstances {
+	uint64_t FileSize;
+	std::array<uint32_t, 4> _unk08;
+	TagHash occlusionBounds;
+	std::array<uint32_t, 9> _unk1c;
+	std::vector<SStaticInstanceTransform> instance_transforms;
+	std::array<uint64_t, 5> _unk50;
+	std::vector<TagHash> static_tags;
+	std::vector<SStaticMeshInstanceGroup> instance_groups;
+};

@@ -332,12 +332,10 @@ bool Graphics::Initialize(HWND hWnd, int width, int height)
 		return false;
 	OutputDebugStringA("DirectX initialized.\n");
 
-	StaticRenderer static_loader;
-	if (static_loader.Initialize(0x80FB86F3)) {//5482E880
-		static_loader.Process();
-		this->static_objects_to_render.push_back(static_loader);
-	}
-	//OutputDebugStringA("Statics initialized.\n");
+	StaticMap static_map;
+	static_map.Initialize(TagHash(0x80AD122C));
+	static_map.LoadStaticData();
+		
 	if (!InitializeShaders())
 		return false;
 	OutputDebugStringA("Shaders initialized.\n");

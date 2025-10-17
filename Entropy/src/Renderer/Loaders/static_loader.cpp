@@ -145,3 +145,32 @@ void StaticRenderer::UpdateWorldMatrix()
 {
 	this->worldMatrix = XMMatrixIdentity();
 }
+
+void StaticRenderer::ProcessFast() 
+{
+	auto static_struct = bin::parse<SStaticModel>(static_tag.data, static_tag.size, bin::Endian::Little);
+	auto mesh_tag = TagHash(static_struct.opaque_meshes);
+	auto mesh_struct = bin::parse<SStaticMeshData>(mesh_tag.data, mesh_tag.size, bin::Endian::Little);
+	int max_detail = 0xff;
+	for (auto group : mesh_struct.mesh_groups) {
+		if (group.TfxRenderStage < max_detail) {
+			max_detail = group.TfxRenderStage;
+			auto input_layout = INPUT_LAYOUTS[group.input_layout_index];
+		}
+	}
+	for (const auto& buffer_group : mesh_struct.buffers) {
+		StaticBuffers sb;
+		if (buffer_group.IndexBuffer.hash != 0xffffffff) {
+			sb.indexBuffer.InitializeData(buffer_group.IndexBuffer);
+		}
+		if (buffer_group.VertexBuffer.hash != 0xffffffff) {
+			sb.vertexBuffer.InitializeData(buffer_group.VertexBuffer);
+		}
+		if (buffer_group.UVBuffer.hash != 0xffffffff) {
+			sb.uvBuffer.InitializeData(buffer_group.UVBuffer);
+		}
+		if (buffer_group.VertexColourBuffer.hash != 0xffffffff) {
+			sb.vertexColourBuffer.InitializeData(buffer_group.VertexColourBuffer);
+		}
+	}
+}

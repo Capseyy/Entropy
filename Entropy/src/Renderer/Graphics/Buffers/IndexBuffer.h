@@ -39,7 +39,12 @@ public:
 	{
 		return bufferSize;
 	}
-
+	void InitializeData(TagHash headerTag)
+	{
+		header = bin::parse<IndexBufferHeader>(headerTag.data, headerTag.size, bin::Endian::Little);
+		data = TagHash(headerTag.reference).data;
+		bufferSize = static_cast<UINT>(header.dataSize);
+	}
 	void Initialize(ID3D11Device* device)
 	{
 		if (buffer.Get() != NULL) {

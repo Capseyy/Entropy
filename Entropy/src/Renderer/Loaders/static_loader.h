@@ -44,6 +44,7 @@ class StaticRenderer
 {
 public:
 	bool Initialize(uint32_t staticTag);
+	void ProcessFast();
 	void Process();
 	bool InitializeRender(ID3D11Device* device, ID3D11DeviceContext* deviceContext);
 	TagHash static_tag;
@@ -63,4 +64,3 @@ private:
 
 	XMMATRIX worldMatrix = XMMatrixIdentity();
 };
-

@@ -261,6 +261,7 @@
     <ClCompile Include="src\Renderer\Graphics\Shaders\Vertex.cpp" />
     <ClCompile Include="src\Renderer\Loaders\technique_loader.cpp" />
     <ClCompile Include="src\Renderer\Timer.cpp" />
+    <ClCompile Include="src\Renderer\Loaders\StaticMap.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\Renderer\Graphics\Scope\view.h" />
@@ -306,6 +307,7 @@
     <ClInclude Include="src\Renderer\Loaders\technique_loader.h" />
     <ClInclude Include="src\Renderer\Graphics\Buffers\VertexBuffer.h" />
     <ClInclude Include="src\Renderer\Timer.h" />
+    <ClInclude Include="src\Renderer\Loaders\StaticMap.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

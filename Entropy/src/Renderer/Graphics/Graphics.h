@@ -5,6 +5,7 @@
 #include "SpriteFont.h"
 #include "WICTextureLoader.h"
 #include "Renderer/Loaders/static_loader.h"
+#include "Renderer/Loaders/staticmap.h"
 #include "Renderer/Graphics/Camera.h"
 #include "Renderer/Graphics/Buffers/ConstantBufferTypes.h"
 #include "Renderer/Timer.h";
