@@ -18,14 +18,17 @@ bool StaticMap::Initialize(uint32_t mapRootHash)
 			continue;
 		}
 		StaticRenderer renderer(gfx_, static_instancer.static_tags[static_instance.static_intex]);
+		std::vector<DirectX::XMMATRIX>  world_list;
 		auto renderpart = renderer.Build();
 		for (int i = static_instance.instance_start; i < static_instance.instance_start + static_instance.instance_count; i++) {
 			auto& transform = static_instancer.instance_transforms[i];
-			renderpart.world = DirectX::XMMatrixScaling(transform.scale[0], transform.scale[0], transform.scale[0]) *
+			auto world = DirectX::XMMatrixScaling(transform.scale[0], transform.scale[0], transform.scale[0]) *
 				DirectX::XMMatrixRotationQuaternion(DirectX::XMVectorSet(transform.rotation[0], transform.rotation[1], transform.rotation[2], transform.rotation[3])) *
 				DirectX::XMMatrixTranslation(transform.translation[0], transform.translation[1], transform.translation[2]);
-			statics_.push_back(renderpart);
+			world_list.push_back(world);
 		}
+		renderpart.world = world_list;
+		statics_.push_back(renderpart);
 	}
 	return true;
 }

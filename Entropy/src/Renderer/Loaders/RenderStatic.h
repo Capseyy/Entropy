@@ -8,6 +8,6 @@
 struct RenderStatic {
     std::shared_ptr<StaticMesh> mesh;     // geometry + techniques (built by StaticRenderer)
 	SStaticMeshData meshData;          // raw mesh data (for LOD or other purposes)
-    DirectX::XMMATRIX           world;    // per-object transform (if you have one)
+    std::vector<DirectX::XMMATRIX>  world;    // per-object transform (if you have one)
     // add per-part overrides if your format has them
 };

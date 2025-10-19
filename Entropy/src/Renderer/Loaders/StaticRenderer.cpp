@@ -169,11 +169,11 @@ RenderStatic StaticRenderer::Build()
         mesh->parts[i].partInfo = m.parts[partGroupIdx[i]];
         mesh->input_layout_index = partInputLayoutIdx[i];
     }
+    mesh->id = static_hash_.hash;
 
     // ---- Output renderable ----
     RenderStatic out{};
     out.mesh = std::move(mesh);
-    out.world = XMMatrixIdentity();
     out.meshData = m; // if you need original meta later
     return out;
 }

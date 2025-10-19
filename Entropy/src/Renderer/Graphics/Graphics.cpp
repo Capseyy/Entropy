@@ -200,7 +200,7 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 	ID3D11DeviceContext* ctx = pContext.Get();
 	wchar_t label[128];
 	swprintf(label, 128, L"Static geometry %08X", rs.mesh->id);
-	printf("Loading Static %08X", rs.mesh->id);
+	//printf("Loading Static %08X", rs.mesh->id);
 	GpuMarker mark(ctx, label);
 	const auto& mesh = *rs.mesh;
 	// View constant buffer(s)
