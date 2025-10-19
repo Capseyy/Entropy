@@ -6,6 +6,34 @@ static inline float asfloat_u32(std::uint32_t u) {
 	return std::bit_cast<float>(u);
 }
 
+struct GpuMarker {
+	ID3DUserDefinedAnnotation* a{};
+	GpuMarker(ID3D11DeviceContext* ctx, const wchar_t* name) {
+		if (SUCCEEDED(ctx->QueryInterface(IID_PPV_ARGS(&a))) && a) a->BeginEvent(name);
+	}
+	~GpuMarker() { if (a) { a->EndEvent(); a->Release(); } }
+};
+
+Microsoft::WRL::ComPtr<ID3DUserDefinedAnnotation> anno_;
+void Graphics::InitAnnotation() {
+	pContext->QueryInterface(IID_PPV_ARGS(anno_.GetAddressOf())); // may be null
+}
+
+// RAII scope marker
+struct ScopedGpuEvent {
+	ID3DUserDefinedAnnotation* a{};
+	ScopedGpuEvent(ID3DUserDefinedAnnotation* anno, const wchar_t* name) : a(anno) {
+		if (a) a->BeginEvent(name);
+	}
+	template<typename... Args>
+	ScopedGpuEvent(ID3DUserDefinedAnnotation* anno, const wchar_t* fmt, Args... args) : a(anno) {
+		if (!a) return;
+		wchar_t buf[256];
+		_snwprintf_s(buf, _TRUNCATE, fmt, args...);
+		a->BeginEvent(buf);
+	}
+	~ScopedGpuEvent() { if (a) a->EndEvent(); }
+};
 
 // Max instances you plan to send per draw (<= 63 to stay within 4KB)
 constexpr uint32_t MAX_INST = 1;
@@ -164,22 +192,37 @@ struct VSConstants
 inline float float_from_bits(std::uint32_t bits) {
 	return std::bit_cast<float>(bits);
 }
-
+Microsoft::WRL::ComPtr<ID3DUserDefinedAnnotation> anno;
 // Call this from Graphics::RenderFrame() after setting common state (topology, depth, blend)
 void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 {
+
 	ID3D11DeviceContext* ctx = pContext.Get();
+	wchar_t label[128];
+	swprintf(label, 128, L"Static geometry %08X", rs.mesh->id);
+	printf("Loading Static %08X", rs.mesh->id);
+	GpuMarker mark(ctx, label);
 	const auto& mesh = *rs.mesh;
 	// View constant buffer(s)
 	UploadScopeViewCB12_All(ctx, view, float(windowWidth), float(windowHeight));
 	ID3D11Buffer* b1 = g_cb1.Get();            // if you also use cb1 for per-object, leave it bound
 	ctx->VSSetConstantBuffers(1, 1, &b1);
-
+	std::vector<DirectX::XMMATRIX> worlds(1, DirectX::XMMatrixIdentity());
+	UpdateCB1(ctx,
+		/*meshOffset*/{ 0,0,0 },
+		/*meshScale*/   1.0f,
+		/*uvScaleX*/    1.0f,
+		/*uvOffX*/      0.0f,
+		/*uvOffY*/      0.0f,
+		/*maxColorOrClampBits*/ 0u,
+		worlds);
+	UploadScopeViewCB12_All(ctx, view, (float)windowWidth, (float)windowHeight);
+	ID3D11Buffer* b12 = g_scopeView_b12.Get();
 	for (const auto& part : mesh.parts)
 	{
 		const auto& tech = part.technique;
 		if (!tech || tech->VS.empty() || tech->PS.empty() || !tech->VS[0] || !tech->PS[0]) {
-			printf("Skip part: missing VS/PS\n");
+			//printf("Skip part: missing VS/PS\n");
 			continue;
 		}
 
@@ -191,6 +234,7 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 		ctx->PSSetShader(ps, nullptr, 0);
 
 		// --- Input layout: prefer per-part, else VS-owned
+		//printf("mesh.input_layout_index %d\n", mesh.input_layout_index);
 		ctx->IASetInputLayout(tiger_input_layouts[mesh.input_layout_index].Get());
 
 		// --- Buffers (choose the group this part uses; here we take the first)
@@ -221,25 +265,15 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 
 		// --- View + per-object constants (ensure these are bound!)
 		//   If you didn't already, update & bind b12 (view) before this loop:
-		//   UploadScopeViewCB12_All(ctx, view, (float)windowWidth, (float)windowHeight);
-		//   ID3D11Buffer* b12 = g_scopeView_b12.Get();
+		//  
 		//   ctx->VSSetConstantBuffers(12, 1, &b12);
 		//   ctx->PSSetConstantBuffers(12, 1, &b12);
-
-		std::vector<DirectX::XMMATRIX> worlds(1, DirectX::XMMatrixIdentity());
-		UpdateCB1(ctx,
-			/*meshOffset*/{ 0,0,0 },
-			/*meshScale*/   1.0f,
-			/*uvScaleX*/    1.0f,
-			/*uvOffX*/      0.0f,
-			/*uvOffY*/      0.0f,
-			/*maxColorOrClampBits*/ 0u,
-			worlds);
 		// Make sure b1 is actually bound (once is fine; safe to rebind)
 		{ ID3D11Buffer* b = g_cb1.Get(); ctx->VSSetConstantBuffers(1, 1, &b); }
 
 		// --- Textures (PS) by slot
 		if (!tech->Textures.empty()) {
+			//printf("Mapping Textures");
 			const size_t n = std::min(tech->Textures.size(), tech->psTextureSlots.size());
 			for (size_t i = 0; i < n; ++i) {
 				UINT slot = tech->psTextureSlots[i];
@@ -255,20 +289,13 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 		}
 
 		// --- Draw
-		char dbg[128];
-		_snprintf_s(dbg, _TRUNCATE, "DrawIndexed: count=%u fmt=%s vbCount=%u\n",
-			bg.indexCount,
-			(bg.indexFormat == DXGI_FORMAT_R16_UINT ? "R16" :
-				bg.indexFormat == DXGI_FORMAT_R32_UINT ? "R32" : "OTHER"),
-			vbCount);
-		OutputDebugStringA(dbg);
-
-		ctx->DrawIndexed(bg.indexCount, 0, 0);
+		ctx->DrawIndexed(part.partInfo.index_count, part.partInfo.index_start, 0);
 
 		// Optional: unbind SRVs if used later as RTs
 		// ID3D11ShaderResourceView* nulls[16] = {};
 		// ctx->PSSetShaderResources(0, 16, nulls);
 	}
+	
 }
 
 
@@ -559,7 +586,7 @@ bool Graphics::InitializeScene()
 	}
 	InitializeInputLayouts();
 	staticMap = std::make_unique<StaticMap>(*this);
-	staticMap->Initialize(0x80BB0ED4);  // root map hash (or whatever yours is)
+	staticMap->Initialize(0x8102A565);  // root map hash (or whatever yours is)
 	staticsToDraw = staticMap->GetRenderList();
 	return true;
 }

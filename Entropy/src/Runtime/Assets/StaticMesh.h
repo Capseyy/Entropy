@@ -4,6 +4,7 @@
 #include <memory>
 #include <vector>
 #include <cstdint>
+#include "TigerEngine/Map/static.h"
 
 // forward-declare to avoid circular includes; include "Technique.h" where you use it
 namespace EntropyAssets { struct Technique; }
@@ -30,6 +31,7 @@ struct StaticMeshPart {
     uint32_t techniqueId = 0;
     std::shared_ptr<EntropyAssets::Technique> technique; // filled by AssetSystem
     std::vector<uint32_t> bufferGroupIndices;            // which groups this part uses (optional)
+    SStaticMeshPart partInfo;
 };
 
 // The full mesh = groups + parts

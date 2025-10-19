@@ -39,7 +39,7 @@ private:
 	bool InitializeShaders();
 	bool InitializeScene();
 	void InitializeInputLayouts();
-
+	void InitAnnotation();
 	std::array<Microsoft::WRL::ComPtr<ID3D11InputLayout>,15> tiger_input_layouts;
 
 	Microsoft::WRL::ComPtr<ID3D11Device>           pDevice;

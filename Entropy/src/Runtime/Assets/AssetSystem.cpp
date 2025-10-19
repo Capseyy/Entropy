@@ -72,8 +72,12 @@ AssetSystem::createVertexShader_(uint32_t id, const ShaderPayload& p)
     HRESULT hr = device_->CreateVertexShader(
         p.bytecode.data(), p.bytecode.size(), nullptr, &vs);
     if (FAILED(hr)) {
+        printf("CreateVS hr=0x%08X size=%zu magic=0x%08X\n", (unsigned)hr, p.bytecode.size(),
+            p.bytecode.size() >= 4 ? *(const uint32_t*)p.bytecode.data() : 0u);
         throw std::runtime_error("CreateVertexShader failed");
     }
+    printf("CreateVS hr=0x%08X size=%zu magic=0x%08X\n", (unsigned)hr, p.bytecode.size(),
+        p.bytecode.size() >= 4 ? *(const uint32_t*)p.bytecode.data() : 0u);
 
     auto out = std::make_shared<EntropyAssets::VertexShader>();
     out->vs = vs;
@@ -387,114 +391,124 @@ std::shared_future<std::shared_ptr<EntropyAssets::Technique>>
 AssetSystem::EnqueueTechnique(TagHash techniqueId)
 {
     const uint32_t id = techniqueId.hash;
-    //printf("EnqueueTechnique: %08X\n", id);
+    printf("[Tech] EnqueueTechnique %08X (tag bytes=%zu)\n", id, (size_t)techniqueId.size);
 
     static AssetCache<EntropyAssets::Technique> techCache;
-
-    auto valid32 = [](uint32_t x) { return x != 0u && x != 0xFFFFFFFFu; };
+    auto valid32 = [](uint32_t x) { return x && x != 0xFFFFFFFFu; };
 
     return techCache.GetOrLoad(id, [=] {
-        // ----- Parse technique -----
+        // Parse technique
+        auto tech = std::make_shared<EntropyAssets::Technique>();
+        tech->id = id;
+
         if (!techniqueId.data || techniqueId.size == 0) {
-            auto empty = std::make_shared<EntropyAssets::Technique>();
-            empty->id = id;
-            OutputDebugStringA("EnqueueTechnique: empty technique tag\n");
-            return empty;
+            printf("[Tech] %08X empty tag\n", id);
+            return tech;
         }
+
         STechnique Tfx = bin::parse<STechnique>(techniqueId.data, techniqueId.size, bin::Endian::Little);
 
-        // ----- Ensure shaders are registered from bytes, then enqueue -----
-        auto ensureShaderRegistered = [this](uint32_t shId)->bool {
-            if (!R_->HasShader(shId)) {
-                auto sTag = TagHash(shId);
-                if (!sTag.data || sTag.size == 0) return false;
-                ShaderPayload sp{};
-                sp.bytecode.assign(
-                    static_cast<const uint8_t*>(sTag.data),
-                    static_cast<const uint8_t*>(sTag.data) + sTag.size
-                );
-                R_->RegisterShader(shId, std::move(sp));
-            }
+        // -------- Shaders (your existing logic) --------
+        const uint32_t vsId = Tfx.VertexShader.ShaderTag.reference;
+        const uint32_t psId = Tfx.PixelShader.ShaderTag.reference;
+        printf("[Tech] %08X VS id=%08X, PS id=%08X\n", id, vsId, psId);
+
+        auto ensureShaderPayload = [this](uint32_t sid)->bool {
+            if (R_->HasShader(sid)) return true;
+            auto sTag = TagHash(sid);
+            printf("  [Shader] %08X bytes=%zu\n", sid, (size_t)sTag.size);
+            if (!sTag.data || sTag.size == 0) return false;
+
+            ShaderPayload sp{};
+            sp.bytecode.assign(
+                static_cast<const uint8_t*>(sTag.data),
+                static_cast<const uint8_t*>(sTag.data) + sTag.size
+            );
+            R_->RegisterShader(sid, std::move(sp));
             return true;
             };
 
         std::shared_future<std::shared_ptr<EntropyAssets::VertexShader>> fVS;
         std::shared_future<std::shared_ptr<EntropyAssets::PixelShader>>  fPS;
 
-        if (valid32(Tfx.VertexShader.ShaderTag.hash) &&
-            ensureShaderRegistered(Tfx.VertexShader.ShaderTag.hash))
-        {
-            fVS = EnqueueVertexShader(Tfx.VertexShader.ShaderTag.hash).future;
-        }
-        if (valid32(Tfx.PixelShader.ShaderTag.hash) &&
-            ensureShaderRegistered(Tfx.PixelShader.ShaderTag.hash))
-        {
-            fPS = EnqueuePixelShader(Tfx.PixelShader.ShaderTag.hash).future;
-        }
+        if (valid32(vsId) && ensureShaderPayload(vsId))
+            fVS = EnqueueVertexShader(vsId).future;
+        else
+            printf("[Tech] %08X NO VS (id invalid or no bytes)\n", id);
 
-        // ----- TEXTURES (PS): resolve -> parse header -> register -> enqueue -----
+        if (valid32(psId) && ensureShaderPayload(psId))
+            fPS = EnqueuePixelShader(psId).future;
+        else
+            printf("[Tech] %08X NO PS (id invalid or no bytes)\n", id);
+
+        auto ensureTexturePayload = [this](uint32_t texId)->bool {
+            if (R_->HasTexture(texId)) return true;
+
+            TagHash texTag(texId);
+            if (!texTag.data || texTag.size == 0) {
+                printf("  [Tex] %08X missing bytes\n", texId);
+                return false;
+            }
+
+            auto payload = BuildTexturePayloadFromTag(texTag);
+            if (!payload) {
+                printf("  [Tex] %08X BuildTexturePayloadFromTag failed\n", texId);
+                return false;
+            }
+
+            R_->RegisterTexture(texId, std::move(*payload));
+            return true;
+            };
+
         using TexFuture = std::shared_future<std::shared_ptr<EntropyAssets::Texture2DRes>>;
         std::vector<std::pair<UINT, TexFuture>> psTexF;
         psTexF.reserve(Tfx.PixelShader.Textures.size());
 
-       
+        printf("[Tech] %08X PS textures: %zu\n", id, Tfx.PixelShader.Textures.size());
+        for (const auto& t : Tfx.PixelShader.Textures) {
+            const UINT slot = t.TextureIndex;
+            const uint32_t texId = t.Texture.tagHash32;// <-- your mapping
 
-        for (const auto& tex : Tfx.PixelShader.Textures)
-        {
-            const UINT slot = tex.TextureIndex;      // which t# to bind
-            uint32_t   texId = tex.Texture.tagHash32; // your 32-bit key
-
-            if (!valid32(texId)) continue;
-            // if you need a 64->32 resolver, do it here when tagHash32 is invalid
-            // Resolve the blob
-            TagHash tTag = TagHash(texId);
-            if (!tTag.data || tTag.size == 0) {
-                OutputDebugStringA(("EnqueueTechnique: missing texture bytes id=" + std::to_string(texId) + "\n").c_str());
+            if (!valid32(texId)) {
+                printf("  [Tex] slot %u invalid id\n", slot);
                 continue;
             }
-
-            // Parse the texture fully into a payload
-            auto tpOpt = BuildTexturePayloadFromTag(tTag);   // <-- your parser returning std::optional<TexturePayload>
-            if (!tpOpt) {
-                OutputDebugStringA(("EnqueueTechnique: failed to parse texture id=" + std::to_string(texId) + "\n").c_str());
+            if (!ensureTexturePayload(texId))
                 continue;
-            }
 
-            // Register payload (only once)
-            if (!R_->HasTexture(texId)) {
-                R_->RegisterTexture(texId, std::move(*tpOpt));
-            }
-
-            // Enqueue GPU creation -> SRV
             psTexF.emplace_back(slot, EnqueueTexture(texId).future);
         }
 
-        // ----- Assemble technique -----
-        auto tech = std::make_shared<EntropyAssets::Technique>();
-        tech->id = id;
+        // -------- Collect everything --------
+        if (fVS.valid()) {
+            auto vs = fVS.get();
+            printf("[Tech] %08X VS ok? %s\n", id, (vs && vs->vs.Get()) ? "YES" : "NO");
+            if (vs) tech->VS.push_back(vs);
+        }
+        if (fPS.valid()) {
+            auto ps = fPS.get();
+            printf("[Tech] %08X PS ok? %s\n", id, (ps && ps->ps.Get()) ? "YES" : "NO");
+            if (ps) tech->PS.push_back(ps);
+        }
 
-        try {
-            if (fVS.valid()) tech->VS.push_back(fVS.get());
-            if (fPS.valid()) tech->PS.push_back(fPS.get());
-
-            tech->Textures.reserve(psTexF.size());
-            tech->psTextureSlots.reserve(psTexF.size());   // keep t# alongside SRV
-
-            for (auto& p : psTexF) {
-                if (!p.second.valid()) continue;
-                auto texRes = p.second.get();
+        tech->Textures.reserve(psTexF.size());
+        tech->psTextureSlots.reserve(psTexF.size());
+        for (auto& [slot, fut] : psTexF) {
+            try {
+                if (!fut.valid()) continue;
+                auto texRes = fut.get();
                 if (texRes) {
                     tech->Textures.push_back(texRes);
-                    tech->psTextureSlots.push_back(p.first);
+                    tech->psTextureSlots.push_back(slot);
                 }
             }
-        }
-        catch (const std::exception& e) {
-            std::string msg = "Technique build failed id=" + std::to_string(id) + " : " + e.what() + "\n";
-            OutputDebugStringA(msg.c_str());
+            catch (const std::exception& e) {
+                printf("[Tech] %08X texture future (slot %u) failed: %s\n", id, slot, e.what());
+            }
         }
 
         return tech;
         });
 }
+
 

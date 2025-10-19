@@ -39,143 +39,142 @@ uint32_t StaticRenderer::RegisterBufferBlob(const void* bytes, size_t size, uint
 
 RenderStatic StaticRenderer::Build()
 {
-    // --- Parse this static and its mesh ---
-	printf("StaticRenderer::Build for static hash %08X\n", static_hash_.hash);
+    printf("StaticRenderer::Build for static hash %08X\n", static_hash_.hash);
+
+    // --- Parse model + mesh ---
     auto static_tag = TagHash(static_hash_);
     auto s = bin::parse<SStaticModel>(static_tag.data, static_tag.size, bin::Endian::Little);
 
     auto mesh_tag = TagHash(s.opaque_meshes);
     auto m = bin::parse<SStaticMeshData>(mesh_tag.data, mesh_tag.size, bin::Endian::Little);
 
+    // Pick LOD (your logic)
     int max_detail = 0xff;
     for (auto group : m.mesh_groups) {
         if (group.TfxRenderStage < max_detail) {
             max_detail = group.TfxRenderStage;
-            //printf("INPUT LAYOUT %d\n", group.input_layout_index);
-            auto input_layout = INPUT_LAYOUTS[group.input_layout_index];
-            //printf("Input Layout with %zu elements\n", input_layout.elements.size());
         }
     }
 
-    // --- Register buffers per group (de-dup by id) ---
-    std::vector<std::array<uint32_t, 4>> groupIds; // {pos, idx, uv, col}
-    groupIds.reserve(m.buffers.size());
+    // ---- Collect buffer-group ids + index format once (avoid TagHash(ids[1]) later) ----
+    struct GroupRef { uint32_t posId{}, idxId{}, uvId{}, colId{}; bool idx32{}; };
+    std::vector<GroupRef> groupRefs;
+    groupRefs.reserve(m.buffers.size());
 
     for (const auto& bg : m.buffers) {
-        uint32_t posId = 0, idxId = 0, uvId = 0, colId = 0;  // defaults when a buffer is absent
+        GroupRef gr{};
         if (bg.IndexBuffer.hash != 0xffffffff) {
             auto ibh = bin::parse<IndexBufferHeader>(bg.IndexBuffer.data, bg.IndexBuffer.size, bin::Endian::Little);
-            auto ib_buffer = TagHash(bg.IndexBuffer.reference).data;
-            idxId = RegisterBufferBlob(ib_buffer, ibh.dataSize, bg.IndexBuffer.hash, D3D11_BIND_INDEX_BUFFER);
+            auto ib_bytes = TagHash(bg.IndexBuffer.reference).data;
+            gr.idxId = RegisterBufferBlob(ib_bytes, ibh.dataSize, bg.IndexBuffer.hash, D3D11_BIND_INDEX_BUFFER);
+            gr.idx32 = (ibh.is32 != 0);
         }
         if (bg.VertexBuffer.hash != 0xffffffff) {
             auto vbh = bin::parse<VertexBufferHeader>(bg.VertexBuffer.data, bg.VertexBuffer.size, bin::Endian::Little);
-            auto vb_buffer = TagHash(bg.VertexBuffer.reference).data;
-            posId = RegisterBufferBlob(vb_buffer, vbh.dataSize, bg.VertexBuffer.hash, D3D11_BIND_VERTEX_BUFFER, vbh.stride);
+            auto vb_bytes = TagHash(bg.VertexBuffer.reference).data;
+            gr.posId = RegisterBufferBlob(vb_bytes, vbh.dataSize, bg.VertexBuffer.hash, D3D11_BIND_VERTEX_BUFFER, vbh.stride);
         }
         if (bg.UVBuffer.hash != 0xffffffff) {
             auto uvbh = bin::parse<VertexBufferHeader>(bg.UVBuffer.data, bg.UVBuffer.size, bin::Endian::Little);
-            auto uv_buffer = TagHash(bg.UVBuffer.reference).data;
-            uvId = RegisterBufferBlob(uv_buffer, uvbh.dataSize, bg.UVBuffer.hash, D3D11_BIND_VERTEX_BUFFER, uvbh.stride);
+            auto uv_bytes = TagHash(bg.UVBuffer.reference).data;
+            gr.uvId = RegisterBufferBlob(uv_bytes, uvbh.dataSize, bg.UVBuffer.hash, D3D11_BIND_VERTEX_BUFFER, uvbh.stride);
         }
         if (bg.VertexColourBuffer.hash != 0xffffffff) {
             auto vcbh = bin::parse<VertexBufferHeader>(bg.VertexColourBuffer.data, bg.VertexColourBuffer.size, bin::Endian::Little);
-            auto vc_buffer = TagHash(bg.VertexColourBuffer.reference).data;
-            colId = RegisterBufferBlob(vc_buffer, vcbh.dataSize, bg.VertexColourBuffer.hash, D3D11_BIND_VERTEX_BUFFER, vcbh.stride);
+            auto vc_bytes = TagHash(bg.VertexColourBuffer.reference).data;
+            gr.colId = RegisterBufferBlob(vc_bytes, vcbh.dataSize, bg.VertexColourBuffer.hash, D3D11_BIND_VERTEX_BUFFER, vcbh.stride);
         }
-        groupIds.push_back({ posId, idxId, uvId, colId });
+        groupRefs.push_back(gr);
     }
+
+    // ---- Collect per-part technique id + buffer group index (aligned vectors) ----
 
     std::vector<TagHash> techIds;
-    std::vector<size_t>   partGroupIdx;
+    std::vector<size_t>  partGroupIdx;
+    std::vector<uint32_t> partInputLayoutIdx;
 
-    int MatIndex = 0;
-    for (auto meshGroup : m.mesh_groups) {
-        if (meshGroup.TfxRenderStage > max_detail) {
-            MatIndex++;
-            continue;
-        }
-		partGroupIdx.push_back(meshGroup.part_index);
-        techIds.push_back(s.Techniques[MatIndex].Unk0);
-		MatIndex++;
+    int matIndex = 0;
+    for (const auto& mg : m.mesh_groups) {
+        if (mg.TfxRenderStage > max_detail) { ++matIndex; continue; }
+        partGroupIdx.push_back(static_cast<size_t>(mg.part_index));     // which buffer group this part uses
+        techIds.push_back(s.Techniques[matIndex].Unk0);                 // your technique tag
+        partInputLayoutIdx.push_back(mg.input_layout_index);            // remember IL index if you want per-part IL
+        ++matIndex;
     }
 
-
-    // --- Create GPU resources async + assemble mesh ---
-    auto mesh = std::make_shared<StaticMesh>();
-
+    // ---- Enqueue buffer groups (parallel) ----
     std::vector<std::shared_future<std::shared_ptr<BufferGroup>>> groupF;
-    groupF.reserve(groupIds.size());
-    for (auto ids : groupIds) {
-        auto f = gfx_.pool->Submit([this, ids] {
+    groupF.reserve(groupRefs.size());
+
+    for (const auto& gr : groupRefs) {
+        auto fut = gfx_.pool->Submit([this, gr]() {
             auto grp = std::make_shared<BufferGroup>();
 
-            if (ids[0]) {
-                grp->vertex = gfx_.assets->EnqueueBuffer(ids[0]).future.get();
-                grp->vertexStride = gfx_.registry->GetBuffer(ids[0]).stride;
+            if (gr.posId) {
+                grp->vertex = gfx_.assets->EnqueueBuffer(gr.posId).future.get();
+                grp->vertexStride = gfx_.registry->GetBuffer(gr.posId).stride;
             }
-            if (ids[1]) {
-				auto ibufferTag = TagHash(ids[1]);
-                auto ibh = bin::parse<IndexBufferHeader>(ibufferTag.data, ibufferTag.size, bin::Endian::Little);
-                grp->index = gfx_.assets->EnqueueBuffer(ids[1]).future.get();
-                const UINT byteWidth = gfx_.registry->GetBuffer(ids[1]).desc.ByteWidth;
-                if (ibh.is32 == 0) {
-                    grp->indexFormat = DXGI_FORMAT_R16_UINT;
-                    grp->indexCount = byteWidth / 2u;
-                }
-                else {
-                    grp->indexFormat = DXGI_FORMAT_R32_UINT;
-					grp->indexCount = byteWidth / 4u;
-                }
-                // Your engine uses R16 indices in RenderFrame; default to R16 here
-               
-                
-                
+            if (gr.idxId) {
+                grp->index = gfx_.assets->EnqueueBuffer(gr.idxId).future.get();
+                const UINT byteWidth = gfx_.registry->GetBuffer(gr.idxId).desc.ByteWidth;
+                grp->indexFormat = gr.idx32 ? DXGI_FORMAT_R32_UINT : DXGI_FORMAT_R16_UINT;
+                grp->indexCount = gr.idx32 ? (byteWidth / 4u) : (byteWidth / 2u);
             }
-            if (ids[2]) {
-                grp->uv = gfx_.assets->EnqueueBuffer(ids[2]).future.get();
-                grp->uvStride = gfx_.registry->GetBuffer(ids[2]).stride;
+            if (gr.uvId) {
+                grp->uv = gfx_.assets->EnqueueBuffer(gr.uvId).future.get();
+                grp->uvStride = gfx_.registry->GetBuffer(gr.uvId).stride;
             }
-            if (ids[3]) {
-                grp->color = gfx_.assets->EnqueueBuffer(ids[3]).future.get();
-                grp->colorStride = gfx_.registry->GetBuffer(ids[3]).stride;
+            if (gr.colId) {
+                grp->color = gfx_.assets->EnqueueBuffer(gr.colId).future.get();
+                grp->colorStride = gfx_.registry->GetBuffer(gr.colId).stride;
             }
             return grp;
             }).share();
-        groupF.push_back(f);
+        groupF.push_back(fut);
     }
 
-    // Build technique futures safely (1 per part)
-    std::vector<std::shared_future<std::shared_ptr<EntropyAssets::Technique>>> techF;
-    std::vector<uint8_t> techOk;
-    techF.reserve(techIds.size());
-    techOk.reserve(techIds.size());
-
-    for (auto technique_tag : techIds) {
-		auto& tid = technique_tag.hash;
-        if (tid != 0 && !gfx_.registry->HasTechnique(tid)) {
-            techF.push_back(gfx_.assets->EnqueueTechnique(technique_tag ));  // returns shared_future<shared_ptr<Technique>>
-            techOk.push_back(1);
-        }
-        else {
-            techF.emplace_back();   // default-constructed invalid future
-            techOk.push_back(0);
-            OutputDebugStringA(("Technique missing/unregistered id=" + std::to_string(tid) + "\n").c_str());
-        }
-    }
-
-
-    for (auto& f : groupF) mesh->groups.push_back(f.get());
-    mesh->parts.resize(techIds.size());
+    // ---- Enqueue techniques (one per part) ----
+    std::vector<std::shared_future<std::shared_ptr<EntropyAssets::Technique>>> techF(techIds.size());
     for (size_t i = 0; i < techIds.size(); ++i) {
-        mesh->parts[i].techniqueId = techIds[i].hash;
-        mesh->input_layout_index = m.mesh_groups[i].input_layout_index;
-        
+        const uint32_t tid32 = techIds[i].hash;
+        printf("[Build] part %zu technique %08X\n", i, tid32);
+        techF[i] = gfx_.assets->EnqueueTechnique(techIds[i]); // returns shared_future<shared_ptr<Technique>>
     }
 
+    // ---- Assemble mesh ----
+    auto mesh = std::make_shared<StaticMesh>();
+    mesh->groups.reserve(groupF.size());
+    for (auto& f : groupF) {
+        try {
+            mesh->groups.push_back(f.get());
+        }
+        catch (const std::exception& e) {
+            printf("[Build][Group] failed: %s\n", e.what());
+            mesh->groups.push_back(nullptr);
+        }
+    }
+
+
+    mesh->parts.resize(techIds.size());
+    for (size_t i = 0; i < partGroupIdx.size(); ++i) {
+        std::shared_ptr<EntropyAssets::Technique> t;
+        try {
+            if (techF[i].valid()) t = techF[i].get();
+        }
+        catch (const std::exception& e) {
+            printf("[Build][Tech] id=%08X get() failed: %s\n", techIds[i].hash, e.what());
+        }
+        mesh->parts[i].techniqueId = techIds[i].hash;
+        mesh->parts[i].technique = std::move(t);
+        mesh->parts[i].partInfo = m.parts[partGroupIdx[i]];
+        mesh->input_layout_index = partInputLayoutIdx[i];
+    }
+
+    // ---- Output renderable ----
     RenderStatic out{};
     out.mesh = std::move(mesh);
     out.world = XMMatrixIdentity();
-	out.meshData = m;
+    out.meshData = m; // if you need original meta later
     return out;
 }
+
