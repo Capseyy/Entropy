@@ -15,6 +15,7 @@
 #include "TigerEngine/tag.h"
 #include "TigerEngine/Technique/technique.h"
 #include "TigerEngine/Technique/texture.h"
+#include "Renderer/Loaders/TextureLoader.h"
 
 
 
@@ -47,6 +48,13 @@ public:
     std::shared_future<std::shared_ptr<EntropyAssets::Technique>>
         EnqueueTechnique(TagHash techniqueId);
 
+    using InputLayoutProvider =
+        std::function<void(uint32_t /*shaderId*/,
+            std::vector<D3D11_INPUT_ELEMENT_DESC>& /*descs*/,
+            std::vector<std::string>& /*semanticStorage*/)>;
+
+    void SetInputLayoutProvider(InputLayoutProvider fn) { layoutProvider_ = std::move(fn); }
+
 private:
     // ---------------- members ----------------
     ID3D11Device* device_ = nullptr;            // not owned
@@ -71,10 +79,17 @@ private:
 
     template<typename TShaderIface>
     void createShader_(ID3D11Device* dev, const void* bc, size_t bcSize, ComPtr<TShaderIface>& out);
+    std::shared_ptr<EntropyAssets::VertexShader>
+        createVertexShader_(uint32_t id, const ShaderPayload& p);
+
+    std::shared_ptr<EntropyAssets::PixelShader>
+        createPixelShader_(const ShaderPayload& p);
 
     std::shared_ptr<EntropyAssets::VertexShader> createVS_(const ShaderPayload& p);
 
     std::shared_ptr<EntropyAssets::Texture2DRes> createTexture_(const TexturePayload& p);
     std::shared_ptr<EntropyAssets::SamplerRes>   createSampler_(const D3D11_SAMPLER_DESC& d);
     std::shared_ptr<EntropyAssets::CBufferRes>   createCBuffer_(UINT byteSize, const void* init);
+
+    InputLayoutProvider  layoutProvider_; // optional hook
 };

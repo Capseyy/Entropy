@@ -154,7 +154,7 @@ RenderStatic StaticRenderer::Build()
     for (auto technique_tag : techIds) {
 		auto& tid = technique_tag.hash;
         if (tid != 0 && !gfx_.registry->HasTechnique(tid)) {
-            techF.push_back(gfx_.assets->EnqueueTechnique(technique_tag));  // returns shared_future<shared_ptr<Technique>>
+            techF.push_back(gfx_.assets->EnqueueTechnique(technique_tag ));  // returns shared_future<shared_ptr<Technique>>
             techOk.push_back(1);
         }
         else {
@@ -169,10 +169,12 @@ RenderStatic StaticRenderer::Build()
     mesh->parts.resize(techIds.size());
     for (size_t i = 0; i < techIds.size(); ++i) {
         mesh->parts[i].techniqueId = techIds[i].hash;
+        
     }
 
     RenderStatic out{};
     out.mesh = std::move(mesh);
     out.world = XMMatrixIdentity();
+	out.meshData = m;
     return out;
 }

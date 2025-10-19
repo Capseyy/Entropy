@@ -94,7 +94,7 @@ unsigned char* WideHash::getData() {
 
 	
 	if (it == h64.end()) {
-		printf("H64 lookup failed for 0x%016 \n", wideHashData.Hash64);
+		printf("H64 lookup failed for % \n", wideHashData.Hash64);
 		return nullptr;
 	}
 	TagHash toTagHash = it->second;

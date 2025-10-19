@@ -21,9 +21,9 @@ struct ShaderPayload {
 };
 
 struct TexturePayload {
-    enum class Kind { DDS, WIC, RAWRGBA8 } kind = Kind::WIC;
-    std::vector<uint8_t> data; // DDS/WIC bytes or raw pixels
-    UINT w = 0, h = 0, pitch = 0; // for RAWRGBA8
+    D3D11_TEXTURE2D_DESC desc{};
+    std::vector<D3D11_SUBRESOURCE_DATA> subresources; // pointers into `data`
+    std::vector<uint8_t> data;                        // owns the pixel bytes
 };
 
 struct CBufferMeta {

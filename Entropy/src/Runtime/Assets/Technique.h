@@ -7,6 +7,16 @@
 
 namespace EntropyAssets {           // <<< add
 
+    struct Texture2DRes { // whatever you already have
+        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
+        ID3D11ShaderResourceView* Get() const { return srv.Get(); }
+    };
+
+    struct TexBinding {
+        UINT slot = 0;                                  // t-slot
+        std::shared_ptr<Texture2DRes> tex;              // SRV wrapper
+    };
+
     using Microsoft::WRL::ComPtr;
 
     struct VertexShader { ComPtr<ID3D11VertexShader> vs; ComPtr<ID3D11InputLayout> layout; };
@@ -16,7 +26,6 @@ namespace EntropyAssets {           // <<< add
     struct HullShader { ComPtr<ID3D11HullShader>   hs; };
     struct DomainShader { ComPtr<ID3D11DomainShader> ds; };
 
-    struct Texture2DRes { ComPtr<ID3D11Texture2D> tex; ComPtr<ID3D11ShaderResourceView> srv; };
     struct SamplerRes { ComPtr<ID3D11SamplerState> sampler; };
     struct CBufferRes { ComPtr<ID3D11Buffer> buffer; UINT size = 0; };
 
@@ -32,6 +41,7 @@ namespace EntropyAssets {           // <<< add
         std::vector<std::shared_ptr<Texture2DRes>>   Textures;
         std::vector<std::shared_ptr<SamplerRes>>     Samplers;
         std::vector<std::shared_ptr<CBufferRes>>     CBuffers;
+        std::vector<UINT> psTextureSlots; // t# for each entry in Textures
     };
 
 } // namespace EntropyAssets       // <<< add

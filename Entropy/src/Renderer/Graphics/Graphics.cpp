@@ -148,6 +148,91 @@ inline float float_from_bits(std::uint32_t bits) {
 	return std::bit_cast<float>(bits);
 }
 
+// Call this from Graphics::RenderFrame() after setting common state (topology, depth, blend)
+void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
+{
+	ID3D11DeviceContext* ctx = pContext.Get();
+	const auto& mesh = *rs.mesh;
+	// View constant buffer(s)
+	UploadScopeViewCB12_All(ctx, view, float(windowWidth), float(windowHeight));
+	ID3D11Buffer* b1 = g_cb1.Get();            // if you also use cb1 for per-object, leave it bound
+	ctx->VSSetConstantBuffers(1, 1, &b1);
+
+	for (const auto& part : mesh.parts)
+	{
+
+		const auto& tech = part.technique;
+		printf("Drawing static mesh part with technique ID %u\n", part.techniqueId);
+
+		// --- Shaders
+		ctx->VSSetShader(tech->VS[0].get()->vs.Get(), nullptr, 0);
+		ctx->PSSetShader(tech->PS[0].get()->ps.Get(), nullptr, 0);
+
+		ctx->IASetInputLayout(tech->VS[0].get()->layout.Get());
+		
+
+		// --- Buffers (choose the group this part uses; here we take the first)
+		const size_t gi = part.bufferGroupIndices.empty() ? 0 : part.bufferGroupIndices[0];
+		const BufferGroup& bg = *mesh.groups[gi];
+
+	
+
+		ID3D11Buffer* vbs[3];
+		UINT          strides[3];
+		UINT          offsets[3] = { 0,0,0 };
+		UINT          vbCount = 0;
+
+		if (bg.vertex) { vbs[vbCount] = bg.vertex.get(); strides[vbCount] = bg.vertexStride; ++vbCount; }
+		if (bg.uv) { vbs[vbCount] = bg.uv.get();     strides[vbCount] = bg.uvStride;     ++vbCount; }
+		if (bg.color) { vbs[vbCount] = bg.color.get();  strides[vbCount] = bg.colorStride;  ++vbCount; }
+
+		ctx->IASetVertexBuffers(0, vbCount, vbs, strides, offsets);
+		ctx->IASetIndexBuffer(bg.index.get(), bg.indexFormat, 0);
+
+		// --- Per-object constants (if you have them; otherwise identity)
+		// Example: one instance with identity world (your cb1 already supports multiple)
+		{
+			std::vector<DirectX::XMMATRIX> worlds(1, DirectX::XMMatrixIdentity());
+			UpdateCB1(ctx,
+				/*meshOffset*/{ 0,0,0 },
+				/*meshScale*/  1.0f,
+				/*uvScaleX*/   1.0f,
+				/*uvOffX*/     0.0f,
+				/*uvOffY*/     0.0f,
+				/*maxColorOrClampBits*/ 0u,
+				worlds);
+		}
+
+		// --- Textures (PS) by slot
+		if (!tech->Textures.empty()) {
+			for (size_t i = 0; i < tech->Textures.size(); ++i) {
+				UINT slot = tech->psTextureSlots[i];
+				ID3D11ShaderResourceView* s = tech->Textures[i] ? tech->Textures[i]->Get() : nullptr;
+				ctx->PSSetShaderResources(slot, 1, &s);
+			}
+		}
+
+		// --- Samplers / PS constant buffers (if you stored them on the technique)
+		//for (const auto& s : tech->Samplers) {
+		//	ID3D11SamplerState* ss = s.state.Get();                  // your wrapper
+		//	ctx->PSSetSamplers(s.slot, 1, &ss);
+		//}
+		//for (const auto& cb : tech->CBuffers) {
+		//	ID3D11Buffer* b = cb.buffer.Get();
+		//	ctx->PSSetConstantBuffers(cb.slot, 1, &b);
+		//}
+
+		// --- Draw
+		printf("Drawing static mesh part with %u indices\n", bg.indexCount);
+		ctx->DrawIndexed(bg.indexCount, 0, 0);
+
+		// (Optional) unbind PS SRVs if those textures become RTs later in the frame
+		// ID3D11ShaderResourceView* nulls[16] = {};
+		// ctx->PSSetShaderResources(0, 16, nulls);
+	}
+}
+
+
 void Graphics::RenderFrame()
 {
 	mainQueue->Drain();
@@ -168,6 +253,9 @@ void Graphics::RenderFrame()
 	const float farZ = camera.GetFarZ();
 	const float isFirstPerson = 0.0f;
 	static Microsoft::WRL::ComPtr<ID3D11Buffer> s_vsCB; // b1
+	View viewState_ps{};
+	XMStoreFloat4x4(&viewState_ps.world_to_camera, camera.GetViewMatrix());
+	XMStoreFloat4x4(&viewState_ps.camera_to_projective, camera.GetProjectionMatrix());
 
 	if (!s_vsCB) {
 		D3D11_BUFFER_DESC cbDesc{};
@@ -180,6 +268,12 @@ void Graphics::RenderFrame()
 		D3D11_SUBRESOURCE_DATA initData{ &init, 0, 0 };
 		pDevice->CreateBuffer(&cbDesc, &initData, s_vsCB.GetAddressOf());
 	}
+
+	for (const auto& rs : staticsToDraw) {      // vector<RenderStatic>
+        DrawStaticMesh(rs, viewState_ps);
+    }
+
+
 
 	if (!fpsTimer.isrunning) { fpsTimer.Start(); }
 	static int fpsCounter = 0;
@@ -377,10 +471,6 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 	mainQueue = std::make_unique<MainThreadQueue>();
 	registry = std::make_unique<RuntimeAssetRegistry>();
 	assets = std::make_unique<AssetSystem>(pDevice.Get(), *pool, *mainQueue, registry.get());
-
-	staticMap = std::make_unique<StaticMap>(*this);
-	staticMap->Initialize(0x80AD122C);  // root map hash (or whatever yours is)
-	staticMap->LoadAll_Statics();
 	// Create the camera constant buffer
 	CreateScopeViewCB12(pDevice.Get());
 	CreateCB1(pDevice.Get());
@@ -428,5 +518,8 @@ bool Graphics::InitializeScene()
 		ErrorLogger::Log(exception);
 		return false;
 	}
+	staticMap = std::make_unique<StaticMap>(*this);
+	staticMap->Initialize(0x80BB0ED4);  // root map hash (or whatever yours is)
+	staticsToDraw = staticMap->GetRenderList();
 	return true;
 }

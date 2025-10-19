@@ -261,7 +261,6 @@
     <ClCompile Include="src\TigerEngine\Technique\texture.cpp" />
     <ClCompile Include="src\Renderer\WindowContainer.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Shaders\Vertex.cpp" />
-    <ClCompile Include="src\Renderer\Loaders\technique_loader.cpp" />
     <ClCompile Include="src\Renderer\Timer.cpp" />
     <ClCompile Include="src\Runtime\Threading\ThreadPool.cpp" />
     <ClCompile Include="src\Renderer\Loaders\StaticRenderer.cpp" />
@@ -269,6 +268,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\Renderer\Loaders\RenderStatic.h" />
+    <ClInclude Include="src\Renderer\Loaders\TextureLoader.h" />
     <ClInclude Include="src\Runtime\Assets\AssetCache.h" />
     <ClInclude Include="src\Runtime\Assets\AssetHandle.h" />
     <ClInclude Include="src\Runtime\Assets\AssetSystem.h" />

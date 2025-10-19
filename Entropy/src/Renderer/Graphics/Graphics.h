@@ -71,4 +71,8 @@ private:
 	int windowHeight = 0;
 
 	Timer fpsTimer;
+
+	std::vector<RenderStatic> staticsToDraw;
+
+	void DrawStaticMesh(const RenderStatic& rs, const View& view);
 };

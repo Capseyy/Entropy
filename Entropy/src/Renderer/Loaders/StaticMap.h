@@ -15,7 +15,7 @@ public:
     void LoadAll_Statics();                 // (name whatever you want)
 
     const std::vector<RenderStatic>& Statics() const { return statics_; }
-
+    std::vector<RenderStatic> GetRenderList(); // NEW
 private:
     Graphics& gfx_;                         // <-- THIS must exist
     uint64_t  rootHash_ = 0;

@@ -36,7 +36,7 @@ AssetSystem::AssetSystem(ID3D11Device* device,
 //------------------------------------------------------------------------------
 AssetHandle<ID3D11Buffer> AssetSystem::EnqueueBuffer(uint32_t id)
 {
-	printf("EnqueueBuffer ID %0x8\n", id);
+	//printf("EnqueueBuffer ID %0x8\n", id);
     auto fut = pool_.Submit([=] {
         return bufferCache_.GetOrLoad(id, [&] {
             BufferPayload payload = R_->GetBuffer(id);
@@ -65,12 +65,75 @@ std::shared_ptr<ID3D11Buffer> AssetSystem::createBuffer_(const BufferPayload& p)
 //------------------------------------------------------------------------------
 // Shaders
 //------------------------------------------------------------------------------
+std::shared_ptr<EntropyAssets::VertexShader>
+AssetSystem::createVertexShader_(uint32_t id, const ShaderPayload& p)
+{
+    ComPtr<ID3D11VertexShader> vs;
+    HRESULT hr = device_->CreateVertexShader(
+        p.bytecode.data(), p.bytecode.size(), nullptr, &vs);
+    if (FAILED(hr)) {
+        throw std::runtime_error("CreateVertexShader failed");
+    }
+
+    auto out = std::make_shared<EntropyAssets::VertexShader>();
+    out->vs = vs;
+
+    // Build an input layout if available
+    // Source #1: caller-provided provider (recommended); or
+    // Source #2: payload.input (if you already store it).
+    std::vector<D3D11_INPUT_ELEMENT_DESC> descs;
+    std::vector<std::string> semantics; // holds char buffers backing SemanticName
+
+    if (layoutProvider_) {
+        layoutProvider_(id, descs, semantics);
+    }
+    else if (!p.input.empty()) {
+        // If you store them in the payload (with stable backing strings)
+        descs = p.input; // NOTE: ensure SemanticName pointers are valid
+    }
+
+    if (!descs.empty()) {
+        ComPtr<ID3D11InputLayout> il;
+        hr = device_->CreateInputLayout(
+            descs.data(), static_cast<UINT>(descs.size()),
+            p.bytecode.data(), p.bytecode.size(),
+            &il);
+        if (SUCCEEDED(hr)) {
+            out->layout = il;
+        }
+        else {
+            OutputDebugStringA("CreateInputLayout failed; continuing without IL\n");
+        }
+    }
+
+    return out;
+}
+
+std::shared_ptr<EntropyAssets::PixelShader>
+AssetSystem::createPixelShader_(const ShaderPayload& p)
+{
+    ComPtr<ID3D11PixelShader> ps;
+    HRESULT hr = device_->CreatePixelShader(
+        p.bytecode.data(), p.bytecode.size(), nullptr, &ps);
+    if (FAILED(hr)) {
+        throw std::runtime_error("CreatePixelShader failed");
+    }
+
+    auto out = std::make_shared<EntropyAssets::PixelShader>();
+    out->ps = ps;
+    return out;
+}
+
+
+
+
 template<typename TShaderIface>
 void AssetSystem::createShader_(ID3D11Device* dev, const void* bc, size_t bcSize, ComPtr<TShaderIface>& out)
 {
     HRESULT hr = CreateDx11Shader<TShaderIface>(dev, bc, bcSize, out.GetAddressOf());
     if (FAILED(hr)) throw std::runtime_error("CreateShader failed");
 }
+
 
 std::shared_ptr<EntropyAssets::VertexShader> AssetSystem::createVS_(const ShaderPayload& p)
 {
@@ -94,11 +157,11 @@ std::shared_ptr<EntropyAssets::VertexShader> AssetSystem::createVS_(const Shader
 
 AssetHandle<EntropyAssets::VertexShader> AssetSystem::EnqueueVertexShader(uint32_t id)
 {
-	printf("EnqueueVertexShader ID %0x8\n", id);
+	//printf("EnqueueVertexShader ID %0x8\n", id);
     auto fut = pool_.Submit([=] {
         return vsCache_.GetOrLoad(id, [&] {
             ShaderPayload payload = R_->GetShader(id);
-            return createVS_(payload);
+            return createVertexShader_(id, payload);
             }).get();
         }).share();
 
@@ -107,14 +170,11 @@ AssetHandle<EntropyAssets::VertexShader> AssetSystem::EnqueueVertexShader(uint32
 
 AssetHandle<EntropyAssets::PixelShader> AssetSystem::EnqueuePixelShader(uint32_t id)
 {
-	printf("EnqueuePixelShader ID %0x8\n", id);
+    //printf("EnqueuePixelShader ID %0x8\n", id);
     auto fut = pool_.Submit([=] {
         return psCache_.GetOrLoad(id, [&] {
             ShaderPayload payload = R_->GetShader(id);
-            ComPtr<ID3D11PixelShader> ps;
-            createShader_<ID3D11PixelShader>(device_, payload.bytecode.data(), payload.bytecode.size(), ps);
-            std::shared_ptr<EntropyAssets::PixelShader> out(new EntropyAssets::PixelShader());
-            out->ps = ps; return out;
+            return createPixelShader_(payload);
             }).get();
         }).share();
 
@@ -184,63 +244,71 @@ AssetHandle<EntropyAssets::DomainShader> AssetSystem::EnqueueDomainShader(uint32
 //------------------------------------------------------------------------------
 // Textures / Samplers / CBuffers
 //------------------------------------------------------------------------------
-std::shared_ptr<EntropyAssets::Texture2DRes> AssetSystem::createTexture_(const TexturePayload& p)
+std::shared_ptr<EntropyAssets::Texture2DRes>
+AssetSystem::createTexture_(const TexturePayload& p)
 {
-    ComPtr<ID3D11Resource> res;
-    ComPtr<ID3D11ShaderResourceView> srv;
+    using Microsoft::WRL::ComPtr;
 
-#if defined(ENTROPY_WITH_DIRECTXTK)
-    if (p.kind == TexturePayload::Kind::DDS) {
-        HRESULT hr = DirectX::CreateDDSTextureFromMemory(device_, p.data.data(), p.data.size(), res.GetAddressOf(), srv.GetAddressOf(), 0);
-        if (FAILED(hr)) throw std::runtime_error("CreateDDSTextureFromMemory failed");
+    // Validate & create texture
+    ComPtr<ID3D11Texture2D> tex;
+    HRESULT hr = device_->CreateTexture2D(&p.desc,
+        p.subresources.empty() ? nullptr : p.subresources.data(), &tex);
+    if (FAILED(hr)) throw std::runtime_error("CreateTexture2D failed");
+
+    // SRV format (typed if the texture is typeless)
+    auto ToTypedForSRV = [](DXGI_FORMAT f)->DXGI_FORMAT {
+        switch (f) {
+        case DXGI_FORMAT_R8G8B8A8_TYPELESS: return DXGI_FORMAT_R8G8B8A8_UNORM;
+        case DXGI_FORMAT_BC1_TYPELESS:      return DXGI_FORMAT_BC1_UNORM;
+        case DXGI_FORMAT_BC2_TYPELESS:      return DXGI_FORMAT_BC2_UNORM;
+        case DXGI_FORMAT_BC3_TYPELESS:      return DXGI_FORMAT_BC3_UNORM;
+        case DXGI_FORMAT_BC4_TYPELESS:      return DXGI_FORMAT_BC4_UNORM;
+        case DXGI_FORMAT_BC5_TYPELESS:      return DXGI_FORMAT_BC5_UNORM;
+        default:                            return f;
+        }
+        };
+
+    D3D11_SHADER_RESOURCE_VIEW_DESC sd{};
+    sd.Format = ToTypedForSRV(p.desc.Format);
+
+    const bool isCube = (p.desc.MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE) != 0;
+    if (isCube) {
+        const UINT cubeCount = p.desc.ArraySize / 6;
+        sd.ViewDimension = (cubeCount > 1) ? D3D11_SRV_DIMENSION_TEXTURECUBEARRAY
+            : D3D11_SRV_DIMENSION_TEXTURECUBE;
+        if (cubeCount > 1) {
+            sd.TextureCubeArray.MostDetailedMip = 0;
+            sd.TextureCubeArray.MipLevels = p.desc.MipLevels;
+            sd.TextureCubeArray.First2DArrayFace = 0;
+            sd.TextureCubeArray.NumCubes = cubeCount;
+        }
+        else {
+            sd.TextureCube.MostDetailedMip = 0;
+            sd.TextureCube.MipLevels = p.desc.MipLevels;
+        }
     }
-    else if (p.kind == TexturePayload::Kind::WIC) {
-        HRESULT hr = DirectX::CreateWICTextureFromMemory(device_, p.data.data(), p.data.size(), res.GetAddressOf(), srv.GetAddressOf());
-        if (FAILED(hr)) throw std::runtime_error("CreateWICTextureFromMemory failed");
+    else if (p.desc.ArraySize > 1) {
+        sd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
+        sd.Texture2DArray.MostDetailedMip = 0;
+        sd.Texture2DArray.MipLevels = p.desc.MipLevels;
+        sd.Texture2DArray.FirstArraySlice = 0;
+        sd.Texture2DArray.ArraySize = p.desc.ArraySize;
     }
-    else
-#endif
-    {
-        if (p.kind != TexturePayload::Kind::RAWRGBA8)
-            throw std::runtime_error("Texture loader: only RAWRGBA8 supported without DirectXTK");
-
-        D3D11_TEXTURE2D_DESC td;
-        td.Width = p.w; td.Height = p.h;
-        td.MipLevels = 1; td.ArraySize = 1;
-        td.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-        td.SampleDesc.Count = 1; td.SampleDesc.Quality = 0;
-        td.Usage = D3D11_USAGE_DEFAULT;
-        td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-        td.CPUAccessFlags = 0; td.MiscFlags = 0;
-
-        D3D11_SUBRESOURCE_DATA srd;
-        srd.pSysMem = p.data.data();
-        srd.SysMemPitch = p.pitch ? p.pitch : (p.w * 4);
-        srd.SysMemSlicePitch = 0;
-
-        ComPtr<ID3D11Texture2D> tex;
-        HRESULT hr = device_->CreateTexture2D(&td, &srd, &tex);
-        if (FAILED(hr)) throw std::runtime_error("CreateTexture2D failed");
-
-        D3D11_SHADER_RESOURCE_VIEW_DESC sd;
-        sd.Format = td.Format;
+    else {
         sd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
         sd.Texture2D.MostDetailedMip = 0;
-        sd.Texture2D.MipLevels = 1;
-
-        hr = device_->CreateShaderResourceView(tex.Get(), &sd, &srv);
-        if (FAILED(hr)) throw std::runtime_error("CreateShaderResourceView failed");
-
-        res = tex;
+        sd.Texture2D.MipLevels = p.desc.MipLevels;
     }
 
-    ComPtr<ID3D11Texture2D> tex2d;
-    res.As(&tex2d);
+    ComPtr<ID3D11ShaderResourceView> srv;
+    hr = device_->CreateShaderResourceView(tex.Get(), &sd, &srv);
+    if (FAILED(hr)) throw std::runtime_error("CreateShaderResourceView failed");
 
-    std::shared_ptr<EntropyAssets::Texture2DRes> out(new EntropyAssets::Texture2DRes());
-    out->tex = tex2d; out->srv = srv;
+    auto out = std::make_shared<EntropyAssets::Texture2DRes>();
+    out->srv = srv;
     return out;
 }
+
 
 AssetHandle<EntropyAssets::Texture2DRes> AssetSystem::EnqueueTexture(uint32_t id)
 {
@@ -319,101 +387,113 @@ std::shared_future<std::shared_ptr<EntropyAssets::Technique>>
 AssetSystem::EnqueueTechnique(TagHash techniqueId)
 {
     const uint32_t id = techniqueId.hash;
-    printf("EnqueueTechnique: %08X\n", id);
+    //printf("EnqueueTechnique: %08X\n", id);
 
     static AssetCache<EntropyAssets::Technique> techCache;
-    auto valid = [](uint32_t x) { return x != 0u && x != 0xFFFFFFFFu; };
+
+    auto valid32 = [](uint32_t x) { return x != 0u && x != 0xFFFFFFFFu; };
 
     return techCache.GetOrLoad(id, [=] {
-        // 1) Parse your technique blob
+        // ----- Parse technique -----
         if (!techniqueId.data || techniqueId.size == 0) {
             auto empty = std::make_shared<EntropyAssets::Technique>();
             empty->id = id;
+            OutputDebugStringA("EnqueueTechnique: empty technique tag\n");
             return empty;
         }
         STechnique Tfx = bin::parse<STechnique>(techniqueId.data, techniqueId.size, bin::Endian::Little);
 
-        // 2) Helpers: ensure shader is registered from tag bytes, then enqueue creation
-        auto ensureRegistered = [this](uint32_t shaderId) {
-            if (!R_->HasShader(shaderId)) {
-                auto sTag = TagHash(shaderId);
+        // ----- Ensure shaders are registered from bytes, then enqueue -----
+        auto ensureShaderRegistered = [this](uint32_t shId)->bool {
+            if (!R_->HasShader(shId)) {
+                auto sTag = TagHash(shId);
                 if (!sTag.data || sTag.size == 0) return false;
-
                 ShaderPayload sp{};
                 sp.bytecode.assign(
                     static_cast<const uint8_t*>(sTag.data),
                     static_cast<const uint8_t*>(sTag.data) + sTag.size
                 );
-                // If you have input-layout metadata, fill sp.input here
-                R_->RegisterShader(shaderId, std::move(sp));
+                R_->RegisterShader(shId, std::move(sp));
             }
             return true;
             };
 
-        // 3) Kick all stages in parallel (only if a valid shader id exists)
-        std::shared_future<std::shared_ptr<EntropyAssets::VertexShader>>   fVS;
-        std::shared_future<std::shared_ptr<EntropyAssets::PixelShader>>    fPS;
-        std::shared_future<std::shared_ptr<EntropyAssets::GeometryShader>> fGS;
-        std::shared_future<std::shared_ptr<EntropyAssets::HullShader>>     fHS;
-        std::shared_future<std::shared_ptr<EntropyAssets::DomainShader>>   fDS;
-        std::shared_future<std::shared_ptr<EntropyAssets::ComputeShader>>  fCS;
+        std::shared_future<std::shared_ptr<EntropyAssets::VertexShader>> fVS;
+        std::shared_future<std::shared_ptr<EntropyAssets::PixelShader>>  fPS;
 
-        // VS
-        if (valid(Tfx.VertexShader.ShaderTag.hash) &&
-            ensureRegistered(Tfx.VertexShader.ShaderTag.hash))
+        if (valid32(Tfx.VertexShader.ShaderTag.hash) &&
+            ensureShaderRegistered(Tfx.VertexShader.ShaderTag.hash))
         {
             fVS = EnqueueVertexShader(Tfx.VertexShader.ShaderTag.hash).future;
         }
-        // PS
-        if (valid(Tfx.PixelShader.ShaderTag.hash) &&
-            ensureRegistered(Tfx.PixelShader.ShaderTag.hash))
+        if (valid32(Tfx.PixelShader.ShaderTag.hash) &&
+            ensureShaderRegistered(Tfx.PixelShader.ShaderTag.hash))
         {
             fPS = EnqueuePixelShader(Tfx.PixelShader.ShaderTag.hash).future;
         }
-        // GS
-        //if (valid(Tfx.GeometryShader.ShaderTag.hash) &&
-        //    ensureRegistered(Tfx.GeometryShader.ShaderTag.hash))
-        //{
-        //    fGS = EnqueueGeometryShader(Tfx.GeometryShader.ShaderTag.hash).future;
-        //}
-        //// HS (map UnkShader1 if that’s your hull shader)
-        //if (valid(Tfx.UnkShader1.ShaderTag.hash) &&
-        //    ensureRegistered(Tfx.UnkShader1.ShaderTag.hash))
-        //{
-        //    fHS = EnqueueHullShader(Tfx.UnkShader1.ShaderTag.hash).future;
-        //}
-        //// DS (map UnkShader2 if that’s your domain shader)
-        //if (valid(Tfx.UnkShader2.ShaderTag.hash) &&
-        //    ensureRegistered(Tfx.UnkShader2.ShaderTag.hash))
-        //{
-        //    fDS = EnqueueDomainShader(Tfx.UnkShader2.ShaderTag.hash).future;
-        //}
-        //// CS
-        //if (valid(Tfx.ComputeShader.ShaderTag.hash) &&
-        //    ensureRegistered(Tfx.ComputeShader.ShaderTag.hash))
-        //{
-        //    fCS = EnqueueComputeShader(Tfx.ComputeShader.ShaderTag.hash).future;
-        //}
 
-        // 4) Assemble the Technique (wait now that all futures are in flight)
+        // ----- TEXTURES (PS): resolve -> parse header -> register -> enqueue -----
+        using TexFuture = std::shared_future<std::shared_ptr<EntropyAssets::Texture2DRes>>;
+        std::vector<std::pair<UINT, TexFuture>> psTexF;
+        psTexF.reserve(Tfx.PixelShader.Textures.size());
+
+       
+
+        for (const auto& tex : Tfx.PixelShader.Textures)
+        {
+            const UINT slot = tex.TextureIndex;      // which t# to bind
+            uint32_t   texId = tex.Texture.tagHash32; // your 32-bit key
+
+            if (!valid32(texId)) continue;
+            // if you need a 64->32 resolver, do it here when tagHash32 is invalid
+            // Resolve the blob
+            TagHash tTag = TagHash(texId);
+            if (!tTag.data || tTag.size == 0) {
+                OutputDebugStringA(("EnqueueTechnique: missing texture bytes id=" + std::to_string(texId) + "\n").c_str());
+                continue;
+            }
+
+            // Parse the texture fully into a payload
+            auto tpOpt = BuildTexturePayloadFromTag(tTag);   // <-- your parser returning std::optional<TexturePayload>
+            if (!tpOpt) {
+                OutputDebugStringA(("EnqueueTechnique: failed to parse texture id=" + std::to_string(texId) + "\n").c_str());
+                continue;
+            }
+
+            // Register payload (only once)
+            if (!R_->HasTexture(texId)) {
+                R_->RegisterTexture(texId, std::move(*tpOpt));
+            }
+
+            // Enqueue GPU creation -> SRV
+            psTexF.emplace_back(slot, EnqueueTexture(texId).future);
+        }
+
+        // ----- Assemble technique -----
         auto tech = std::make_shared<EntropyAssets::Technique>();
         tech->id = id;
 
         try {
             if (fVS.valid()) tech->VS.push_back(fVS.get());
             if (fPS.valid()) tech->PS.push_back(fPS.get());
-            if (fGS.valid()) tech->GS.push_back(fGS.get());
-            if (fHS.valid()) tech->HS.push_back(fHS.get());
-            if (fDS.valid()) tech->DS.push_back(fDS.get());
-            if (fCS.valid()) tech->CS.push_back(fCS.get());
+
+            tech->Textures.reserve(psTexF.size());
+            tech->psTextureSlots.reserve(psTexF.size());   // keep t# alongside SRV
+
+            for (auto& p : psTexF) {
+                if (!p.second.valid()) continue;
+                auto texRes = p.second.get();
+                if (texRes) {
+                    tech->Textures.push_back(texRes);
+                    tech->psTextureSlots.push_back(p.first);
+                }
+            }
         }
         catch (const std::exception& e) {
             std::string msg = "Technique build failed id=" + std::to_string(id) + " : " + e.what() + "\n";
             OutputDebugStringA(msg.c_str());
-            // Leave partially filled; renderer can skip parts with missing stages
         }
 
-        // TODO next: textures/samplers/cbuffers (same pattern: ensure register from TagHash -> Enqueue -> get -> push)
         return tech;
         });
 }
