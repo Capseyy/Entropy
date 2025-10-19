@@ -31,6 +31,8 @@ namespace EntropyAssets {           // <<< add
 
     struct Technique {
         uint32_t id = 0;
+
+        // shaders
         std::vector<std::shared_ptr<VertexShader>>   VS;
         std::vector<std::shared_ptr<PixelShader>>    PS;
         std::vector<std::shared_ptr<ComputeShader>>  CS;
@@ -38,10 +40,17 @@ namespace EntropyAssets {           // <<< add
         std::vector<std::shared_ptr<HullShader>>     HS;
         std::vector<std::shared_ptr<DomainShader>>   DS;
 
+        // PS textures
         std::vector<std::shared_ptr<Texture2DRes>>   Textures;
+        std::vector<UINT>                            psTextureSlots;
+
+        // NEW: PS samplers
         std::vector<std::shared_ptr<SamplerRes>>     Samplers;
+        std::vector<UINT>                            psSamplerSlots;   // <— add
+
+        // NEW: PS cbuffer (you can have more than one if your format allows)
         std::vector<std::shared_ptr<CBufferRes>>     CBuffers;
-        std::vector<UINT> psTextureSlots; // t# for each entry in Textures
+        std::vector<UINT>                            psCBSlots;        // <— add
     };
 
 } // namespace EntropyAssets       // <<< add

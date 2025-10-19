@@ -1,74 +1,197 @@
 #include "input_layout.h"
-#include <d3dcompiler.h>
-#include "Renderer/Tools/ErrorLogger.h"
-#include <format>
+
+// Now define the input layouts
+const std::array<TigerInputLayout, 77> INPUT_LAYOUTS = {
+    // Layout 0
+    TigerInputLayout{
+        {
+            { "float3", DXGI_FORMAT_R32G32B32_FLOAT, 12, "POSITION", 0, 0, false }
+        }
+    },
+    // Layout 1
+    TigerInputLayout{
+        {
+            { "float3", DXGI_FORMAT_R32G32B32_FLOAT, 12, "POSITION", 0, 0, false }
+        }
+    },
+    // Layout 2
+    TigerInputLayout{
+        {
+            { "float2", DXGI_FORMAT_R32G32_FLOAT,      8, "POSITION", 0, 0, false },
+            { "float2", DXGI_FORMAT_R32G32_FLOAT,      8, "TEXCOORD", 0, 0, false },
+            { "float4", DXGI_FORMAT_R8G8B8A8_UNORM,    4, "COLOR",    0, 0, false }
+        }
+    },
+    // Layout 3
+    TigerInputLayout{
+        {
+            { "float3", DXGI_FORMAT_R32G32B32_FLOAT, 12, "POSITION", 0, 0, false },
+            { "float2", DXGI_FORMAT_R32G32_FLOAT,    8, "TEXCOORD", 0, 0, false },
+            { "float4", DXGI_FORMAT_R8G8B8A8_UNORM,  4, "COLOR",    0, 0, false }
+        }
+    },
+    // Layout 4
+    TigerInputLayout{
+        {
+            { "float3", DXGI_FORMAT_R32G32B32_FLOAT, 12, "POSITION", 0, 0, false },
+            { "float4", DXGI_FORMAT_R8G8B8A8_UNORM,  4, "COLOR",     0, 0, false }
+        }
+    },
+    // Layout 5
+    TigerInputLayout{
+        {
+            { "float2", DXGI_FORMAT_R32G32_FLOAT, 8, "POSITION", 0, 0, false },
+            { "float2", DXGI_FORMAT_R32G32_FLOAT, 8, "TEXCOORD", 0, 0, false }
+        }
+    },
+    // Layout 6
+    TigerInputLayout{
+        {
+            { "float3", DXGI_FORMAT_R32G32B32_FLOAT,    12, "POSITION", 0, 0, false },
+            { "float3", DXGI_FORMAT_R32G32B32_FLOAT,    12, "NORMAL",   0, 0, false },
+            { "float4", DXGI_FORMAT_R32G32B32A32_FLOAT, 16, "TANGENT",  0, 0, false },
+            { "float2", DXGI_FORMAT_R32G32_FLOAT,        8, "TEXCOORD", 0, 0, false }
+        }
+    },
+    // Layout 7
+    TigerInputLayout{
+        {
+            { "float4", DXGI_FORMAT_R16G16B16A16_SNORM, 8, "POSITION", 0, 0, false },
+            { "float4", DXGI_FORMAT_R16G16B16A16_SNORM, 8, "NORMAL",   0, 0, false },
+            { "float4", DXGI_FORMAT_R16G16B16A16_SNORM, 8, "TANGENT",  0, 0, false },
+            { "float2", DXGI_FORMAT_R16G16_SNORM,       4, "TEXCOORD", 0, 1, false }
+        }
+    },
+    // Layout 8
+    TigerInputLayout{
+        {
+            { "float4", DXGI_FORMAT_R16G16B16A16_SNORM, 8, "POSITION", 0, 0, false },
+            { "float4", DXGI_FORMAT_R16G16B16A16_SNORM, 8, "TANGENT",  0, 0, false },
+            { "float2", DXGI_FORMAT_R16G16_SNORM,       4, "TEXCOORD", 0, 1, false }
+        }
+    },
+    // Layout 9
+    TigerInputLayout{
+        {
+            { "float4", DXGI_FORMAT_R16G16B16A16_SNORM, 8, "POSITION", 0, 0, false },
+            { "float2", DXGI_FORMAT_R16G16_SNORM,       4, "TEXCOORD", 0, 0, false },
+            { "float4", DXGI_FORMAT_R16G16B16A16_SNORM, 8, "NORMAL",   0, 0, false },
+            { "float4", DXGI_FORMAT_R16G16B16A16_SNORM, 8, "TANGENT",  0, 0, false },
+            { "float4", DXGI_FORMAT_R8G8B8A8_UNORM,     4, "COLOR",    0, 0, false }
+        }
+    },
+    // Layout 10
+    TigerInputLayout{
+        {
+            { "float3", DXGI_FORMAT_R32G32B32_FLOAT,    12, "POSITION", 0, 0, false },
+            { "float4", DXGI_FORMAT_R16G16B16A16_SNORM,  8, "NORMAL",   0, 0, false },
+            { "float2", DXGI_FORMAT_R32G32_FLOAT,        8, "TEXCOORD", 1, 0, false }
+        }
+    },
+    // Layout 11
+    TigerInputLayout{
+        {
+            { "float2", DXGI_FORMAT_R32G32_FLOAT,     8, "POSITION", 0, 0, false },
+            { "float3", DXGI_FORMAT_R32G32B32_FLOAT, 12, "TEXCOORD", 0, 0, false }
+        }
+    },
+    // Layout 12
+    TigerInputLayout{
+        {
+            { "float3", DXGI_FORMAT_R32G32B32_FLOAT, 12, "POSITION", 0, 0, false },
+            { "float2", DXGI_FORMAT_R32G32_FLOAT,     8, "TEXCOORD", 0, 0, false },
+            { "float3", DXGI_FORMAT_R32G32B32_FLOAT, 12, "NORMAL",   0, 0, false }
+        }
+    },
+    // Layout 13
+    TigerInputLayout{
+        {
+            { "float4", DXGI_FORMAT_R32G32B32A32_FLOAT, 16, "POSITION",     0, 0, false },
+            { "float4", DXGI_FORMAT_R32G32B32A32_FLOAT, 16, "NORMAL",       0, 0, false },
+            { "float4", DXGI_FORMAT_R32G32B32A32_FLOAT, 16, "TANGENT",      0, 0, false },
+            { "float2", DXGI_FORMAT_R16G16_SNORM,        4, "TEXCOORD",     0, 1, false },
+            { "float4", DXGI_FORMAT_R8G8B8A8_UNORM,      4, "BLENDWEIGHT",  0, 2, false },
+            { "uint4",  DXGI_FORMAT_R8G8B8A8_UINT,       4, "BLENDINDICES", 0, 2, false }
+        }
+    },
+    // Layout 14
+    TigerInputLayout{
+        {
+            { "float4", DXGI_FORMAT_R32G32B32A32_FLOAT, 16, "POSITION",     0, 0, false },
+            { "float3", DXGI_FORMAT_R32G32B32_FLOAT,    12, "NORMAL",       0, 0, false },
+            { "float3", DXGI_FORMAT_R32G32B32_FLOAT,    12, "TANGENT",      0, 0, false },
+            { "float4", DXGI_FORMAT_R32G32B32A32_FLOAT, 16, "TEXCOORD",     0, 0, false },
+            { "float4", DXGI_FORMAT_R32G32B32A32_FLOAT, 16, "TEXCOORD",     1, 0, false },
+            { "float4", DXGI_FORMAT_R32G32B32A32_FLOAT, 16, "TEXCOORD",     2, 0, false },
+            { "float3", DXGI_FORMAT_R32G32B32_FLOAT,    12, "TEXCOORD",     3, 0, false },
+            { "float3", DXGI_FORMAT_R32G32B32_FLOAT,    12, "TEXCOORD",     4, 0, false },
+        }
+    },
+};
 
 
 
-static void AppendSemantic(std::string& hlsl,
-    const std::string& type,
-    const std::string& sem, uint32_t idx,
-    size_t vindex)
+HRESULT CreateInputLayoutFromTigerLayout(ID3D11Device* device, const TigerInputLayout& layout, Microsoft::WRL::ComPtr<ID3D11InputLayout>& outLayout)
 {
-    // e.g. "float3 v0 : POSITION0;"
-    hlsl += std::format("{} v{} : {}{}; ", type, vindex, sem, idx);
-}
-
-HRESULT CreateInputLayoutFromTigerLayout(
-    ID3D11Device* device,
-    const TigerInputLayout& layout,
-    Microsoft::WRL::ComPtr<ID3D11InputLayout>& outLayout)
-{
-    // 1) Build a minimal VS HLSL with the exact input signature
-    std::string hlsl = "struct VSIN { ";
-    for (size_t i = 0; i < layout.elements.size(); ++i) {
-        const auto& e = layout.elements[i];
-        AppendSemantic(hlsl, e.hlsl_type, e.semantic_name, e.semantic_index, i);
-    }
-    hlsl += "}; float4 main(VSIN i) : SV_POSITION { return float4(0,0,0,1); }";
-
-    Microsoft::WRL::ComPtr<ID3DBlob> vsBlob, err;
-    UINT flags = 0;
-#ifdef _DEBUG
-    flags |= D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
-#endif
-    HRESULT hr = D3DCompile(hlsl.data(), hlsl.size(),
-        "TigerILGen", nullptr, nullptr,
-        "main", "vs_5_0", flags, 0,
-        vsBlob.GetAddressOf(), err.GetAddressOf());
-    if (FAILED(hr)) {
-        if (err) OutputDebugStringA((const char*)err->GetBufferPointer());
-        ErrorLogger::Log(hr, L"D3DCompile failed in CreateInputLayoutFromTigerLayout");
-        return hr;
-    }
-
-    // 2) Convert to D3D descs (note: names must be alive during the call)
-    std::vector<std::string> nameHold;
-    nameHold.reserve(layout.elements.size());
     std::vector<D3D11_INPUT_ELEMENT_DESC> elems;
     elems.reserve(layout.elements.size());
+    std::string shaderSrc = "struct s_vs_in { ";
+    for (size_t i = 0; i < layout.elements.size(); ++i)
+    {
+        const auto& e = layout.elements[i];
 
-    for (const auto& e : layout.elements) {
-        nameHold.push_back(e.semantic_name);
-        D3D11_INPUT_ELEMENT_DESC d{};
-        d.SemanticName = nameHold.back().c_str();
-        d.SemanticIndex = e.semantic_index;
-        d.Format = e.DxgiFormat;
-        d.InputSlot = e.buffer_index;
-        d.AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT;
-        d.InputSlotClass = e.is_instance_data ? D3D11_INPUT_PER_INSTANCE_DATA
+        // Append to HLSL like: "float3 v0 : POSITION0; "
+        shaderSrc += std::format(
+            "{} v{} : {}{}; ",
+            e.hlsl_type,
+            i,
+            e.semantic_name,
+            e.semantic_index
+        );
+
+        D3D11_INPUT_ELEMENT_DESC desc = {};
+        desc.SemanticName = e.semantic_name.c_str();
+        desc.SemanticIndex = e.semantic_index;
+        desc.Format = e.DxgiFormat;
+        desc.InputSlot = e.buffer_index;
+        desc.AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT;
+        desc.InputSlotClass = e.is_instance_data ? D3D11_INPUT_PER_INSTANCE_DATA
             : D3D11_INPUT_PER_VERTEX_DATA;
-        d.InstanceDataStepRate = e.is_instance_data ? 1u : 0u;
-        elems.push_back(d);
-    }
+        desc.InstanceDataStepRate = e.is_instance_data ? 1u : 0u;
 
-    hr = device->CreateInputLayout(elems.data(),
+        elems.push_back(desc);
+    }
+    shaderSrc += "}; float4 vs(s_vs_in input) : SV_POSITION { return float4(0,0,0,0); }";
+    Microsoft::WRL::ComPtr<ID3DBlob> shaderBlob;
+    Microsoft::WRL::ComPtr<ID3DBlob> errorBlob;
+    const UINT compileFlags = 0;
+    HRESULT hr = D3DCompile(
+        shaderSrc.data(),
+        shaderSrc.size(),
+        "create_vertex_declaration_inline", // optional source name
+        nullptr,                            // macros
+        nullptr,                            // include
+        "vs",                               // entry point
+        "vs_5_0",                           // target
+        compileFlags,
+        0,
+        shaderBlob.GetAddressOf(),
+        errorBlob.GetAddressOf());
+    if (FAILED(hr))
+    {
+        ErrorLogger::Log(hr, L"Failed to create VS from TigerInputLayout");
+        return hr;
+    }
+    hr = device->CreateInputLayout(
+        elems.data(),
         static_cast<UINT>(elems.size()),
-        vsBlob->GetBufferPointer(),
-        vsBlob->GetBufferSize(),
+        shaderBlob->GetBufferPointer(),
+        shaderBlob->GetBufferSize(),
         outLayout.GetAddressOf());
-    if (FAILED(hr)) {
-        ErrorLogger::Log(hr, L"CreateInputLayout failed");
+    if (FAILED(hr))
+    {
+        ErrorLogger::Log(hr, L"Failed to create CreateInputLayoutS from TigerInputLayout");
+        return hr;
     }
     return hr;
 }

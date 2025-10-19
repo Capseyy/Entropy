@@ -1,8 +1,10 @@
 #include "AssetSystem.h"
 #include <stdexcept>
 #include <cassert>
-
+#include <optional> 
 using Microsoft::WRL::ComPtr;
+
+
 
 //------------------------------------------------------------------------------
 // Shader creation helper (C++11-friendly explicit specializations)
@@ -40,7 +42,7 @@ AssetHandle<ID3D11Buffer> AssetSystem::EnqueueBuffer(uint32_t id)
     auto fut = pool_.Submit([=] {
         return bufferCache_.GetOrLoad(id, [&] {
             BufferPayload payload = R_->GetBuffer(id);
-			printf("Loading Buffer ID %0x8, size %u bytes\n", id, payload.desc.ByteWidth);
+			//printf("Loading Buffer ID %0x8, size %u bytes\n", id, payload.desc.ByteWidth);
             return createBuffer_(payload);
             }).get();
         }).share();
@@ -76,39 +78,11 @@ AssetSystem::createVertexShader_(uint32_t id, const ShaderPayload& p)
             p.bytecode.size() >= 4 ? *(const uint32_t*)p.bytecode.data() : 0u);
         throw std::runtime_error("CreateVertexShader failed");
     }
-    printf("CreateVS hr=0x%08X size=%zu magic=0x%08X\n", (unsigned)hr, p.bytecode.size(),
-        p.bytecode.size() >= 4 ? *(const uint32_t*)p.bytecode.data() : 0u);
+    //printf("CreateVS hr=0x%08X size=%zu magic=0x%08X\n", (unsigned)hr, p.bytecode.size(),
+     //   p.bytecode.size() >= 4 ? *(const uint32_t*)p.bytecode.data() : 0u);
 
     auto out = std::make_shared<EntropyAssets::VertexShader>();
     out->vs = vs;
-
-    // Build an input layout if available
-    // Source #1: caller-provided provider (recommended); or
-    // Source #2: payload.input (if you already store it).
-    std::vector<D3D11_INPUT_ELEMENT_DESC> descs;
-    std::vector<std::string> semantics; // holds char buffers backing SemanticName
-
-    if (layoutProvider_) {
-        layoutProvider_(id, descs, semantics);
-    }
-    else if (!p.input.empty()) {
-        // If you store them in the payload (with stable backing strings)
-        descs = p.input; // NOTE: ensure SemanticName pointers are valid
-    }
-
-    if (!descs.empty()) {
-        ComPtr<ID3D11InputLayout> il;
-        hr = device_->CreateInputLayout(
-            descs.data(), static_cast<UINT>(descs.size()),
-            p.bytecode.data(), p.bytecode.size(),
-            &il);
-        if (SUCCEEDED(hr)) {
-            out->layout = il;
-        }
-        else {
-            OutputDebugStringA("CreateInputLayout failed; continuing without IL\n");
-        }
-    }
 
     return out;
 }
@@ -383,7 +357,7 @@ AssetHandle<EntropyAssets::CBufferRes> AssetSystem::EnqueueCBuffer(uint32_t id)
 
     AssetHandle<EntropyAssets::CBufferRes> h; h.future = fut; return h;
 }
-
+static inline UINT Align16(UINT n) { return (n + 15u) & ~15u; }
 //------------------------------------------------------------------------------
 // Techniques
 //------------------------------------------------------------------------------
@@ -391,13 +365,11 @@ std::shared_future<std::shared_ptr<EntropyAssets::Technique>>
 AssetSystem::EnqueueTechnique(TagHash techniqueId)
 {
     const uint32_t id = techniqueId.hash;
-    printf("[Tech] EnqueueTechnique %08X (tag bytes=%zu)\n", id, (size_t)techniqueId.size);
+    //printf("[Tech] EnqueueTechnique %08X (tag bytes=%zu)\n", id, (size_t)techniqueId.size);
 
     static AssetCache<EntropyAssets::Technique> techCache;
-    auto valid32 = [](uint32_t x) { return x && x != 0xFFFFFFFFu; };
 
     return techCache.GetOrLoad(id, [=] {
-        // Parse technique
         auto tech = std::make_shared<EntropyAssets::Technique>();
         tech->id = id;
 
@@ -408,107 +380,169 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
 
         STechnique Tfx = bin::parse<STechnique>(techniqueId.data, techniqueId.size, bin::Endian::Little);
 
-        // -------- Shaders (your existing logic) --------
+        // --------- Shaders (your existing) ----------
         const uint32_t vsId = Tfx.VertexShader.ShaderTag.reference;
         const uint32_t psId = Tfx.PixelShader.ShaderTag.reference;
-        printf("[Tech] %08X VS id=%08X, PS id=%08X\n", id, vsId, psId);
 
         auto ensureShaderPayload = [this](uint32_t sid)->bool {
             if (R_->HasShader(sid)) return true;
             auto sTag = TagHash(sid);
-            printf("  [Shader] %08X bytes=%zu\n", sid, (size_t)sTag.size);
             if (!sTag.data || sTag.size == 0) return false;
-
             ShaderPayload sp{};
-            sp.bytecode.assign(
-                static_cast<const uint8_t*>(sTag.data),
-                static_cast<const uint8_t*>(sTag.data) + sTag.size
-            );
+            sp.bytecode.assign((const uint8_t*)sTag.data, (const uint8_t*)sTag.data + sTag.size);
             R_->RegisterShader(sid, std::move(sp));
             return true;
             };
 
+        auto ensureSamplerPayload = [this](uint32_t sampId) -> bool
+            {
+                if (R_->HasSampler(sampId)) return true;
+
+                // Try to build from tag bytes if you have a sampler blob
+                TagHash sTag(sampId);
+                std::optional<D3D11_SAMPLER_DESC> descOpt;
+                if (sTag.data && sTag.size) {
+                    // NOTE: Do NOT define BuildSamplerDescFromTag here; just call it.
+                    descOpt = BuildSamplerDescFromTag(sTag);
+                }
+
+                // Fallback default if no blob / parse failed
+                D3D11_SAMPLER_DESC d{};
+                if (descOpt) {
+                    d = *descOpt;
+                }
+                else {
+                    d.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+                    d.AddressU = d.AddressV = d.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+                    d.MipLODBias = 0.0f;
+                    d.MaxAnisotropy = 1;
+                    d.ComparisonFunc = D3D11_COMPARISON_ALWAYS;
+                    ZeroMemory(d.BorderColor, sizeof(d.BorderColor));
+                    d.MinLOD = 0.0f;
+                    d.MaxLOD = D3D11_FLOAT32_MAX;
+                }
+
+                R_->RegisterSampler(sampId, d);
+                return true;
+            };
+        auto ensureCBufferPayload = [this](uint32_t cbId, TagHash cbTag) -> bool
+            {
+                if (R_->HasCBuffer(cbId)) return true;
+
+                CBufferMeta meta{};
+                if (cbTag.data && cbTag.size) {
+                    meta.byteSize = Align16(static_cast<UINT>(cbTag.size));
+                    meta.initial.resize(static_cast<size_t>(cbTag.size));
+                    std::memcpy(meta.initial.data(), cbTag.data, static_cast<size_t>(cbTag.size));
+                    // any padding up to byteSize stays zeroed
+                }
+                else {
+                    // no blob? register an empty 16-byte cbuffer
+                    meta.byteSize = 16u;
+                }
+
+                R_->RegisterCBuffer(cbId, std::move(meta));
+                return true;
+            };
         std::shared_future<std::shared_ptr<EntropyAssets::VertexShader>> fVS;
         std::shared_future<std::shared_ptr<EntropyAssets::PixelShader>>  fPS;
+        if (ensureShaderPayload(vsId)) fVS = EnqueueVertexShader(vsId).future;
+        if (ensureShaderPayload(psId)) fPS = EnqueuePixelShader(psId).future;
 
-        if (valid32(vsId) && ensureShaderPayload(vsId))
-            fVS = EnqueueVertexShader(vsId).future;
-        else
-            printf("[Tech] %08X NO VS (id invalid or no bytes)\n", id);
-
-        if (valid32(psId) && ensureShaderPayload(psId))
-            fPS = EnqueuePixelShader(psId).future;
-        else
-            printf("[Tech] %08X NO PS (id invalid or no bytes)\n", id);
-
-        auto ensureTexturePayload = [this](uint32_t texId)->bool {
-            if (R_->HasTexture(texId)) return true;
-
-            TagHash texTag(texId);
-            if (!texTag.data || texTag.size == 0) {
-                printf("  [Tex] %08X missing bytes\n", texId);
-                return false;
-            }
-
-            auto payload = BuildTexturePayloadFromTag(texTag);
-            if (!payload) {
-                printf("  [Tex] %08X BuildTexturePayloadFromTag failed\n", texId);
-                return false;
-            }
-
-            R_->RegisterTexture(texId, std::move(*payload));
-            return true;
-            };
-
+        // --------- Textures (your existing) ----------
         using TexFuture = std::shared_future<std::shared_ptr<EntropyAssets::Texture2DRes>>;
         std::vector<std::pair<UINT, TexFuture>> psTexF;
         psTexF.reserve(Tfx.PixelShader.Textures.size());
-
-        printf("[Tech] %08X PS textures: %zu\n", id, Tfx.PixelShader.Textures.size());
         for (const auto& t : Tfx.PixelShader.Textures) {
             const UINT slot = t.TextureIndex;
-            const uint32_t texId = t.Texture.tagHash32;// <-- your mapping
-
-            if (!valid32(texId)) {
-                printf("  [Tex] slot %u invalid id\n", slot);
-                continue;
+            const uint32_t texId = t.Texture.tagHash32;   // your mapping
+            // ensure + enqueue (your helpers)
+            if (!R_->HasTexture(texId)) {
+                TagHash texTag(texId);
+                if (auto payload = BuildTexturePayloadFromTag(texTag)) {
+                    R_->RegisterTexture(texId, std::move(*payload));
+                }
+                else {
+                    continue;
+                }
             }
-            if (!ensureTexturePayload(texId))
-                continue;
-
             psTexF.emplace_back(slot, EnqueueTexture(texId).future);
         }
 
-        // -------- Collect everything --------
-        if (fVS.valid()) {
-            auto vs = fVS.get();
-            printf("[Tech] %08X VS ok? %s\n", id, (vs && vs->vs.Get()) ? "YES" : "NO");
-            if (vs) tech->VS.push_back(vs);
-        }
-        if (fPS.valid()) {
-            auto ps = fPS.get();
-            printf("[Tech] %08X PS ok? %s\n", id, (ps && ps->ps.Get()) ? "YES" : "NO");
-            if (ps) tech->PS.push_back(ps);
+        using SampFuture = std::shared_future<std::shared_ptr<EntropyAssets::SamplerRes>>;
+        std::vector<std::pair<UINT, SampFuture>> psSampF;
+        psSampF.reserve(Tfx.PixelShader.Samplers.size());
+
+        for (size_t i = 0; i < Tfx.PixelShader.Samplers.size(); ++i)
+        {
+            const auto& s = Tfx.PixelShader.Samplers[i];
+            const uint32_t id = s.sampler.reference;                      // sampler id (32-bit)
+            if (id == 0u || id == 0xFFFFFFFFu) continue;
+
+            // prefer explicit slot if present; otherwise index
+            const UINT slot = (s.Unk4 != 0xFFFFFFFFu) ? s.Unk4 : static_cast<UINT>(i);
+
+            // **critical**: put a payload into the registry BEFORE enqueue
+            if (!ensureSamplerPayload(id)) continue;
+
+            psSampF.emplace_back(slot, EnqueueSampler(id).future);
         }
 
+        // ---------- PS CONSTANT BUFFER ----------
+        std::shared_future<std::shared_ptr<EntropyAssets::CBufferRes>> fPSCB;
+        UINT psCBSlot = 0;
+
+        const uint32_t cbId = Tfx.PixelShader.contstant_buffer.reference;
+        if (cbId != 0u && cbId != 0xFFFFFFFFu) {
+            psCBSlot = static_cast<UINT>(
+                Tfx.PixelShader.constant_buffer_slot >= 0 ? Tfx.PixelShader.constant_buffer_slot : 0);
+
+            TagHash cbTag(cbId);
+            if (ensureCBufferPayload(cbId, cbTag)) {
+                fPSCB = EnqueueCBuffer(cbId).future;
+            }
+            else {
+                OutputDebugStringA("[Tech] ensureCBufferPayload failed\n");
+            }
+        }
+
+        // --------- Collect everything ----------
+        if (fVS.valid()) if (auto vs = fVS.get()) tech->VS.push_back(vs);
+        if (fPS.valid()) if (auto ps = fPS.get()) tech->PS.push_back(ps);
+
+        // Textures
         tech->Textures.reserve(psTexF.size());
         tech->psTextureSlots.reserve(psTexF.size());
         for (auto& [slot, fut] : psTexF) {
-            try {
-                if (!fut.valid()) continue;
-                auto texRes = fut.get();
-                if (texRes) {
-                    tech->Textures.push_back(texRes);
-                    tech->psTextureSlots.push_back(slot);
-                }
-            }
-            catch (const std::exception& e) {
-                printf("[Tech] %08X texture future (slot %u) failed: %s\n", id, slot, e.what());
+            if (!fut.valid()) continue;
+            if (auto texRes = fut.get()) {
+                tech->Textures.push_back(texRes);
+                tech->psTextureSlots.push_back(slot);
             }
         }
+
+        // NEW: Samplers
+        // ---------- COLLECT ----------
+        tech->Samplers.reserve(psSampF.size());
+        tech->psSamplerSlots.reserve(psSampF.size());
+        for (auto& [slot, fut] : psSampF) {
+            if (!fut.valid()) continue;
+            if (auto sres = fut.get()) {
+                tech->Samplers.push_back(sres);
+                tech->psSamplerSlots.push_back(slot);
+            }
+        }
+
+        if (fPSCB.valid()) {
+            if (auto cbres = fPSCB.get()) {
+                tech->CBuffers.push_back(cbres);
+                tech->psCBSlots.push_back(psCBSlot);
+            }
+        } 
 
         return tech;
         });
 }
+
 
 

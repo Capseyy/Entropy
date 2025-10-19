@@ -16,6 +16,7 @@
 #include "TigerEngine/Technique/technique.h"
 #include "TigerEngine/Technique/texture.h"
 #include "Renderer/Loaders/TextureLoader.h"
+#include "Sampler.h"
 
 
 

@@ -70,9 +70,9 @@ void Graphics::InitializeInputLayouts()
 		Microsoft::WRL::ComPtr<ID3D11InputLayout> il;
 		HRESULT hr = CreateInputLayoutFromTigerLayout(pDevice.Get(), INPUT_LAYOUTS[i], il);
 		if (FAILED(hr) || !il) {
-			char buf[128];
-			_snprintf_s(buf, _TRUNCATE, "Tiger IL[%zu] creation failed (hr=0x%08X)\n", i, (unsigned)hr);
-			OutputDebugStringA(buf);
+			char msg[256];
+			sprintf_s(msg, "Tiger IL[%zu] creation failed (hr=0x%08X)\n", i, (unsigned)hr);
+			OutputDebugStringA(msg);
 		}
 		else {
 			tiger_input_layouts[i] = std::move(il);
@@ -221,11 +221,8 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 	for (const auto& part : mesh.parts)
 	{
 		const auto& tech = part.technique;
-		if (!tech || tech->VS.empty() || tech->PS.empty() || !tech->VS[0] || !tech->PS[0]) {
-			//printf("Skip part: missing VS/PS\n");
-			continue;
-		}
-
+		if (!tech) { continue; }
+		//printf("Drawing for technique %08X\n", tech->id);
 		// --- Shaders
 		ID3D11VertexShader* vs = tech->VS[0]->vs.Get();
 		ID3D11PixelShader* ps = tech->PS[0]->ps.Get();
@@ -266,8 +263,8 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 		// --- View + per-object constants (ensure these are bound!)
 		//   If you didn't already, update & bind b12 (view) before this loop:
 		//  
-		//   ctx->VSSetConstantBuffers(12, 1, &b12);
-		//   ctx->PSSetConstantBuffers(12, 1, &b12);
+		ctx->VSSetConstantBuffers(12, 0, &b12);
+		ctx->PSSetConstantBuffers(12, 0, &b12);
 		// Make sure b1 is actually bound (once is fine; safe to rebind)
 		{ ID3D11Buffer* b = g_cb1.Get(); ctx->VSSetConstantBuffers(1, 1, &b); }
 
@@ -281,7 +278,28 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 				ctx->PSSetShaderResources(slot, 1, &s);
 			}
 		}
+		if (!tech->CBuffers.empty()) {
+			const size_t n = std::min(tech->CBuffers.size(), tech->psCBSlots.size());
+			for (size_t i = 0; i < n; ++i) {
+				if (!tech->CBuffers[i] || !tech->CBuffers[i]->buffer) continue;
+				ID3D11Buffer* b = tech->CBuffers[i]->buffer.Get();
+				const UINT slot = tech->psCBSlots[i];
+				ctx->PSSetConstantBuffers(slot, 1, &b);
 
+				// If the same cbuffer is also used by VS/GS, bind there too:
+				// ctx->VSSetConstantBuffers(slot, 1, &b);
+				// ctx->GSSetConstantBuffers(slot, 1, &b);
+			}
+		}
+		if (!tech->Samplers.empty()) {
+			const size_t n = std::min(tech->Samplers.size(), tech->psSamplerSlots.size());
+			for (size_t i = 0; i < n; ++i) {
+				if (!tech->Samplers[i] || !tech->Samplers[i]->sampler) continue;
+				ID3D11SamplerState* s = tech->Samplers[i]->sampler.Get();
+				const UINT slot = tech->psSamplerSlots[i];
+				ctx->PSSetSamplers(slot, 1, &s);
+			}
+		}
 		// --- Ensure at least one sampler is bound (slot 0) if your PS samples textures
 		{
 			ID3D11SamplerState* s = samplerState.Get(); // you created this in InitializeDirectX

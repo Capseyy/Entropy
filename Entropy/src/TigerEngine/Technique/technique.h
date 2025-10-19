@@ -9,7 +9,6 @@
 #include <codecvt>
 #include <locale>
 #include "Renderer/Graphics/Shaders/Shaders.h"
-#include "Renderer/Graphics/Shaders/material.h"
 
 struct STextureTag {
 	uint32_t TextureIndex;
@@ -26,6 +25,10 @@ struct Unk_3f018080 {
 	TagHash sampler;
 	uint32_t Unk4;
 	uint64_t Unk8;
+};
+
+struct Unk_90008080 {
+	std::array<float_t, 4> vec;
 };
 
 struct STechniqueShader {
@@ -63,7 +66,6 @@ public:
 	STechniqueShader GeometryShader;
 	STechniqueShader PixelShader;
 	STechniqueShader ComputeShader;
-	Material Initialize(ID3D11Device* device, ID3D11DeviceContext* deviceContext, D3D11_INPUT_ELEMENT_DESC* desc, UINT numElements);
 };
 
 

@@ -72,8 +72,11 @@ private:
     template<class T>
     static const T& must_find_(const std::unordered_map<uint32_t, T>& m, uint32_t id) {
         auto it = m.find(id);
-        if (it == m.end())
-            throw std::runtime_error("RuntimeAssetRegistry: missing id " + std::to_string(id));
+        if (it == m.end()) {
+            char buf[128];
+            std::snprintf(buf, sizeof(buf), "RuntimeAssetRegistry: missing id 0x%08X\n", id);
+            throw std::runtime_error(buf);
+        }
         return it->second;
     }
 
