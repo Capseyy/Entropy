@@ -1,28 +1,24 @@
+// StaticMap.h
 #pragma once
-#include "TigerEngine/map/static.h"
+#include <cstdint>
+#include <memory>
 #include <vector>
-#include <DirectXMath.h>
-#include <span>
-#include <stdexcept>
-#include "static_loader.h"
+#include "RenderStatic.h"
+#include "TigerEngine/tag.h"    
 
+class Graphics;  // fwd
 
-class InstancedStatics
-{
+class StaticMap {
 public:
-	TagHash StaticTag;
-	uint32_t InstanceCount;
-	std::vector<DirectX::XMFLOAT4> RotationMatrcies;
-	std::vector<DirectX::XMFLOAT3> TransformMatricies;
-	std::vector<DirectX::XMFLOAT3> ScaleMatricies;
+    explicit StaticMap(Graphics& gfx);      // ctor
+    bool Initialize(uint32_t mapRootHash);
+    void LoadAll_Statics();                 // (name whatever you want)
+
+    const std::vector<RenderStatic>& Statics() const { return statics_; }
+
+private:
+    Graphics& gfx_;                         // <-- THIS must exist
+    uint64_t  rootHash_ = 0;
+    std::vector<TagHash> staticTags;
+    std::vector<RenderStatic> statics_;
 };
-
-
-class StaticMap
-{
-public:
-	void Initialize(TagHash StaticInstanceTable);
-	void LoadStaticData();
-	std::vector<InstancedStatics> instanced_statics;
-};
-

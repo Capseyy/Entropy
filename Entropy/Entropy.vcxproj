@@ -225,6 +225,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\Renderer\Loaders\RenderStatic.cpp" />
+    <ClCompile Include="src\Runtime\Assets\AssetSystem.cpp" />
+    <ClCompile Include="src\Runtime\Assets\RuntimeAssetRegistry.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Scope\view.cpp" />
     <ClCompile Include="src\TigerEngine\crypto.cpp" />
     <ClCompile Include="src\TigerEngine\mapped_file.cpp" />
@@ -239,7 +242,6 @@
     <ClCompile Include="src\Renderer\Graphics\Shaders\Shaders.cpp" />
     <ClCompile Include="src\Renderer\Graphics\GPUAdapter.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Graphics.cpp" />
-    <ClCompile Include="src\Renderer\Loaders\static_loader.cpp" />
     <ClCompile Include="src\Renderer\Mouse\MouseClass.cpp" />
     <ClCompile Include="src\Renderer\Mouse\MouseEvent.cpp" />
     <ClCompile Include="src\Renderer\Keyboard\KeyboardClass.cpp" />
@@ -261,9 +263,17 @@
     <ClCompile Include="src\Renderer\Graphics\Shaders\Vertex.cpp" />
     <ClCompile Include="src\Renderer\Loaders\technique_loader.cpp" />
     <ClCompile Include="src\Renderer\Timer.cpp" />
+    <ClCompile Include="src\Runtime\Threading\ThreadPool.cpp" />
+    <ClCompile Include="src\Renderer\Loaders\StaticRenderer.cpp" />
     <ClCompile Include="src\Renderer\Loaders\StaticMap.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\Renderer\Loaders\RenderStatic.h" />
+    <ClInclude Include="src\Runtime\Assets\AssetCache.h" />
+    <ClInclude Include="src\Runtime\Assets\AssetHandle.h" />
+    <ClInclude Include="src\Runtime\Assets\AssetSystem.h" />
+    <ClInclude Include="src\Runtime\Assets\RuntimeAssetRegistry.h" />
+    <ClInclude Include="src\Runtime\Threading\MainThreadQueue.h" />
     <ClInclude Include="src\Renderer\Graphics\Scope\view.h" />
     <ClInclude Include="src\TigerEngine\crypto.h" />
     <ClInclude Include="src\TigerEngine\mapped_file.h" />
@@ -281,11 +291,11 @@
     <ClInclude Include="src\Renderer\Graphics\ImGui\imstb_rectpack.h" />
     <ClInclude Include="src\Renderer\Graphics\ImGui\imstb_textedit.h" />
     <ClInclude Include="src\Renderer\Graphics\ImGui\imstb_truetype.h" />
+    <ClInclude Include="src\TigerEngine\Map\TigerBuffer.h" />
     <ClInclude Include="src\TigerEngine\Technique\input_layout.h" />
     <ClInclude Include="src\Renderer\Graphics\Shaders\Shaders.h" />
     <ClInclude Include="src\Renderer\Graphics\GPUAdapter.h" />
     <ClInclude Include="src\Renderer\Graphics\Graphics.h" />
-    <ClInclude Include="src\Renderer\Loaders\static_loader.h" />
     <ClInclude Include="src\Renderer\Mouse\MouseClass.h" />
     <ClInclude Include="src\Renderer\Mouse\MouseEvent.h" />
     <ClInclude Include="src\Renderer\Keyboard\KeyboardClass.h" />
@@ -307,6 +317,10 @@
     <ClInclude Include="src\Renderer\Loaders\technique_loader.h" />
     <ClInclude Include="src\Renderer\Graphics\Buffers\VertexBuffer.h" />
     <ClInclude Include="src\Renderer\Timer.h" />
+    <ClInclude Include="src\Runtime\Threading\ThreadPool.h" />
+    <ClInclude Include="src\Runtime\Assets\Technique.h" />
+    <ClInclude Include="src\Runtime\Assets\StaticMesh.h" />
+    <ClInclude Include="src\Renderer\Loaders\StaticRenderer.h" />
     <ClInclude Include="src\Renderer\Loaders\StaticMap.h" />
   </ItemGroup>
   <ItemGroup>

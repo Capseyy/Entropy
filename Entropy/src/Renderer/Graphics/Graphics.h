@@ -4,8 +4,7 @@
 #include "SpriteBatch.h"
 #include "SpriteFont.h"
 #include "WICTextureLoader.h"
-#include "Renderer/Loaders/static_loader.h"
-#include "Renderer/Loaders/staticmap.h"
+#include "Renderer/Loaders/StaticMap.h"
 #include "Renderer/Graphics/Camera.h"
 #include "Renderer/Graphics/Buffers/ConstantBufferTypes.h"
 #include "Renderer/Timer.h";
@@ -13,6 +12,10 @@
 #include "Renderer/Graphics/ImGui/imgui_impl_win32.h"
 #include "Renderer/Graphics/ImGui/imgui_impl_dx11.h"
 #include "Renderer/Graphics/Scope/view.h"
+#include "Runtime/Threading/ThreadPool.h"
+#include "Runtime/Threading/MainThreadQueue.h"
+#include "Runtime/Assets/AssetSystem.h"
+#include "Runtime/Assets/RuntimeAssetRegistry.h"
 #include "Model.h"
 
 class Graphics
@@ -23,10 +26,18 @@ public:
 
 	Camera camera;
 
+	std::unique_ptr<StaticMap> staticMap;   // NEW
+	std::unique_ptr<ThreadPool>            pool;
+	std::unique_ptr<MainThreadQueue>       mainQueue;
+	std::unique_ptr<RuntimeAssetRegistry>  registry;
+	std::unique_ptr<AssetSystem>           assets;
+
+
 private:
 	bool InitializeDirectX(HWND hWnd);
 	bool InitializeShaders();
 	bool InitializeScene();
+
 
 	Microsoft::WRL::ComPtr<ID3D11Device>           pDevice;
 	Microsoft::WRL::ComPtr<ID3D11DeviceContext>    pContext;
@@ -37,15 +48,11 @@ private:
 	PixelShader pixelshader;
 	VertexShader vertexshader;
 
-	std::vector<StaticRenderer> static_objects_to_render;
-
 	UINT offset = 0;
 
 	Model model;
 
 	CD3D11_VIEWPORT viewport;
-
-	ConstantBuffer<CB_VS_vertexshader> constantBuffer;
 
 	Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthStencilView;
 	Microsoft::WRL::ComPtr<ID3D11Texture2D> depthStencilBuffer;

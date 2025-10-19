@@ -99,7 +99,7 @@ unsigned char* WideHash::getData() {
 	}
 	TagHash toTagHash = it->second;
 	toTagHash.getData();
-	printf("Resolving WideHash 0x%016" PRIx64 " to TagHash %08X\n", wideHashData.Hash64, toTagHash.hash);
+	//printf("Resolving WideHash 0x%016" PRIx64 " to TagHash %08X\n", wideHashData.Hash64, toTagHash.hash);
 	size = toTagHash.size;
 	reference = toTagHash.reference;
 	success = toTagHash.success;

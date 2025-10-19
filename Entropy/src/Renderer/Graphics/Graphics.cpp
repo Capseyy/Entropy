@@ -150,6 +150,7 @@ inline float float_from_bits(std::uint32_t bits) {
 
 void Graphics::RenderFrame()
 {
+	mainQueue->Drain();
 	const float clear[4] = { 0,0,0,1 };
 	pContext->ClearRenderTargetView(pRenderTargetView.Get(), clear);
 	pContext->ClearDepthStencilView(depthStencilView.Get(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
@@ -178,113 +179,6 @@ void Graphics::RenderFrame()
 		VSConstants init{}; // zeroed by default
 		D3D11_SUBRESOURCE_DATA initData{ &init, 0, 0 };
 		pDevice->CreateBuffer(&cbDesc, &initData, s_vsCB.GetAddressOf());
-	}
-
-	for (auto& Static : static_objects_to_render)
-	{
-		for (auto& part : Static.parts)
-		{
-
-			ID3D11VertexShader* vs = part.materialRender.vs.GetShader();
-			ID3D11PixelShader* ps = part.materialRender.ps.GetShader();
-			if (!vs || !ps) continue;
-
-			pContext->VSSetShader(vs, nullptr, 0);
-			pContext->PSSetShader(ps, nullptr, 0);
-
-			ID3D11Buffer* vbs[] = {
-				Static.buffers[part.buffer_index].vertexBuffer.Get(),
-				Static.buffers[part.buffer_index].uvBuffer.Get()
-			};
-			UINT strides[] = {
-				Static.buffers[part.buffer_index].vertexBuffer.header.stride,
-				Static.buffers[part.buffer_index].uvBuffer.header.stride
-			};
-			UINT offsets[] = { 0, 0 };
-
-			pContext->IASetInputLayout(part.inputLayout.Get());
-			pContext->IASetVertexBuffers(0, 2, vbs, strides, offsets);
-			pContext->IASetIndexBuffer(
-				Static.buffers[part.buffer_index].indexBuffer.Get(),
-				DXGI_FORMAT_R16_UINT, 0);
-
-			VSConstants vsData{};
-			vsData.meshOffset_meshScale = { part.mesh_offset[0], part.mesh_offset[1], part.mesh_offset[2], part.mesh_scale };
-			vsData.uvScale_uvOffset = { part.texture_coordinate_scale, part.texture_coordinate_offset[0], part.texture_coordinate_offset[1], float_from_bits(part.max_colour_index)  };
-
-			D3D11_MAPPED_SUBRESOURCE m{};
-			pContext->Map(s_vsCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &m);
-			memcpy(m.pData, &vsData, sizeof(vsData));
-			pContext->Unmap(s_vsCB.Get(), 0);
-
-			std::vector<DirectX::XMMATRIX> worlds;
-			worlds.reserve(1);
-
-			worlds.push_back(DirectX::XMMatrixIdentity());
-
-			UpdateCB1(
-				pContext.Get(),
-				/*meshOffset*/{ part.mesh_offset[0], part.mesh_offset[1], part.mesh_offset[2] },
-				/*meshScale*/  part.mesh_scale,
-				/*uvScaleX*/   part.texture_coordinate_scale,
-				/*uvOffX*/     part.texture_coordinate_offset[0],
-				/*uvOffY*/     part.texture_coordinate_offset[1],
-				/*maxColorOrClampBits*/ (std::uint32_t)part.max_colour_index, // or the exact u32 you need
-				worlds
-			);
-
-			View viewState_ps{};
-
-			// fill required fields
-			XMStoreFloat4x4(&viewState_ps.world_to_camera, camera.GetViewMatrix());
-			XMStoreFloat4x4(&viewState_ps.camera_to_projective, camera.GetProjectionMatrix());
-
-			// derive the rest (use your C++ port of derive_matrices or do it inline)
-			viewState_ps.derive_matrices_vs(Viewport{ { (float)windowWidth, (float)windowHeight } });
-
-			// now upload
-			UploadScopeViewCB12_All(
-				pContext.Get(),
-				viewState_ps,                 // <-- View struct, not XMMATRIX
-				(float)windowWidth,
-				(float)windowHeight
-			);
-
-			ID3D11Buffer* b1 = g_cb1.Get();
-			pContext->VSSetConstantBuffers(1, 1, &b1);
-
-			if (part.material.Unk08[1] == 2)
-			{
-				ID3D11ShaderResourceView* colSrvs[] = { Static.buffers[part.buffer_index].vertexColourBuffer.GetSRV()};
-				pContext->VSSetShaderResources(0, 1, colSrvs);
-			}
-
-			if (!part.materialRender.ps_textures.empty()) {
-				std::vector<ID3D11ShaderResourceView*> srvs;
-				srvs.reserve(part.materialRender.ps_textures.size());
-				for (auto& t : part.materialRender.ps_textures) srvs.push_back(t.Get());
-				pContext->PSSetShaderResources(0, (UINT)srvs.size(), srvs.data());
-			}
-			if (part.material.PixelShader.contstant_buffer.hash != 0xffffffff) {
-				ID3D11Buffer* psCB = part.materialRender.cbuffer_ps.Get();
-				pContext->PSSetConstantBuffers(part.material.PixelShader.constant_buffer_slot, 1, &psCB);
-			}
-			else {
-				ID3D11Buffer* psCB = part.materialRender.cbuffer_ps_fallback.Get();
-				pContext->PSSetConstantBuffers(part.material.PixelShader.constant_buffer_slot, 1, &psCB);
-			}
-			for (auto& samp : part.materialRender.MatSamplers) {
-				ID3D11SamplerState* s = samp.sampler.Get();
-				pContext->PSSetSamplers((UINT)samp.slot, 1, &s);
-			}
-			
-			pContext->DrawIndexedInstanced(
-				part.index_count,
-				1,            // InstanceCount
-				part.index_start,
-				0,
-				0);
-		}
 	}
 
 	if (!fpsTimer.isrunning) { fpsTimer.Start(); }
@@ -332,9 +226,9 @@ bool Graphics::Initialize(HWND hWnd, int width, int height)
 		return false;
 	OutputDebugStringA("DirectX initialized.\n");
 
-	StaticMap static_map;
-	static_map.Initialize(TagHash(0x80AD122C));
-	static_map.LoadStaticData();
+	//StaticMap static_map();
+	//static_map.Initialize(TagHash(0x80AD122C));
+	//static_map.LoadStaticData();
 		
 	if (!InitializeShaders())
 		return false;
@@ -478,6 +372,15 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		ErrorLogger::Log(exception);
 		return false;
 	}
+
+	pool = std::make_unique<ThreadPool>();
+	mainQueue = std::make_unique<MainThreadQueue>();
+	registry = std::make_unique<RuntimeAssetRegistry>();
+	assets = std::make_unique<AssetSystem>(pDevice.Get(), *pool, *mainQueue, registry.get());
+
+	staticMap = std::make_unique<StaticMap>(*this);
+	staticMap->Initialize(0x80AD122C);  // root map hash (or whatever yours is)
+	staticMap->LoadAll_Statics();
 	// Create the camera constant buffer
 	CreateScopeViewCB12(pDevice.Get());
 	CreateCB1(pDevice.Get());
@@ -492,12 +395,6 @@ bool Graphics::InitializeShaders()
 		{ "TANGENT",  0, DXGI_FORMAT_R16G16B16A16_SNORM, 0, 8, D3D11_INPUT_PER_VERTEX_DATA, 0 }, // slot 0, offset 8
 		{ "TEXCOORD", 0, DXGI_FORMAT_R16G16_SNORM,       1, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 }, // slot 1, offset 0
 	};
-
-	for (auto& static_obj : this->static_objects_to_render)
-	{
-		//todo: select layout based on model
-	}
-
 
 	UINT numElements = ARRAYSIZE(layout);
 
@@ -514,17 +411,17 @@ bool Graphics::InitializeShaders()
 bool Graphics::InitializeScene()
 {	
 	try {
-		HRESULT hr = this->constantBuffer.Initialize(this->pDevice.Get(), this->pContext.Get());
-		COM_ERROR_IF_FAILED(hr, "Failed to initialize constant buffer");
+		//HRESULT hr = this->constantBuffer.Initialize(this->pDevice.Get(), this->pContext.Get());
+		//COM_ERROR_IF_FAILED(hr, "Failed to initialize constant buffer");
 
 		camera.SetPosition(3.0f, 0.0f, 0.0f);
 		camera.SetProjectionValues(90.0f, static_cast<float>(windowWidth) / static_cast<float>(windowHeight), 0.01f, 1000.0f);
 
-		for (auto& Static : this->static_objects_to_render)
-		{
-			Static.InitializeRender(pDevice.Get(), pContext.Get());
+		//for (auto& Static : this->static_objects_to_render)
+		//{
+		//	Static.InitializeRender(pDevice.Get(), pContext.Get());
 
-		}
+		//}
 	}
 	catch (COMException& exception) 
 	{
