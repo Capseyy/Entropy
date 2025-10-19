@@ -1,13 +1,10 @@
+#pragma once
 #include <string>
 #include <vector>
 #include <array>
 #include <cstdint>
 #include <d3d11.h>
 #include <wrl/client.h>
-#include "Renderer/Tools/ErrorLogger.h"
-#include <d3dcompiler.h>
-#include <format>
-
 
 struct TigerInputLayoutElement {
     std::string hlsl_type;
@@ -18,19 +15,16 @@ struct TigerInputLayoutElement {
     uint32_t buffer_index;
     bool is_instance_data;
 };
+struct TigerInputLayout { std::vector<TigerInputLayoutElement> elements; };
 
-struct TigerInputLayout {
-    std::vector<TigerInputLayoutElement> elements;
-};
-
-// Now define the input layouts
-const std::array<TigerInputLayout, 77> INPUT_LAYOUTS = {
-    // Layout 0
-    TigerInputLayout{
-        {
-            { "float3", DXGI_FORMAT_R32G32B32_FLOAT, 12, "POSITION", 0, 0, false }
-        }
-    },
+// DECLARATION ONLY (note the const)
+inline const std::array<TigerInputLayout, 15> INPUT_LAYOUTS = {
+        // Layout 0
+        TigerInputLayout{
+            {
+                { "float3", DXGI_FORMAT_R32G32B32_FLOAT, 12, "POSITION", 0, 0, false }
+            }
+        },
     // Layout 1
     TigerInputLayout{
         {
@@ -152,4 +146,7 @@ const std::array<TigerInputLayout, 77> INPUT_LAYOUTS = {
     },
 };
 
-HRESULT CreateInputLayoutFromTigerLayout(ID3D11Device* device, const TigerInputLayout& layout, Microsoft::WRL::ComPtr<ID3D11InputLayout>& outLayout, D3D11_INPUT_ELEMENT_DESC& outDesc);
+HRESULT CreateInputLayoutFromTigerLayout(
+    ID3D11Device* device,
+    const TigerInputLayout& layout,
+    Microsoft::WRL::ComPtr<ID3D11InputLayout>& outLayout);

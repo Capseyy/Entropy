@@ -35,6 +35,23 @@ void CreateCB1(ID3D11Device* dev) {
 	dev->CreateBuffer(&bd, &init, g_cb1.GetAddressOf());
 }
 
+void Graphics::InitializeInputLayouts()
+{
+
+	for (size_t i = 0; i < INPUT_LAYOUTS.size(); ++i) {
+		Microsoft::WRL::ComPtr<ID3D11InputLayout> il;
+		HRESULT hr = CreateInputLayoutFromTigerLayout(pDevice.Get(), INPUT_LAYOUTS[i], il);
+		if (FAILED(hr) || !il) {
+			char buf[128];
+			_snprintf_s(buf, _TRUNCATE, "Tiger IL[%zu] creation failed (hr=0x%08X)\n", i, (unsigned)hr);
+			OutputDebugStringA(buf);
+		}
+		else {
+			tiger_input_layouts[i] = std::move(il);
+		}
+	}
+}
+
 void UpdateCB1(
 	ID3D11DeviceContext* ctx,
 	const DirectX::XMFLOAT3& meshOffset, float meshScale,
@@ -160,22 +177,33 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 
 	for (const auto& part : mesh.parts)
 	{
-
 		const auto& tech = part.technique;
-		printf("Drawing static mesh part with technique ID %u\n", part.techniqueId);
+		if (!tech || tech->VS.empty() || tech->PS.empty() || !tech->VS[0] || !tech->PS[0]) {
+			printf("Skip part: missing VS/PS\n");
+			continue;
+		}
 
 		// --- Shaders
-		ctx->VSSetShader(tech->VS[0].get()->vs.Get(), nullptr, 0);
-		ctx->PSSetShader(tech->PS[0].get()->ps.Get(), nullptr, 0);
+		ID3D11VertexShader* vs = tech->VS[0]->vs.Get();
+		ID3D11PixelShader* ps = tech->PS[0]->ps.Get();
+		if (!vs || !ps) { printf("Skip part: null VS/PS COM ptr\n"); continue; }
+		ctx->VSSetShader(vs, nullptr, 0);
+		ctx->PSSetShader(ps, nullptr, 0);
 
-		ctx->IASetInputLayout(tech->VS[0].get()->layout.Get());
-		
+		// --- Input layout: prefer per-part, else VS-owned
+		ctx->IASetInputLayout(tiger_input_layouts[mesh.input_layout_index].Get());
 
 		// --- Buffers (choose the group this part uses; here we take the first)
 		const size_t gi = part.bufferGroupIndices.empty() ? 0 : part.bufferGroupIndices[0];
+		if (gi >= mesh.groups.size() || !mesh.groups[gi]) {
+			printf("Skip part: bad buffer group index\n");
+			continue;
+		}
 		const BufferGroup& bg = *mesh.groups[gi];
-
-	
+		if (!bg.index || !bg.vertex || bg.indexCount == 0) {
+			printf("Skip part: missing VB/IB or zero indexCount\n");
+			continue;
+		}
 
 		ID3D11Buffer* vbs[3];
 		UINT          strides[3];
@@ -186,47 +214,58 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 		if (bg.uv) { vbs[vbCount] = bg.uv.get();     strides[vbCount] = bg.uvStride;     ++vbCount; }
 		if (bg.color) { vbs[vbCount] = bg.color.get();  strides[vbCount] = bg.colorStride;  ++vbCount; }
 
+		if (vbCount == 0) { OutputDebugStringA("Skip part: no vertex buffers bound\n"); continue; }
+
 		ctx->IASetVertexBuffers(0, vbCount, vbs, strides, offsets);
 		ctx->IASetIndexBuffer(bg.index.get(), bg.indexFormat, 0);
 
-		// --- Per-object constants (if you have them; otherwise identity)
-		// Example: one instance with identity world (your cb1 already supports multiple)
-		{
-			std::vector<DirectX::XMMATRIX> worlds(1, DirectX::XMMatrixIdentity());
-			UpdateCB1(ctx,
-				/*meshOffset*/{ 0,0,0 },
-				/*meshScale*/  1.0f,
-				/*uvScaleX*/   1.0f,
-				/*uvOffX*/     0.0f,
-				/*uvOffY*/     0.0f,
-				/*maxColorOrClampBits*/ 0u,
-				worlds);
-		}
+		// --- View + per-object constants (ensure these are bound!)
+		//   If you didn't already, update & bind b12 (view) before this loop:
+		//   UploadScopeViewCB12_All(ctx, view, (float)windowWidth, (float)windowHeight);
+		//   ID3D11Buffer* b12 = g_scopeView_b12.Get();
+		//   ctx->VSSetConstantBuffers(12, 1, &b12);
+		//   ctx->PSSetConstantBuffers(12, 1, &b12);
+
+		std::vector<DirectX::XMMATRIX> worlds(1, DirectX::XMMatrixIdentity());
+		UpdateCB1(ctx,
+			/*meshOffset*/{ 0,0,0 },
+			/*meshScale*/   1.0f,
+			/*uvScaleX*/    1.0f,
+			/*uvOffX*/      0.0f,
+			/*uvOffY*/      0.0f,
+			/*maxColorOrClampBits*/ 0u,
+			worlds);
+		// Make sure b1 is actually bound (once is fine; safe to rebind)
+		{ ID3D11Buffer* b = g_cb1.Get(); ctx->VSSetConstantBuffers(1, 1, &b); }
 
 		// --- Textures (PS) by slot
 		if (!tech->Textures.empty()) {
-			for (size_t i = 0; i < tech->Textures.size(); ++i) {
+			const size_t n = std::min(tech->Textures.size(), tech->psTextureSlots.size());
+			for (size_t i = 0; i < n; ++i) {
 				UINT slot = tech->psTextureSlots[i];
 				ID3D11ShaderResourceView* s = tech->Textures[i] ? tech->Textures[i]->Get() : nullptr;
 				ctx->PSSetShaderResources(slot, 1, &s);
 			}
 		}
 
-		// --- Samplers / PS constant buffers (if you stored them on the technique)
-		//for (const auto& s : tech->Samplers) {
-		//	ID3D11SamplerState* ss = s.state.Get();                  // your wrapper
-		//	ctx->PSSetSamplers(s.slot, 1, &ss);
-		//}
-		//for (const auto& cb : tech->CBuffers) {
-		//	ID3D11Buffer* b = cb.buffer.Get();
-		//	ctx->PSSetConstantBuffers(cb.slot, 1, &b);
-		//}
+		// --- Ensure at least one sampler is bound (slot 0) if your PS samples textures
+		{
+			ID3D11SamplerState* s = samplerState.Get(); // you created this in InitializeDirectX
+			ctx->PSSetSamplers(0, 1, &s);
+		}
 
 		// --- Draw
-		printf("Drawing static mesh part with %u indices\n", bg.indexCount);
+		char dbg[128];
+		_snprintf_s(dbg, _TRUNCATE, "DrawIndexed: count=%u fmt=%s vbCount=%u\n",
+			bg.indexCount,
+			(bg.indexFormat == DXGI_FORMAT_R16_UINT ? "R16" :
+				bg.indexFormat == DXGI_FORMAT_R32_UINT ? "R32" : "OTHER"),
+			vbCount);
+		OutputDebugStringA(dbg);
+
 		ctx->DrawIndexed(bg.indexCount, 0, 0);
 
-		// (Optional) unbind PS SRVs if those textures become RTs later in the frame
+		// Optional: unbind SRVs if used later as RTs
 		// ID3D11ShaderResourceView* nulls[16] = {};
 		// ctx->PSSetShaderResources(0, 16, nulls);
 	}
@@ -518,6 +557,7 @@ bool Graphics::InitializeScene()
 		ErrorLogger::Log(exception);
 		return false;
 	}
+	InitializeInputLayouts();
 	staticMap = std::make_unique<StaticMap>(*this);
 	staticMap->Initialize(0x80BB0ED4);  // root map hash (or whatever yours is)
 	staticsToDraw = staticMap->GetRenderList();

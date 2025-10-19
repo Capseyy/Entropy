@@ -17,6 +17,7 @@
 #include "Runtime/Assets/AssetSystem.h"
 #include "Runtime/Assets/RuntimeAssetRegistry.h"
 #include "Model.h"
+#include "TigerEngine/Technique/input_layout.h"
 
 class Graphics
 {
@@ -37,7 +38,9 @@ private:
 	bool InitializeDirectX(HWND hWnd);
 	bool InitializeShaders();
 	bool InitializeScene();
+	void InitializeInputLayouts();
 
+	std::array<Microsoft::WRL::ComPtr<ID3D11InputLayout>,15> tiger_input_layouts;
 
 	Microsoft::WRL::ComPtr<ID3D11Device>           pDevice;
 	Microsoft::WRL::ComPtr<ID3D11DeviceContext>    pContext;

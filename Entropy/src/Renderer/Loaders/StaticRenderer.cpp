@@ -169,6 +169,7 @@ RenderStatic StaticRenderer::Build()
     mesh->parts.resize(techIds.size());
     for (size_t i = 0; i < techIds.size(); ++i) {
         mesh->parts[i].techniqueId = techIds[i].hash;
+        mesh->input_layout_index = m.mesh_groups[i].input_layout_index;
         
     }
 

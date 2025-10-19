@@ -37,4 +37,5 @@ struct StaticMesh {
     uint32_t id = 0;
     std::vector<std::shared_ptr<BufferGroup>> groups;
     std::vector<StaticMeshPart> parts;
+    uint16_t input_layout_index;
 };
