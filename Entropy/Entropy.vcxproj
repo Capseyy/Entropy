@@ -225,7 +225,6 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="src\Renderer\Loaders\RenderStatic.cpp" />
     <ClCompile Include="src\Runtime\Assets\AssetSystem.cpp" />
     <ClCompile Include="src\Runtime\Assets\RuntimeAssetRegistry.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Scope\view.cpp" />

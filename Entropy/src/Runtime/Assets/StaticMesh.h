@@ -15,7 +15,7 @@ struct BufferGroup {
     std::shared_ptr<ID3D11Buffer> vertex;
     std::shared_ptr<ID3D11Buffer> index;
     std::shared_ptr<ID3D11Buffer> uv;
-    std::shared_ptr<ID3D11Buffer> color;
+    std::shared_ptr<ID3D11ShaderResourceView> color;
 
     // optional metadata for binding
     UINT vertexStride = 0;

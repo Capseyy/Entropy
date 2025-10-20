@@ -87,6 +87,13 @@ RenderStatic StaticRenderer::Build()
         groupRefs.push_back(gr);
     }
 
+    UINT highestDetail = 99;
+    for (const auto& party : m.parts) {
+        if (party.LodCatagory < highestDetail) {
+            highestDetail = party.LodCatagory;
+        }
+    }
+
     // ---- Collect per-part technique id + buffer group index (aligned vectors) ----
 
     std::vector<TagHash> techIds;
@@ -95,7 +102,14 @@ RenderStatic StaticRenderer::Build()
 
     int matIndex = 0;
     for (const auto& mg : m.mesh_groups) {
-        if (mg.TfxRenderStage > max_detail) { ++matIndex; continue; }
+        if (mg.TfxRenderStage != max_detail) {
+            ++matIndex; 
+            continue;
+        }
+        if (m.parts[mg.part_index].LodCatagory != highestDetail) {
+            ++matIndex;
+            continue;
+        }
         partGroupIdx.push_back(static_cast<size_t>(mg.part_index));     // which buffer group this part uses
         techIds.push_back(s.Techniques[matIndex].Unk0);                 // your technique tag
         partInputLayoutIdx.push_back(mg.input_layout_index);            // remember IL index if you want per-part IL
@@ -125,8 +139,24 @@ RenderStatic StaticRenderer::Build()
                 grp->uvStride = gfx_.registry->GetBuffer(gr.uvId).stride;
             }
             if (gr.colId) {
-                grp->color = gfx_.assets->EnqueueBuffer(gr.colId).future.get();
-                grp->colorStride = gfx_.registry->GetBuffer(gr.colId).stride;
+                const auto& buf = gfx_.registry->GetBuffer(gr.colId);
+                const UINT stride = buf.stride;
+                const UINT byteWidth = buf.desc.ByteWidth;
+                BufferSRVMeta meta{};
+                if (stride == 1) {
+                    meta.typedFormat = DXGI_FORMAT_R8_UNORM;
+                }
+                else {
+                    meta.typedFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+                }
+                meta.bytesPerElement = stride;
+                auto res = gfx_.assets->EnqueueBufferSRV(gr.colId, meta).future.get();
+
+                ID3D11ShaderResourceView* raw = res->srv.Get();
+                if (raw) raw->AddRef();  // take our own ref
+
+                grp->color.reset(raw, [](ID3D11ShaderResourceView* p) { if (p) p->Release(); });
+                grp->colorStride = gfx_.registry->GetBuffer(gr.colId).stride;               // ComPtr copy (AddRef)
             }
             return grp;
             }).share();

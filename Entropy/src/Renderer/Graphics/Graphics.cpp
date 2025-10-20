@@ -6,6 +6,22 @@ static inline float asfloat_u32(std::uint32_t u) {
 	return std::bit_cast<float>(u);
 }
 
+
+auto ToZUp = [] {
+	// rotate +90° around +X: (x, y, z) -> (x, z, -y)
+	return XMMatrixRotationX(+XM_PIDIV2);
+	};
+
+
+struct ScopeInstancesCB {
+	// 32-byte header (two float4s)
+	DirectX::XMFLOAT4 meshOffset_meshScale; // xyz, w
+	DirectX::XMFLOAT4 uvScale_uvOffset;     // x=uvScale, y=offX, z=offY, w = asfloat(maxColorOrClamp)
+	// then 64 bytes per instance: 4 float4
+	// store for i=0..N-1 the 3 basis vectors + packed flags/translation just like your VS expects
+	DirectX::XMFLOAT4 rows[/*4 * N*/];
+};
+
 struct GpuMarker {
 	ID3DUserDefinedAnnotation* a{};
 	GpuMarker(ID3D11DeviceContext* ctx, const wchar_t* name) {
@@ -36,7 +52,7 @@ struct ScopedGpuEvent {
 };
 
 // Max instances you plan to send per draw (<= 63 to stay within 4KB)
-constexpr uint32_t MAX_INST = 1;
+constexpr uint32_t MAX_INST = 1024;
 
 // Raw cb1 payload = 32 bytes header + 64 bytes per instance * MAX_INST.
 // 32 + 64*63 = 4064 bytes (fits <= 4096).
@@ -84,7 +100,7 @@ void UpdateCB1(
 	ID3D11DeviceContext* ctx,
 	const DirectX::XMFLOAT3& meshOffset, float meshScale,
 	float uvScaleX, float uvOffX, float uvOffY, std::uint32_t maxColorOrClampBits,
-	const std::vector<DirectX::XMMATRIX>& worlds // size <= MAX_INST
+	const std::vector<SStaticInstanceTransform>& worlds // size <= MAX_INST
 ) {
 	using namespace DirectX;
 
@@ -98,26 +114,38 @@ void UpdateCB1(
 
 	// Per-instance rows
 	const XMFLOAT4 flagRow(1.f, 1.f, 1.f, asfloat_u32(0x02000000u));
-	const uint32_t count = (uint32_t)std::min<std::size_t>(worlds.size(), MAX_INST);
 
-	for (uint32_t i = 0; i < count; ++i) {
+	for (uint32_t i = 0; i < worlds.size(); ++i) {
+		const auto& tr = worlds[i];
+
+		// Build S * R * T
+		const XMMATRIX S = XMMatrixScaling(tr.scale[0], tr.scale[0], tr.scale[0]);
+
+		// NOTE: this assumes rotation = (x, y, z, w). 
+		// If your data is (w, x, y, z), change to XMVectorSet(tr.rotation[1], tr.rotation[2], tr.rotation[3], tr.rotation[0]).
+		const XMVECTOR q = XMQuaternionNormalize(
+			XMVectorSet(tr.rotation[0], tr.rotation[1], tr.rotation[2], tr.rotation[3]));
+		const XMMATRIX R = XMMatrixRotationQuaternion(q);
+
+		const XMMATRIX T = XMMatrixTranslation(tr.translation[0], tr.translation[1], tr.translation[2]);
+
+		const XMMATRIX W = S * R * T;   // row-major, mul(pos, WVP) path
+
+		// Store as 3x4 rows, with translation in .w, like your shader expects
+		DirectX::XMFLOAT4 r0, r1, r2, r3;
+		XMStoreFloat4(&r0, W.r[0]);
+		XMStoreFloat4(&r1, W.r[1]);
+		XMStoreFloat4(&r2, W.r[2]);
+		XMStoreFloat4(&r3, W.r[3]); // contains tx,ty,tz in x,y,z
+
 		const uint32_t base = 4u * i;
-
-		DirectX::XMFLOAT4 r0f, r1f, r2f, r3f;
-		const DirectX::XMMATRIX W = worlds[i];      // NO transpose
-		XMStoreFloat4(&r0f, W.r[0]);                // m00 m01 m02 m03
-		XMStoreFloat4(&r1f, W.r[1]);                // m10 m11 m12 m13
-		XMStoreFloat4(&r2f, W.r[2]);                // m20 m21 m22 m23
-		XMStoreFloat4(&r3f, W.r[3]);                // tx  ty  tz  1
-
-		// Proper 3x4: translation lives in .w of each row (no bit twiddling)
-		cb->rows[base + 0] = { r0f.x, r0f.y, r0f.z, r3f.x };  // tx
-		cb->rows[base + 1] = { r1f.x, r1f.y, r1f.z, r3f.y };  // ty
-		cb->rows[base + 2] = { r2f.x, r2f.y, r2f.z, r3f.z };  // tz
-		cb->rows[base + 3] = { 0,0,0,1 };                    // padding (keep stride = 4)
+		cb->rows[base + 0] = { r0.x, r0.y, r0.z, r3.x }; // tx
+		cb->rows[base + 1] = { r1.x, r1.y, r1.z, r3.y }; // ty
+		cb->rows[base + 2] = { r2.x, r2.y, r2.z, r3.z }; // tz
+		cb->rows[base + 3] = { 1.f, 1.f, 1.f, asfloat_u32(0x02000000u) }; // same flag row you used
 	}
 
-
+	// (optional) zero out remaining slots if count < MAX_INST
 
 	ctx->Unmap(g_cb1.Get(), 0);
 
@@ -200,32 +228,38 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 	ID3D11DeviceContext* ctx = pContext.Get();
 	wchar_t label[128];
 	swprintf(label, 128, L"Static geometry %08X", rs.mesh->id);
+	//const DirectX::XMMATRIX world = rs.world;
 	//printf("Loading Static %08X", rs.mesh->id);
 	GpuMarker mark(ctx, label);
 	const auto& mesh = *rs.mesh;
 	// View constant buffer(s)
-	UploadScopeViewCB12_All(ctx, view, float(windowWidth), float(windowHeight));
 	ID3D11Buffer* b1 = g_cb1.Get();            // if you also use cb1 for per-object, leave it bound
 	ctx->VSSetConstantBuffers(1, 1, &b1);
-	std::vector<DirectX::XMMATRIX> worlds(1, DirectX::XMMatrixIdentity());
-	UpdateCB1(ctx,
-		/*meshOffset*/{ 0,0,0 },
-		/*meshScale*/   1.0f,
-		/*uvScaleX*/    1.0f,
-		/*uvOffX*/      0.0f,
-		/*uvOffY*/      0.0f,
-		/*maxColorOrClampBits*/ 0u,
-		worlds);
-	UploadScopeViewCB12_All(ctx, view, (float)windowWidth, (float)windowHeight);
+	//UploadScopeViewCB12_All(ctx, view, (float)windowWidth, (float)windowHeight);
 	ID3D11Buffer* b12 = g_scopeView_b12.Get();
+	XMFLOAT3 mesh_offset;
+	mesh_offset.x = rs.meshData.mesh_offset[0];
+	mesh_offset.y = rs.meshData.mesh_offset[1];
+	mesh_offset.z = rs.meshData.mesh_offset[2];
+
+	UpdateCB1(ctx,
+		mesh_offset,
+		rs.meshData.mesh_scale,
+		rs.meshData.texture_coordinate_scale,
+		rs.meshData.texture_coordinate_offset[0],
+		rs.meshData.texture_coordinate_offset[1],
+		rs.meshData.max_colour_index,
+		rs.world);
 	for (const auto& part : mesh.parts)
 	{
+
 		const auto& tech = part.technique;
 		if (!tech) { continue; }
 		//printf("Drawing for technique %08X\n", tech->id);
 		// --- Shaders
 		ID3D11VertexShader* vs = tech->VS[0]->vs.Get();
 		ID3D11PixelShader* ps = tech->PS[0]->ps.Get();
+
 		if (!vs || !ps) { printf("Skip part: null VS/PS COM ptr\n"); continue; }
 		ctx->VSSetShader(vs, nullptr, 0);
 		ctx->PSSetShader(ps, nullptr, 0);
@@ -246,6 +280,7 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 			continue;
 		}
 
+
 		ID3D11Buffer* vbs[3];
 		UINT          strides[3];
 		UINT          offsets[3] = { 0,0,0 };
@@ -253,18 +288,14 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 
 		if (bg.vertex) { vbs[vbCount] = bg.vertex.get(); strides[vbCount] = bg.vertexStride; ++vbCount; }
 		if (bg.uv) { vbs[vbCount] = bg.uv.get();     strides[vbCount] = bg.uvStride;     ++vbCount; }
-		if (bg.color) { vbs[vbCount] = bg.color.get();  strides[vbCount] = bg.colorStride;  ++vbCount; }
-
+		//if (bg.color) { vbs[vbCount] = bg.color.get();  strides[vbCount] = bg.colorStride;  ++vbCount; }
+		ID3D11ShaderResourceView* s = bg.color.get();
+		ctx->VSSetShaderResources(0, 1, &s);
 		if (vbCount == 0) { OutputDebugStringA("Skip part: no vertex buffers bound\n"); continue; }
 
 		ctx->IASetVertexBuffers(0, vbCount, vbs, strides, offsets);
 		ctx->IASetIndexBuffer(bg.index.get(), bg.indexFormat, 0);
 
-		// --- View + per-object constants (ensure these are bound!)
-		//   If you didn't already, update & bind b12 (view) before this loop:
-		//  
-		ctx->VSSetConstantBuffers(12, 0, &b12);
-		ctx->PSSetConstantBuffers(12, 0, &b12);
 		// Make sure b1 is actually bound (once is fine; safe to rebind)
 		{ ID3D11Buffer* b = g_cb1.Get(); ctx->VSSetConstantBuffers(1, 1, &b); }
 
@@ -278,36 +309,36 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 				ctx->PSSetShaderResources(slot, 1, &s);
 			}
 		}
+		//printf("Has %d CBuffers available\n", tech->CBuffers.size());
 		if (!tech->CBuffers.empty()) {
-			const size_t n = std::min(tech->CBuffers.size(), tech->psCBSlots.size());
-			for (size_t i = 0; i < n; ++i) {
-				if (!tech->CBuffers[i] || !tech->CBuffers[i]->buffer) continue;
+			for (size_t i = 0; i < tech->CBuffers.size(); ++i) {
 				ID3D11Buffer* b = tech->CBuffers[i]->buffer.Get();
-				const UINT slot = tech->psCBSlots[i];
-				ctx->PSSetConstantBuffers(slot, 1, &b);
+				ctx->PSSetConstantBuffers(i, 1, &b);
+				//printf("Has %d CBuffers size\n", tech->CBuffers[i]->size);
+
 
 				// If the same cbuffer is also used by VS/GS, bind there too:
 				// ctx->VSSetConstantBuffers(slot, 1, &b);
 				// ctx->GSSetConstantBuffers(slot, 1, &b);
 			}
 		}
-		if (!tech->Samplers.empty()) {
-			const size_t n = std::min(tech->Samplers.size(), tech->psSamplerSlots.size());
-			for (size_t i = 0; i < n; ++i) {
-				if (!tech->Samplers[i] || !tech->Samplers[i]->sampler) continue;
-				ID3D11SamplerState* s = tech->Samplers[i]->sampler.Get();
-				const UINT slot = tech->psSamplerSlots[i];
-				ctx->PSSetSamplers(slot, 1, &s);
-			}
+		//printf("Has %d samplers available", tech->Samplers.size());
+		for (size_t i = 0; i < tech->Samplers.size(); ++i) {
+			ID3D11SamplerState* s = tech->Samplers[i]->sampler.Get();
+			ctx->PSSetSamplers(i+1, 1, &s);
 		}
-		// --- Ensure at least one sampler is bound (slot 0) if your PS samples textures
-		{
-			ID3D11SamplerState* s = samplerState.Get(); // you created this in InitializeDirectX
-			ctx->PSSetSamplers(0, 1, &s);
-		}
-
+		
+			
+		
+		UploadScopeViewCB12_All(ctx, view, float(windowWidth), float(windowHeight));
+	
 		// --- Draw
-		ctx->DrawIndexed(part.partInfo.index_count, part.partInfo.index_start, 0);
+		const UINT instanceCount = (UINT)rs.world.size();
+		ctx->DrawIndexedInstanced(part.partInfo.index_count,
+			instanceCount,               // InstanceCount
+			part.partInfo.index_start,   // StartIndexLocation
+			0,                           // BaseVertexLocation
+			0);
 
 		// Optional: unbind SRVs if used later as RTs
 		// ID3D11ShaderResourceView* nulls[16] = {};
@@ -341,6 +372,8 @@ void Graphics::RenderFrame()
 	XMStoreFloat4x4(&viewState_ps.world_to_camera, camera.GetViewMatrix());
 	XMStoreFloat4x4(&viewState_ps.camera_to_projective, camera.GetProjectionMatrix());
 
+	viewState_ps.derive_matrices_vs(Viewport{ { (float)windowWidth, (float)windowHeight } });
+
 	if (!s_vsCB) {
 		D3D11_BUFFER_DESC cbDesc{};
 		cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
@@ -353,7 +386,10 @@ void Graphics::RenderFrame()
 		pDevice->CreateBuffer(&cbDesc, &initData, s_vsCB.GetAddressOf());
 	}
 
-	for (const auto& rs : staticsToDraw) {      // vector<RenderStatic>
+	for (const auto& rs : staticsToDraw) {   
+		if (rs.mesh->id != 0x81029e80) {
+			//continue;
+		}
         DrawStaticMesh(rs, viewState_ps);
     }
 
@@ -589,7 +625,7 @@ bool Graphics::InitializeScene()
 		//COM_ERROR_IF_FAILED(hr, "Failed to initialize constant buffer");
 
 		camera.SetPosition(3.0f, 0.0f, 0.0f);
-		camera.SetProjectionValues(90.0f, static_cast<float>(windowWidth) / static_cast<float>(windowHeight), 0.01f, 1000.0f);
+		camera.SetProjectionValues(90.0f, static_cast<float>(windowWidth) / static_cast<float>(windowHeight), 0.01f, 10000.0f);
 
 		//for (auto& Static : this->static_objects_to_render)
 		//{

@@ -219,6 +219,20 @@ AssetHandle<EntropyAssets::DomainShader> AssetSystem::EnqueueDomainShader(uint32
     AssetHandle<EntropyAssets::DomainShader> h; h.future = fut; return h;
 }
 
+AssetHandle<EntropyAssets::BufferSRVRes>
+AssetSystem::EnqueueBufferSRV(uint32_t id, const BufferSRVMeta& meta)
+{
+    auto fut = pool_.Submit([=] {
+        return bufSrvCache_.GetOrLoad(id, [&] {
+            // Pull bytes from registry (same as EnqueueBuffer)
+            BufferPayload payload = R_->GetBuffer(id);
+            return createBufferSRV_(payload, meta);
+            }).get();
+        }).share();
+
+    AssetHandle<EntropyAssets::BufferSRVRes> h; h.future = fut; return h;
+}
+
 //------------------------------------------------------------------------------
 // Textures / Samplers / CBuffers
 //------------------------------------------------------------------------------
@@ -357,6 +371,78 @@ AssetHandle<EntropyAssets::CBufferRes> AssetSystem::EnqueueCBuffer(uint32_t id)
 
     AssetHandle<EntropyAssets::CBufferRes> h; h.future = fut; return h;
 }
+
+std::shared_ptr<EntropyAssets::BufferSRVRes>
+AssetSystem::createBufferSRV_(const BufferPayload& p, const BufferSRVMeta& meta)
+{
+    using Microsoft::WRL::ComPtr;
+
+    D3D11_BUFFER_DESC bd = {};
+    bd.ByteWidth = p.desc.ByteWidth;
+    bd.Usage = D3D11_USAGE_DEFAULT;     // or DYNAMIC if you Map/Write
+    bd.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    bd.CPUAccessFlags = 0;                       // DYNAMIC -> D3D11_CPU_ACCESS_WRITE
+    bd.MiscFlags = 0;                       // leave 
+
+    UINT numElements = p.desc.ByteWidth / p.stride;
+
+    D3D11_SHADER_RESOURCE_VIEW_DESC sd{};
+    sd.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+    sd.Format = (p.stride == 1)
+        ? DXGI_FORMAT_R8_UNORM
+        : DXGI_FORMAT_R8G8B8A8_UNORM;          // 4 bytes -> float4(unorm) in HLSL
+    sd.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+    sd.Buffer.FirstElement = 0;
+    sd.Buffer.NumElements = numElements;
+
+    
+
+    // Create buffer with initial data from payload (if any)
+    D3D11_SUBRESOURCE_DATA srd{};
+    srd.pSysMem = p.data.empty() ? nullptr : (const void*)p.data.data();
+
+    ComPtr<ID3D11Buffer> buf;
+    HRESULT hr = device_->CreateBuffer(&bd, p.data.empty() ? nullptr : &srd, &buf);
+    if (FAILED(hr)) throw std::runtime_error("CreateBuffer (SRV) failed");
+
+    ComPtr<ID3D11ShaderResourceView> srv;
+    hr = device_->CreateShaderResourceView(buf.Get(), &sd, &srv);
+    if (FAILED(hr)) throw std::runtime_error("CreateShaderResourceView (buffer) failed");
+
+    auto out = std::make_shared<EntropyAssets::BufferSRVRes>();
+    out->buffer = buf;
+    out->srv = srv;
+    return out;
+}
+
+static inline UINT Align162(UINT x) { return (x + 15u) & ~15u; }
+
+std::shared_ptr<EntropyAssets::CBufferRes>
+AssetSystem::createCBufferFromRaw_(const void* bytes, UINT sizeBytes)
+{
+    if (!bytes || sizeBytes == 0) return {};
+
+    const UINT byteWidth = Align162(sizeBytes);
+
+    D3D11_BUFFER_DESC bd{};
+    bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    bd.ByteWidth = byteWidth;                    // must be multiple of 16
+    bd.Usage = D3D11_USAGE_IMMUTABLE;            // fallback is static
+    bd.CPUAccessFlags = 0;
+
+    D3D11_SUBRESOURCE_DATA srd{};
+    srd.pSysMem = bytes;
+
+    Microsoft::WRL::ComPtr<ID3D11Buffer> buf;
+    HRESULT hr = device_->CreateBuffer(&bd, &srd, &buf);
+    if (FAILED(hr)) throw std::runtime_error("Create fallback cbuffer failed");
+
+    auto out = std::make_shared<EntropyAssets::CBufferRes>();
+    out->buffer = buf;
+    out->size = byteWidth;
+    return out;
+}
+
 static inline UINT Align16(UINT n) { return (n + 15u) & ~15u; }
 //------------------------------------------------------------------------------
 // Techniques
@@ -477,10 +563,9 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
         {
             const auto& s = Tfx.PixelShader.Samplers[i];
             const uint32_t id = s.sampler.reference;                      // sampler id (32-bit)
-            if (id == 0u || id == 0xFFFFFFFFu) continue;
 
             // prefer explicit slot if present; otherwise index
-            const UINT slot = (s.Unk4 != 0xFFFFFFFFu) ? s.Unk4 : static_cast<UINT>(i);
+            const UINT slot = i;
 
             // **critical**: put a payload into the registry BEFORE enqueue
             if (!ensureSamplerPayload(id)) continue;
@@ -505,6 +590,22 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
                 OutputDebugStringA("[Tech] ensureCBufferPayload failed\n");
             }
         }
+        else {
+            if (Tfx.PixelShader.SamplerFallback.size() != 0) {
+                try {
+                    auto cb = createCBufferFromRaw_(Tfx.PixelShader.SamplerFallback.data(), Tfx.PixelShader.SamplerFallback.size());
+                    if (cb) {
+                        // Reuse your existing vectors so your draw code stays unchanged
+                        tech->CBuffers.push_back(cb);
+                        tech->psCBSlots.push_back(0);
+                    }
+                }
+                catch (const std::exception& e) {
+                    printf("[Tech] %08X fallback PS cbuffer failed: %s\n", id, e.what());
+                }
+            }
+        }
+        
 
         // --------- Collect everything ----------
         if (fVS.valid()) if (auto vs = fVS.get()) tech->VS.push_back(vs);
@@ -526,7 +627,6 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
         tech->Samplers.reserve(psSampF.size());
         tech->psSamplerSlots.reserve(psSampF.size());
         for (auto& [slot, fut] : psSampF) {
-            if (!fut.valid()) continue;
             if (auto sres = fut.get()) {
                 tech->Samplers.push_back(sres);
                 tech->psSamplerSlots.push_back(slot);

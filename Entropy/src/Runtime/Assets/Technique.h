@@ -5,7 +5,14 @@
 #include <cstdint>
 #include <memory>
 
+
+
 namespace EntropyAssets {           // <<< add
+
+    struct BufferSRVRes {
+        Microsoft::WRL::ComPtr<ID3D11Buffer>            buffer;
+        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
+    };
 
     struct Texture2DRes { // whatever you already have
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
@@ -25,7 +32,6 @@ namespace EntropyAssets {           // <<< add
     struct GeometryShader { ComPtr<ID3D11GeometryShader> gs; };
     struct HullShader { ComPtr<ID3D11HullShader>   hs; };
     struct DomainShader { ComPtr<ID3D11DomainShader> ds; };
-
     struct SamplerRes { ComPtr<ID3D11SamplerState> sampler; };
     struct CBufferRes { ComPtr<ID3D11Buffer> buffer; UINT size = 0; };
 
@@ -51,6 +57,7 @@ namespace EntropyAssets {           // <<< add
         // NEW: PS cbuffer (you can have more than one if your format allows)
         std::vector<std::shared_ptr<CBufferRes>>     CBuffers;
         std::vector<UINT>                            psCBSlots;        // <— add
+
     };
 
 } // namespace EntropyAssets       // <<< add

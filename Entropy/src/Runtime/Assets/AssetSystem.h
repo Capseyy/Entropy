@@ -18,6 +18,20 @@
 #include "Renderer/Loaders/TextureLoader.h"
 #include "Sampler.h"
 
+struct BufferSRVMeta {
+    enum class Kind { Structured, Raw, Typed } kind = Kind::Structured;
+
+    // Structured
+    UINT structureByteStride = 0;   // sizeof(T)
+    UINT numElements = 0;   // element count
+
+    // Raw (ByteAddressBuffer): byte size must be multiple of 4. Num elements = bytes/4 for the SRV.
+    bool allowUAV = false;          // optional (if you also want a UAV later)
+
+    // Typed (Buffer<float4> etc.)
+    DXGI_FORMAT typedFormat = DXGI_FORMAT_UNKNOWN; // e.g. DXGI_FORMAT_R32G32B32A32_FLOAT
+    UINT bytesPerElement = 0;                   // must match typedFormat (e.g. 16 for RGBA32F)
+};
 
 
 using Microsoft::WRL::ComPtr;
@@ -44,6 +58,9 @@ public:
     AssetHandle<EntropyAssets::Texture2DRes> EnqueueTexture(uint32_t id);
     AssetHandle<EntropyAssets::SamplerRes>   EnqueueSampler(uint32_t id);
     AssetHandle<EntropyAssets::CBufferRes>   EnqueueCBuffer(uint32_t id);
+
+    AssetHandle<EntropyAssets::BufferSRVRes>
+        EnqueueBufferSRV(uint32_t id, const BufferSRVMeta& meta);
 
     // Technique bundle
     std::shared_future<std::shared_ptr<EntropyAssets::Technique>>
@@ -74,9 +91,11 @@ private:
     AssetCache<EntropyAssets::Texture2DRes>   texCache_;
     AssetCache<EntropyAssets::SamplerRes>     sampCache_;
     AssetCache<EntropyAssets::CBufferRes>     cbCache_;
+    AssetCache<EntropyAssets::BufferSRVRes> bufSrvCache_;
 
     // ---------------- helpers ----------------
     std::shared_ptr<ID3D11Buffer> createBuffer_(const BufferPayload& p);
+    std::shared_ptr<EntropyAssets::CBufferRes> createCBufferFromRaw_(const void* bytes, UINT sizeBytes);
 
     template<typename TShaderIface>
     void createShader_(ID3D11Device* dev, const void* bc, size_t bcSize, ComPtr<TShaderIface>& out);
@@ -85,6 +104,9 @@ private:
 
     std::shared_ptr<EntropyAssets::PixelShader>
         createPixelShader_(const ShaderPayload& p);
+
+    std::shared_ptr<EntropyAssets::BufferSRVRes>
+        createBufferSRV_(const BufferPayload& p, const BufferSRVMeta& meta);
 
     std::shared_ptr<EntropyAssets::VertexShader> createVS_(const ShaderPayload& p);
 
