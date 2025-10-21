@@ -255,12 +255,17 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 		if (!tech) { continue; }
 		//printf("Drawing for technique %08X\n", tech->id);
 		// --- Shaders
-		ID3D11VertexShader* vs = tech->VS[0]->vs.Get();
-		ID3D11PixelShader* ps = tech->PS[0]->ps.Get();
-
-		if (!vs || !ps) { printf("Skip part: null VS/PS COM ptr\n"); continue; }
-		ctx->VSSetShader(vs, nullptr, 0);
-		ctx->PSSetShader(ps, nullptr, 0);
+		if (!tech->VS.empty()) {
+			//OutputDebugStringA("[TryGetVSPS] VS list empty\n");
+			ID3D11VertexShader* vs = tech->VS[0]->vs.Get();
+			ctx->VSSetShader(vs, nullptr, 0);
+		}
+		if (!tech->PS.empty()) {
+			//OutputDebugStringA("[TryGetVSPS] VS list empty\n");
+			ID3D11PixelShader* ps = tech->PS[0]->ps.Get();
+			ctx->PSSetShader(ps, nullptr, 0);
+		}
+	
 
 		// --- Input layout: prefer per-part, else VS-owned
 		//printf("mesh.input_layout_index %d\n", mesh.input_layout_index);
@@ -274,7 +279,7 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 		}
 		const BufferGroup& bg = *mesh.groups[gi];
 		if (!bg.index || !bg.vertex || bg.indexCount == 0) {
-			printf("Skip part: missing VB/IB or zero indexCount\n");
+			//printf("Skip part: missing VB/IB or zero indexCount\n");
 			continue;
 		}
 
@@ -305,7 +310,7 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 			}
 		}
 		if (!tech->Textures3D.empty()) {
-			printf("Mapping 3D Textures");
+			//printf("Mapping 3D Textures");
 			const size_t n = std::min(tech->Textures3D.size(), tech->psTextureSlots3D.size());
 			for (size_t i = 0; i < n; ++i) {
 				UINT slot = tech->psTextureSlots3D[i];
@@ -333,7 +338,8 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 		}
 		
 		ID3D11ShaderResourceView* s = bg.color.get();
-		ctx->VSSetShaderResources(1, 1, &s);
+		//ctx->VSSetShaderResources(1, 1, &s);
+		ctx->VSSetShaderResources(0, 1, &s);
 		
 		UploadScopeViewCB12_All(ctx, view, float(windowWidth), float(windowHeight));
 	
@@ -392,7 +398,7 @@ void Graphics::RenderFrame()
 	}
 
 	for (const auto& rs : staticsToDraw) {   
-		if (rs.mesh->id != 0x81029462) {
+		if (rs.mesh->id != 0x80fbab45) {
 			//continue;
 		}
         DrawStaticMesh(rs, viewState_ps);
@@ -433,7 +439,7 @@ void Graphics::RenderFrame()
 	ImGui::Render();
 	ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 
-	pSwapChain->Present(1, 0);
+	pSwapChain->Present(0, 0);
 }
 
 bool Graphics::Initialize(HWND hWnd, int width, int height)

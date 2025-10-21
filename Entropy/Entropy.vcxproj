@@ -270,6 +270,7 @@
     <ClInclude Include="src\Runtime\Assets\AssetCache.h" />
     <ClInclude Include="src\Runtime\Assets\AssetHandle.h" />
     <ClInclude Include="src\Runtime\Assets\AssetSystem.h" />
+    <ClInclude Include="src\Runtime\Assets\Pitch.h" />
     <ClInclude Include="src\Runtime\Assets\RuntimeAssetRegistry.h" />
     <ClInclude Include="src\Runtime\Assets\Sampler.h" />
     <ClInclude Include="src\Runtime\Threading\MainThreadQueue.h" />

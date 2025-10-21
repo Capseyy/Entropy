@@ -6,6 +6,7 @@
 #include <vector>
 #include <algorithm>
 #include <cstdint>
+#include "Runtime/Assets/Pitch.h"
 #undef max
 #undef min
 #pragma comment(lib, "dxgi.lib")
@@ -124,26 +125,6 @@ inline DXGI_FORMAT TypelessToTypedSRV(DXGI_FORMAT f)
     }
 }
 
-inline bool ComputePitch(DXGI_FORMAT fmt, UINT w, UINT h, UINT& rowPitch, UINT& slicePitch)
-{
-    UINT blockBytes = 0, bpp = 0;
-    if (IsBCFormat(fmt, blockBytes))
-    {
-        // BC uses 4x4 blocks; dimensions below 4 still occupy 1 block.
-        UINT nbw = std::max<UINT>(1, (w + 3) / 4);
-        UINT nbh = std::max<UINT>(1, (h + 3) / 4);
-        rowPitch = nbw * blockBytes;
-        slicePitch = rowPitch * nbh;
-        return true;
-    }
-    if (BytesPerPixel(fmt, bpp))
-    {
-        rowPitch = w * bpp;
-        slicePitch = rowPitch * h;
-        return true;
-    }
-    return false; // unsupported/planar format
-}
 
 struct TextureResult
 {
@@ -151,141 +132,73 @@ struct TextureResult
     ComPtr<ID3D11ShaderResourceView>  srv;
 };
 
-static inline DXGI_FORMAT TypelessToTypedSRV3D(DXGI_FORMAT f) {
-    switch (f) {
-    case DXGI_FORMAT_R8G8B8A8_TYPELESS:   return DXGI_FORMAT_R8G8B8A8_UNORM;
-    case DXGI_FORMAT_R16G16B16A16_TYPELESS:return DXGI_FORMAT_R16G16B16A16_FLOAT;
-    case DXGI_FORMAT_R32_TYPELESS:        return DXGI_FORMAT_R32_FLOAT;
-    case DXGI_FORMAT_R32G32B32A32_TYPELESS:return DXGI_FORMAT_R32G32B32A32_FLOAT;
-        // BC formats if you have them in volumes (D3D11 allows it):
-    case DXGI_FORMAT_BC1_TYPELESS:        return DXGI_FORMAT_BC1_UNORM;
-    case DXGI_FORMAT_BC2_TYPELESS:        return DXGI_FORMAT_BC2_UNORM;
-    case DXGI_FORMAT_BC3_TYPELESS:        return DXGI_FORMAT_BC3_UNORM;
-    case DXGI_FORMAT_BC4_TYPELESS:        return DXGI_FORMAT_BC4_UNORM;
-    case DXGI_FORMAT_BC5_TYPELESS:        return DXGI_FORMAT_BC5_UNORM;
-    default:                               return f;
-    }
-}
-
-static inline bool ComputePitch2D(DXGI_FORMAT fmt, UINT w, UINT h,
-    UINT& rowPitch, UINT& slicePitch) {
-    auto bytesPerPixel = [](DXGI_FORMAT f)->UINT {
-        switch (f) {
-        case DXGI_FORMAT_R8_UNORM:               return 1;
-        case DXGI_FORMAT_R8G8_UNORM:             return 2;
-        case DXGI_FORMAT_R8G8B8A8_UNORM:         return 4;
-        case DXGI_FORMAT_R16G16B16A16_FLOAT:     return 8;
-        case DXGI_FORMAT_R32G32B32A32_FLOAT:     return 16;
-        default: return 0;
-        }
-        };
-    auto bcBytesPerBlock = [](DXGI_FORMAT f)->UINT {
-        switch (f) {
-        case DXGI_FORMAT_BC1_UNORM:
-        case DXGI_FORMAT_BC4_UNORM: return 8;
-        case DXGI_FORMAT_BC2_UNORM:
-        case DXGI_FORMAT_BC3_UNORM:
-        case DXGI_FORMAT_BC5_UNORM: return 16;
-        default: return 0;
-        }
-        };
-
-    if (UINT b = bcBytesPerBlock(fmt)) {
-        const UINT bw = std::max<UINT>(1, (w + 3) / 4);
-        const UINT bh = std::max<UINT>(1, (h + 3) / 4);
-        rowPitch = bw * b;
-        slicePitch = rowPitch * bh;
-        return true;
-    }
-
-    if (UINT p = bytesPerPixel(fmt)) {
-        rowPitch = w * p;
-        slicePitch = rowPitch * h;
-        return true;
-    }
-
-    return false; // unsupported format in this helper
-}
-
 static std::optional<Texture3DPayload>
 BuildTexture3DPayloadFromTag(TagHash textureTag)
 {
-    // Parse header (you already have bin::parse<>; extend your STextureHeader to include depth & dimension).
-    auto header = bin::parse<STextureHeader>(textureTag.data, textureTag.size, bin::Endian::Little);
+    const auto hdr = bin::parse<STextureHeader>(textureTag.data, textureTag.size, bin::Endian::Little);
+    if (!hdr.width || !hdr.height || hdr.depth <= 1) return std::nullopt;
 
-    if (header.width == 0 || header.height == 0 || header.depth == 0)
-        return std::nullopt;
-    auto data_tag = TagHash(textureTag.reference);
-    const DXGI_FORMAT fileFmt = static_cast<DXGI_FORMAT>(header.dxgiFormat);
-    const DXGI_FORMAT texFmt = TypelessToTypedSRV3D(fileFmt);
+    // Find pixel bytes (prefer large buffer)
+    const uint8_t* src = nullptr; size_t srcSize = 0;
+    if (hdr.large_buffer.data && hdr.large_buffer.size) {
+        src = static_cast<const uint8_t*>(hdr.large_buffer.data);
+        srcSize = hdr.large_buffer.size;
+    }
+    else {
+        TagHash payload(textureTag.reference);
+        payload.getData();                 // <<— make data/size valid
+        src = payload.data;
+        srcSize = payload.size;
+    }
+    if (!src || !srcSize) return std::nullopt;
 
-    const uint8_t* src = static_cast<const uint8_t*>(data_tag.data);
-    size_t         srcSize = data_tag.size;
+    const DXGI_FORMAT resFmt = static_cast<DXGI_FORMAT>(hdr.dxgiFormat);
+    const DXGI_FORMAT pitchFmt = NormalizeForPitch(TypelessToTypedSRV3D(resFmt));
 
     Texture3DPayload tp{};
-    ZeroMemory(&tp.desc, sizeof(tp.desc));
-    tp.desc.Width = header.width;
-    tp.desc.Height = header.height;
-    tp.desc.Depth = header.depth;
-    tp.desc.MipLevels = std::max<UINT>(1, header.mipCount);
-    tp.desc.Format = texFmt;
+    tp.desc.Width = hdr.width;
+    tp.desc.Height = hdr.height;
+    tp.desc.Depth = hdr.depth;
+    tp.desc.Format = resFmt;            // resource can stay typeless
+    tp.desc.MipLevels = std::max<UINT>(1, hdr.mipCount);
     tp.desc.Usage = D3D11_USAGE_DEFAULT;
     tp.desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-    tp.desc.CPUAccessFlags = 0;
-    tp.desc.MiscFlags = 0;
 
-    // Figure out how many mips are actually present in the blob (no over-reads)
-    UINT w = header.width, h = header.height, d = header.depth;
-    size_t consumed = 0;
-    UINT storedMipCount = 0;
-
+    // Count how many mips actually fit
+    UINT w = hdr.width, h = hdr.height, d = hdr.depth;
+    size_t consumed = 0; UINT stored = 0;
     for (UINT mip = 0; mip < tp.desc.MipLevels; ++mip) {
         UINT rowPitch = 0, slicePitch = 0;
-        if (!ComputePitch2D(texFmt, w, h, rowPitch, slicePitch))
-            return std::nullopt;
-
-        const size_t mipBytes = size_t(slicePitch) * size_t(d);   // all Z slices
+        if (!ComputePitch2D(pitchFmt, w, h, rowPitch, slicePitch)) return std::nullopt;
+        const size_t mipBytes = size_t(slicePitch) * size_t(d);
         if (consumed + mipBytes > srcSize) break;
-
-        consumed += mipBytes;
-        ++storedMipCount;
-
-        w = std::max(1u, w >> 1);
-        h = std::max(1u, h >> 1);
-        d = std::max(1u, d >> 1);
+        consumed += mipBytes; ++stored;
+        w = std::max(1u, w >> 1); h = std::max(1u, h >> 1); d = std::max(1u, d >> 1);
     }
+    if (!stored) return std::nullopt;
+    tp.desc.MipLevels = stored;
 
-    // Clamp mip levels to what we actually have
-    tp.desc.MipLevels = storedMipCount;
-
-    // Copy the bytes we will reference from subresource pointers
+    // Copy bytes we’ll reference
     tp.data.assign(src, src + consumed);
 
-    // Build subresources (one per mip)
-    tp.subresources.reserve(tp.desc.MipLevels);
-
+    // Build subresources (pSysMem points into tp.data)
+    tp.subresources.reserve(stored);
     const uint8_t* base = tp.data.data();
-    size_t offset = 0;
-    w = header.width; h = header.height; d = header.depth;
+    size_t offset = 0; w = hdr.width; h = hdr.height; d = hdr.depth;
 
-    for (UINT mip = 0; mip < tp.desc.MipLevels; ++mip) {
+    for (UINT mip = 0; mip < stored; ++mip) {
         UINT rowPitch = 0, slicePitch = 0;
-        if (!ComputePitch2D(texFmt, w, h, rowPitch, slicePitch)) return std::nullopt;
-
-        const size_t mipBytes = size_t(slicePitch) * size_t(d);
+        ComputePitch2D(pitchFmt, w, h, rowPitch, slicePitch);
 
         D3D11_SUBRESOURCE_DATA s{};
         s.pSysMem = base + offset;
         s.SysMemPitch = rowPitch;
-        s.SysMemSlicePitch = slicePitch; // bytes per 2D slice
+        s.SysMemSlicePitch = slicePitch;
         tp.subresources.push_back(s);
 
-        offset += mipBytes;
-        w = std::max(1u, w >> 1);
-        h = std::max(1u, h >> 1);
-        d = std::max(1u, d >> 1);
+        offset += size_t(slicePitch) * size_t(d);
+        w = std::max(1u, w >> 1); h = std::max(1u, h >> 1); d = std::max(1u, d >> 1);
     }
-
     return tp;
 }
 
@@ -316,12 +229,12 @@ BuildTexturePayloadFromTag(TagHash textureTag)
     // Pitch helpers (you already have ComputePitch(fmt, w, h, rowPitch, slicePitch))
     auto bytesForMip2D = [&](UINT w, UINT h) -> UINT {
         UINT rowPitch = 0, slicePitch = 0;
-        if (!ComputePitch(texFmt, w, h, rowPitch, slicePitch)) return 0u;
+        if (!ComputePitch2D(texFmt, w, h, rowPitch, slicePitch)) return 0u;
         return slicePitch;
         };
     auto bytesForMip3D = [&](UINT w, UINT h, UINT d) -> UINT {
         UINT rowPitch = 0, slicePitch = 0;  // slicePitch = bytes for ONE z-slice
-        if (!ComputePitch(texFmt, w, h, rowPitch, slicePitch)) return 0u;
+        if (!ComputePitch2D(texFmt, w, h, rowPitch, slicePitch)) return 0u;
         // A 3D mip contains d slices laid back-to-back
         return slicePitch * d;
         };
@@ -381,7 +294,7 @@ BuildTexturePayloadFromTag(TagHash textureTag)
 
     for (UINT mip = 0; mip < storedMipCount; ++mip) {
         UINT rowPitch = 0, slicePitch = 0;
-        if (!ComputePitch(texFmt, w, h, rowPitch, slicePitch))
+        if (!ComputePitch2D(texFmt, w, h, rowPitch, slicePitch))
             return std::nullopt;
 
         const UINT bytesThisMip = is3D ? slicePitch * d : slicePitch;

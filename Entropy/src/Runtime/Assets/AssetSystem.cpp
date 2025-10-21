@@ -237,34 +237,32 @@ AssetSystem::EnqueueBufferSRV(uint32_t id, const BufferSRVMeta& meta)
 // Textures / Samplers / CBuffers
 //------------------------------------------------------------------------------
 
+
 std::shared_ptr<EntropyAssets::Texture3DRes>
 AssetSystem::createTexture3D_(const Texture3DPayload& p)
 {
     using Microsoft::WRL::ComPtr;
     ComPtr<ID3D11Texture3D> tex;
-
-    HRESULT hr = device_->CreateTexture3D(&p.desc,
-        p.subresources.empty() ? nullptr : p.subresources.data(),
-        &tex);
+    HRESULT hr = device_->CreateTexture3D(
+        &p.desc, p.subresources.empty() ? nullptr : p.subresources.data(), &tex);
     if (FAILED(hr)) throw std::runtime_error("CreateTexture3D failed");
 
-    // SRV format (typed if typeless)
-    auto ToTypedForSRV = [](DXGI_FORMAT f)->DXGI_FORMAT { return TypelessToTypedSRV3D(f); };
-
     D3D11_SHADER_RESOURCE_VIEW_DESC sd{};
-    sd.Format = ToTypedForSRV(p.desc.Format);
+    sd.Format = TypelessToTypedSRV3D(p.desc.Format);
     sd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE3D;
     sd.Texture3D.MostDetailedMip = 0;
-    sd.Texture3D.MipLevels = p.desc.MipLevels;
+    sd.Texture3D.MipLevels       = p.desc.MipLevels;
 
     ComPtr<ID3D11ShaderResourceView> srv;
     hr = device_->CreateShaderResourceView(tex.Get(), &sd, &srv);
-    if (FAILED(hr)) throw std::runtime_error("CreateShaderResourceView (3D) failed");
+    if (FAILED(hr)) throw std::runtime_error("CreateSRV3D failed");
 
     auto out = std::make_shared<EntropyAssets::Texture3DRes>();
     out->srv = srv;
     return out;
 }
+
+
 std::shared_ptr<EntropyAssets::Texture2DRes>
 AssetSystem::createTexture_(const Texture2DPayload& p)
 {
@@ -677,6 +675,15 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
             if (auto texRes = fut.get()) {
                 tech->Textures.push_back(texRes);
                 tech->psTextureSlots.push_back(slot);
+            }
+        }
+        tech->Textures3D.reserve(psTexF3D.size());
+        tech->psTextureSlots3D.reserve(psTexF3D.size());
+        for (auto& [slot, fut] : psTexF3D) {
+            if (!fut.valid()) continue;
+            if (auto texRes = fut.get()) {
+                tech->Textures3D.push_back(texRes);
+                tech->psTextureSlots3D.push_back(slot);
             }
         }
 

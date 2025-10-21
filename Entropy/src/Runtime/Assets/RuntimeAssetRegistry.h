@@ -75,6 +75,7 @@ public:
     bool HasSampler(uint32_t id) const;
     bool HasCBuffer(uint32_t id) const;
     bool HasTechnique(uint32_t id) const;
+    bool Has3DTexture(uint32_t id) const;
 
 private:
     template<class T>
@@ -87,6 +88,8 @@ private:
         }
         return it->second;
     }
+
+
 
     // Single mutex: simplest + works everywhere
     mutable std::mutex m_;
