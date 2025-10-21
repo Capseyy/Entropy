@@ -1,6 +1,6 @@
 #include "Graphics.h"
 #include <filesystem>
-
+#define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
 
 static inline float asfloat_u32(std::uint32_t u) {
 	return std::bit_cast<float>(u);
@@ -62,10 +62,24 @@ struct CB1Payload {
 	// cb1[1]
 	DirectX::XMFLOAT4 uvScale_uvOffset;       // x, y, z, w(as float)
 	// cb1[2..] rows for instances
-	DirectX::XMFLOAT4 rows[4 * MAX_INST];     // 4 float4 per instance
+	DirectX::XMFLOAT4 instances[MAX_INST][4];
 };
 
 Microsoft::WRL::ComPtr<ID3D11Buffer> g_cb1;
+
+inline DirectX::XMMATRIX MakeWorld(const SStaticInstanceTransform& s) {
+	using namespace DirectX;
+	const XMMATRIX S = XMMatrixScaling(s.scale.x, s.scale.x, s.scale.x);
+
+	// If your quat is (w,x,y,z) -> reorder to (x,y,z,w)
+	const XMVECTOR q = XMVectorSet(s.rotation.w, s.rotation.x, s.rotation.y, s.rotation.z);
+	const XMMATRIX R = XMMatrixRotationQuaternion(q);
+
+	const XMMATRIX T = XMMatrixTranslation(s.translation.x, s.translation.y, s.translation.z);
+
+	// Row-major world (DirectXMath is row-major)
+	return S * R * T;
+}
 
 void CreateCB1(ID3D11Device* dev) {
 	D3D11_BUFFER_DESC bd{};
@@ -100,7 +114,7 @@ void UpdateCB1(
 	ID3D11DeviceContext* ctx,
 	const DirectX::XMFLOAT3& meshOffset, float meshScale,
 	float uvScaleX, float uvOffX, float uvOffY, std::uint32_t maxColorOrClampBits,
-	const std::vector<SStaticInstanceTransform>& worlds // size <= MAX_INST
+	const std::vector<SStaticInstanceTransform>& worlds
 ) {
 	using namespace DirectX;
 
@@ -108,48 +122,33 @@ void UpdateCB1(
 	ctx->Map(g_cb1.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &m);
 	auto* cb = reinterpret_cast<CB1Payload*>(m.pData);
 
-	// Header
+	// Header (matches cbl_v0 / cbl_v1)
 	cb->meshOffset_meshScale = XMFLOAT4(meshOffset.x, meshOffset.y, meshOffset.z, meshScale);
 	cb->uvScale_uvOffset = XMFLOAT4(uvScaleX, uvOffX, uvOffY, asfloat_u32(maxColorOrClampBits));
 
-	// Per-instance rows
-	const XMFLOAT4 flagRow(1.f, 1.f, 1.f, asfloat_u32(0x02000000u));
+	// Per-instance 4x float4 rows
+	const UINT n = (UINT)std::min<std::size_t>(worlds.size(), MAX_INST);
+	for (UINT i = 0; i < n; ++i) {
+		XMMATRIX M = MakeWorld(worlds[i]);
+		// If shader expects column-major, uncomment:
+		M = XMMatrixTranspose(M);
 
-	for (uint32_t i = 0; i < worlds.size(); ++i) {
-		const auto& tr = worlds[i];
-
-		// Build S * R * T
-		const XMMATRIX S = XMMatrixScaling(tr.scale[0], tr.scale[0], tr.scale[0]);
-
-		// NOTE: this assumes rotation = (x, y, z, w). 
-		// If your data is (w, x, y, z), change to XMVectorSet(tr.rotation[1], tr.rotation[2], tr.rotation[3], tr.rotation[0]).
-		const XMVECTOR q = XMQuaternionNormalize(
-			XMVectorSet(tr.rotation[0], tr.rotation[1], tr.rotation[2], tr.rotation[3]));
-		const XMMATRIX R = XMMatrixRotationQuaternion(q);
-
-		const XMMATRIX T = XMMatrixTranslation(tr.translation[0], tr.translation[1], tr.translation[2]);
-
-		const XMMATRIX W = S * R * T;   // row-major, mul(pos, WVP) path
-
-		// Store as 3x4 rows, with translation in .w, like your shader expects
-		DirectX::XMFLOAT4 r0, r1, r2, r3;
-		XMStoreFloat4(&r0, W.r[0]);
-		XMStoreFloat4(&r1, W.r[1]);
-		XMStoreFloat4(&r2, W.r[2]);
-		XMStoreFloat4(&r3, W.r[3]); // contains tx,ty,tz in x,y,z
-
-		const uint32_t base = 4u * i;
-		cb->rows[base + 0] = { r0.x, r0.y, r0.z, r3.x }; // tx
-		cb->rows[base + 1] = { r1.x, r1.y, r1.z, r3.y }; // ty
-		cb->rows[base + 2] = { r2.x, r2.y, r2.z, r3.z }; // tz
-		cb->rows[base + 3] = { 1.f, 1.f, 1.f, asfloat_u32(0x02000000u) }; // same flag row you used
+		XMStoreFloat4(&cb->instances[i][0], M.r[0]);
+		XMStoreFloat4(&cb->instances[i][1], M.r[1]);
+		XMStoreFloat4(&cb->instances[i][2], M.r[2]);
+		XMStoreFloat4(&cb->instances[i][3], M.r[3]);
 	}
 
-	// (optional) zero out remaining slots if count < MAX_INST
+	// Zero the rest (optional, but keeps the debugger view clean)
+	for (UINT i = n; i < MAX_INST; ++i) {
+		cb->instances[i][0] = XMFLOAT4(1, 0, 0, 0);
+		cb->instances[i][1] = XMFLOAT4(1, 0, 0, 0);
+		cb->instances[i][2] = XMFLOAT4(1, 0, 0, 0);
+		cb->instances[i][3] = XMFLOAT4(1, 0, 0, 0);
+	}
 
 	ctx->Unmap(g_cb1.Get(), 0);
 
-	// Bind at b1
 	ID3D11Buffer* b = g_cb1.Get();
 	ctx->VSSetConstantBuffers(1, 1, &b);
 }
@@ -224,7 +223,6 @@ Microsoft::WRL::ComPtr<ID3DUserDefinedAnnotation> anno;
 // Call this from Graphics::RenderFrame() after setting common state (topology, depth, blend)
 void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 {
-
 	ID3D11DeviceContext* ctx = pContext.Get();
 	wchar_t label[128];
 	swprintf(label, 128, L"Static geometry %08X", rs.mesh->id);
@@ -289,9 +287,6 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 		if (bg.vertex) { vbs[vbCount] = bg.vertex.get(); strides[vbCount] = bg.vertexStride; ++vbCount; }
 		if (bg.uv) { vbs[vbCount] = bg.uv.get();     strides[vbCount] = bg.uvStride;     ++vbCount; }
 		//if (bg.color) { vbs[vbCount] = bg.color.get();  strides[vbCount] = bg.colorStride;  ++vbCount; }
-		ID3D11ShaderResourceView* s = bg.color.get();
-		ctx->VSSetShaderResources(0, 1, &s);
-		if (vbCount == 0) { OutputDebugStringA("Skip part: no vertex buffers bound\n"); continue; }
 
 		ctx->IASetVertexBuffers(0, vbCount, vbs, strides, offsets);
 		ctx->IASetIndexBuffer(bg.index.get(), bg.indexFormat, 0);
@@ -306,6 +301,15 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 			for (size_t i = 0; i < n; ++i) {
 				UINT slot = tech->psTextureSlots[i];
 				ID3D11ShaderResourceView* s = tech->Textures[i] ? tech->Textures[i]->Get() : nullptr;
+				ctx->PSSetShaderResources(slot, 1, &s);
+			}
+		}
+		if (!tech->Textures3D.empty()) {
+			printf("Mapping 3D Textures");
+			const size_t n = std::min(tech->Textures3D.size(), tech->psTextureSlots3D.size());
+			for (size_t i = 0; i < n; ++i) {
+				UINT slot = tech->psTextureSlots3D[i];
+				ID3D11ShaderResourceView* s = tech->Textures3D[i] ? tech->Textures3D[i]->Get() : nullptr;
 				ctx->PSSetShaderResources(slot, 1, &s);
 			}
 		}
@@ -328,7 +332,8 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 			ctx->PSSetSamplers(i+1, 1, &s);
 		}
 		
-			
+		ID3D11ShaderResourceView* s = bg.color.get();
+		ctx->VSSetShaderResources(1, 1, &s);
 		
 		UploadScopeViewCB12_All(ctx, view, float(windowWidth), float(windowHeight));
 	
@@ -387,7 +392,7 @@ void Graphics::RenderFrame()
 	}
 
 	for (const auto& rs : staticsToDraw) {   
-		if (rs.mesh->id != 0x81029e80) {
+		if (rs.mesh->id != 0x81029462) {
 			//continue;
 		}
         DrawStaticMesh(rs, viewState_ps);

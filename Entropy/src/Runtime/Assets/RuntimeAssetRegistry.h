@@ -20,10 +20,16 @@ struct ShaderPayload {
     std::vector<D3D11_INPUT_ELEMENT_DESC> input; // non-empty for VS
 };
 
-struct TexturePayload {
-    D3D11_TEXTURE2D_DESC desc{};
+struct Texture2DPayload{
+    D3D11_TEXTURE2D_DESC  desc{};     // used when dim==Tex3D
     std::vector<D3D11_SUBRESOURCE_DATA> subresources; // pointers into `data`
     std::vector<uint8_t> data;                        // owns the pixel bytes
+};
+
+struct Texture3DPayload {
+    D3D11_TEXTURE3D_DESC desc{};
+    std::vector<uint8_t> data;                     // tightly-packed mips [mip0 all Z][mip1 all Z]...
+    std::vector<D3D11_SUBRESOURCE_DATA> subresources; // one per mip, pSysMem points into data
 };
 
 struct CBufferMeta {
@@ -47,7 +53,8 @@ public:
     // Register (any thread)
     void RegisterBuffer(uint32_t id, BufferPayload payload);
     void RegisterShader(uint32_t id, ShaderPayload payload);
-    void RegisterTexture(uint32_t id, TexturePayload payload);
+    void RegisterTexture(uint32_t id, Texture2DPayload payload);
+    void Register3DTexture(uint32_t id, Texture3DPayload payload);
     void RegisterSampler(uint32_t id, const D3D11_SAMPLER_DESC& desc);
     void RegisterCBuffer(uint32_t id, CBufferMeta meta);
     void RegisterTechnique(uint32_t techId, TechniqueDesc desc);
@@ -55,7 +62,8 @@ public:
     // Lookups (throw std::runtime_error if missing)
     BufferPayload    GetBuffer(uint32_t id) const;
     ShaderPayload    GetShader(uint32_t id) const;
-    TexturePayload   GetTexture(uint32_t id) const;
+    Texture2DPayload   GetTexture(uint32_t id) const;
+    Texture3DPayload   Get3DTexture(uint32_t id) const;
     D3D11_SAMPLER_DESC GetSampler(uint32_t id) const;
     CBufferMeta      GetCBuffer(uint32_t id) const;
     TechniqueDesc    GetTechnique(uint32_t techId) const;
@@ -84,7 +92,8 @@ private:
     mutable std::mutex m_;
     std::unordered_map<uint32_t, BufferPayload>      buffers_;
     std::unordered_map<uint32_t, ShaderPayload>      shaders_;
-    std::unordered_map<uint32_t, TexturePayload>     textures_;
+    std::unordered_map<uint32_t, Texture2DPayload>     textures_;
+    std::unordered_map<uint32_t, Texture3DPayload>     textures3d_;
     std::unordered_map<uint32_t, D3D11_SAMPLER_DESC> samplers_;
     std::unordered_map<uint32_t, CBufferMeta>        cbuffers_;
     std::unordered_map<uint32_t, TechniqueDesc>      techniques_;

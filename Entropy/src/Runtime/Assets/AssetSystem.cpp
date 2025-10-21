@@ -236,8 +236,37 @@ AssetSystem::EnqueueBufferSRV(uint32_t id, const BufferSRVMeta& meta)
 //------------------------------------------------------------------------------
 // Textures / Samplers / CBuffers
 //------------------------------------------------------------------------------
+
+std::shared_ptr<EntropyAssets::Texture3DRes>
+AssetSystem::createTexture3D_(const Texture3DPayload& p)
+{
+    using Microsoft::WRL::ComPtr;
+    ComPtr<ID3D11Texture3D> tex;
+
+    HRESULT hr = device_->CreateTexture3D(&p.desc,
+        p.subresources.empty() ? nullptr : p.subresources.data(),
+        &tex);
+    if (FAILED(hr)) throw std::runtime_error("CreateTexture3D failed");
+
+    // SRV format (typed if typeless)
+    auto ToTypedForSRV = [](DXGI_FORMAT f)->DXGI_FORMAT { return TypelessToTypedSRV3D(f); };
+
+    D3D11_SHADER_RESOURCE_VIEW_DESC sd{};
+    sd.Format = ToTypedForSRV(p.desc.Format);
+    sd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE3D;
+    sd.Texture3D.MostDetailedMip = 0;
+    sd.Texture3D.MipLevels = p.desc.MipLevels;
+
+    ComPtr<ID3D11ShaderResourceView> srv;
+    hr = device_->CreateShaderResourceView(tex.Get(), &sd, &srv);
+    if (FAILED(hr)) throw std::runtime_error("CreateShaderResourceView (3D) failed");
+
+    auto out = std::make_shared<EntropyAssets::Texture3DRes>();
+    out->srv = srv;
+    return out;
+}
 std::shared_ptr<EntropyAssets::Texture2DRes>
-AssetSystem::createTexture_(const TexturePayload& p)
+AssetSystem::createTexture_(const Texture2DPayload& p)
 {
     using Microsoft::WRL::ComPtr;
 
@@ -301,12 +330,23 @@ AssetSystem::createTexture_(const TexturePayload& p)
     return out;
 }
 
+AssetHandle<EntropyAssets::Texture3DRes> AssetSystem::Enqueue3DTexture(uint32_t id)
+{
+    auto fut = pool_.Submit([=] {
+        return texCache3D_.GetOrLoad(id, [&] {
+            Texture3DPayload payload = R_->Get3DTexture(id);
+            return createTexture3D_(payload);
+            }).get();
+        }).share();
+
+    AssetHandle<EntropyAssets::Texture3DRes> h; h.future = fut; return h;
+}
 
 AssetHandle<EntropyAssets::Texture2DRes> AssetSystem::EnqueueTexture(uint32_t id)
 {
     auto fut = pool_.Submit([=] {
         return texCache_.GetOrLoad(id, [&] {
-            TexturePayload payload = R_->GetTexture(id);
+            Texture2DPayload payload = R_->GetTexture(id);
             return createTexture_(payload);
             }).get();
         }).share();
@@ -537,22 +577,40 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
 
         // --------- Textures (your existing) ----------
         using TexFuture = std::shared_future<std::shared_ptr<EntropyAssets::Texture2DRes>>;
+        using TexFuture3D = std::shared_future<std::shared_ptr<EntropyAssets::Texture3DRes>>;
         std::vector<std::pair<UINT, TexFuture>> psTexF;
+        std::vector<std::pair<UINT, TexFuture3D>> psTexF3D;
         psTexF.reserve(Tfx.PixelShader.Textures.size());
         for (const auto& t : Tfx.PixelShader.Textures) {
             const UINT slot = t.TextureIndex;
             const uint32_t texId = t.Texture.tagHash32;   // your mapping
-            // ensure + enqueue (your helpers)
-            if (!R_->HasTexture(texId)) {
-                TagHash texTag(texId);
-                if (auto payload = BuildTexturePayloadFromTag(texTag)) {
-                    R_->RegisterTexture(texId, std::move(*payload));
+            TagHash texTag(texId);
+            if (texTag.sub_type == 3) {
+                printf("Found 3s tex");
+                if (!R_->HasTexture(texId)) {
+                    if (auto payload = BuildTexture3DPayloadFromTag(texTag)) {
+                        R_->Register3DTexture(texId, std::move(*payload));
+                    }
+                    else {
+                        continue;
+                    }
                 }
-                else {
-                    continue;
-                }
+                psTexF3D.emplace_back(slot, Enqueue3DTexture(texId).future);
             }
-            psTexF.emplace_back(slot, EnqueueTexture(texId).future);
+            else {
+                if (!R_->HasTexture(texId)) {
+                    if (auto payload = BuildTexturePayloadFromTag(texTag)) {
+                        R_->RegisterTexture(texId, std::move(*payload));
+                    }
+                    else {
+                        continue;
+                    }
+                }
+                psTexF.emplace_back(slot, EnqueueTexture(texId).future);
+            }
+            // ensure + enqueue (your helpers)
+            
+            
         }
 
         using SampFuture = std::shared_future<std::shared_ptr<EntropyAssets::SamplerRes>>;
@@ -593,7 +651,7 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
         else {
             if (Tfx.PixelShader.SamplerFallback.size() != 0) {
                 try {
-                    auto cb = createCBufferFromRaw_(Tfx.PixelShader.SamplerFallback.data(), Tfx.PixelShader.SamplerFallback.size());
+                    auto cb = createCBufferFromRaw_(Tfx.PixelShader.SamplerFallback.data(), Tfx.PixelShader.SamplerFallback.size()*0x10);
                     if (cb) {
                         // Reuse your existing vectors so your draw code stays unchanged
                         tech->CBuffers.push_back(cb);

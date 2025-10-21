@@ -11,6 +11,7 @@
 #undef max
 #undef min
 
+
 struct STextureHeader {
 public:
 	uint32_t dataSize;

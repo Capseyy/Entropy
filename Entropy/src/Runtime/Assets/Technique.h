@@ -19,6 +19,12 @@ namespace EntropyAssets {           // <<< add
         ID3D11ShaderResourceView* Get() const { return srv.Get(); }
     };
 
+    struct Texture3DRes { // whatever you already have
+        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
+        ID3D11ShaderResourceView* Get() const { return srv.Get(); }
+    };
+
+
     struct TexBinding {
         UINT slot = 0;                                  // t-slot
         std::shared_ptr<Texture2DRes> tex;              // SRV wrapper
@@ -49,6 +55,9 @@ namespace EntropyAssets {           // <<< add
         // PS textures
         std::vector<std::shared_ptr<Texture2DRes>>   Textures;
         std::vector<UINT>                            psTextureSlots;
+
+        std::vector<std::shared_ptr<Texture3DRes>>   Textures3D;
+        std::vector<UINT>                            psTextureSlots3D;
 
         // NEW: PS samplers
         std::vector<std::shared_ptr<SamplerRes>>     Samplers;

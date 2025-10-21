@@ -15,6 +15,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <cinttypes>
+#include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 class WideHashData {
 public:
@@ -60,6 +62,8 @@ public:
     uint32_t size;
     uint32_t hash{};
     uint32_t reference;
+    int type;
+    int sub_type;
     bool success;
     unsigned char* data;
     void free();
@@ -159,6 +163,14 @@ namespace bin {
     inline void read_into(Reader& r, T& v) {
         v = r.read_arith<T>();
     }
+    inline void read_into(Reader& r, glm::quat& q) { 
+        q.w = r.read_arith<float>(); q.x = r.read_arith<float>(); q.y = r.read_arith<float>(); q.z = r.read_arith<float>(); 
+    }
+
+    inline void read_into(Reader& r, glm::vec3& q) {
+        q.x = r.read_arith<float>(); q.y = r.read_arith<float>(); q.z = r.read_arith<float>();
+    }
+
     inline void read_into(Reader& r, TagHash& t) {
         t.hash = r.read_arith<uint32_t>();
         t.getData();

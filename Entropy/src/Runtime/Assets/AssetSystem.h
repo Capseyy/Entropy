@@ -56,6 +56,7 @@ public:
 
     // Textures / Samplers / CBuffers
     AssetHandle<EntropyAssets::Texture2DRes> EnqueueTexture(uint32_t id);
+    AssetHandle<EntropyAssets::Texture3DRes> Enqueue3DTexture(uint32_t id);
     AssetHandle<EntropyAssets::SamplerRes>   EnqueueSampler(uint32_t id);
     AssetHandle<EntropyAssets::CBufferRes>   EnqueueCBuffer(uint32_t id);
 
@@ -89,6 +90,7 @@ private:
     AssetCache<EntropyAssets::HullShader>     hsCache_;
     AssetCache<EntropyAssets::DomainShader>   dsCache_;
     AssetCache<EntropyAssets::Texture2DRes>   texCache_;
+    AssetCache<EntropyAssets::Texture3DRes>   texCache3D_;
     AssetCache<EntropyAssets::SamplerRes>     sampCache_;
     AssetCache<EntropyAssets::CBufferRes>     cbCache_;
     AssetCache<EntropyAssets::BufferSRVRes> bufSrvCache_;
@@ -110,9 +112,11 @@ private:
 
     std::shared_ptr<EntropyAssets::VertexShader> createVS_(const ShaderPayload& p);
 
-    std::shared_ptr<EntropyAssets::Texture2DRes> createTexture_(const TexturePayload& p);
+    std::shared_ptr<EntropyAssets::Texture2DRes> createTexture_(const Texture2DPayload& p);
     std::shared_ptr<EntropyAssets::SamplerRes>   createSampler_(const D3D11_SAMPLER_DESC& d);
     std::shared_ptr<EntropyAssets::CBufferRes>   createCBuffer_(UINT byteSize, const void* init);
+    std::shared_ptr<EntropyAssets::Texture3DRes> createTexture3D_(const Texture3DPayload& p);
+  
 
     InputLayoutProvider  layoutProvider_; // optional hook
 };

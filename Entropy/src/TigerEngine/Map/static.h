@@ -6,6 +6,7 @@
 #include "TigerEngine/tag.h"
 #include <execution>
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>  
 
 
 struct Unk_0x14008080 {
@@ -68,10 +69,12 @@ public:
 
 struct SStaticInstanceTransform
 {
-	std::array<float_t, 4> rotation;
-	std::array<float_t, 3> translation;
-	std::array<float_t, 3> scale;
-	std::array<float_t, 6> _unk28;
+	glm::quat rotation;
+	glm::vec3 translation;
+	glm::vec3 scale;
+	uint32_t _unk28;
+	uint32_t _unk2C;
+	std::array<uint32_t,4> unk30;
 };
 
 struct SStaticMeshInstanceGroup {
@@ -91,3 +94,13 @@ struct SStaticMeshInstances {
 	std::vector<TagHash> static_tags;
 	std::vector<SStaticMeshInstanceGroup> instance_groups;
 };
+
+inline std::vector<std::uint8_t>
+to_bytes(const std::vector<SStaticInstanceTransform>& v)
+{
+	std::vector<std::uint8_t> bytes;
+	bytes.resize(v.size() * sizeof(SStaticInstanceTransform));
+	if (!v.empty())
+		std::memcpy(bytes.data(), v.data(), bytes.size());
+	return bytes;
+}

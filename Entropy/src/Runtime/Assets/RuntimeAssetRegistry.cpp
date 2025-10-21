@@ -9,10 +9,16 @@ void RuntimeAssetRegistry::RegisterShader(uint32_t id, ShaderPayload payload) {
     std::lock_guard<std::mutex> lk(m_);
     shaders_[id] = std::move(payload);
 }
-void RuntimeAssetRegistry::RegisterTexture(uint32_t id, TexturePayload payload) {
+void RuntimeAssetRegistry::RegisterTexture(uint32_t id, Texture2DPayload payload) {
     std::lock_guard<std::mutex> lk(m_);
     textures_[id] = std::move(payload);
 }
+
+void RuntimeAssetRegistry::Register3DTexture(uint32_t id, Texture3DPayload payload) {
+    std::lock_guard<std::mutex> lk(m_);
+    textures3d_[id] = std::move(payload);
+}
+
 void RuntimeAssetRegistry::RegisterSampler(uint32_t id, const D3D11_SAMPLER_DESC& desc) {
     std::lock_guard<std::mutex> lk(m_);
     samplers_[id] = desc;
@@ -35,10 +41,15 @@ ShaderPayload RuntimeAssetRegistry::GetShader(uint32_t id) const {
     std::lock_guard<std::mutex> lk(m_);
     return must_find_(shaders_, id);
 }
-TexturePayload RuntimeAssetRegistry::GetTexture(uint32_t id) const {
+Texture2DPayload RuntimeAssetRegistry::GetTexture(uint32_t id) const {
     std::lock_guard<std::mutex> lk(m_);
     return must_find_(textures_, id);
 }
+Texture3DPayload RuntimeAssetRegistry::Get3DTexture(uint32_t id) const {
+    std::lock_guard<std::mutex> lk(m_);
+    return must_find_(textures3d_, id);
+}
+
 D3D11_SAMPLER_DESC RuntimeAssetRegistry::GetSampler(uint32_t id) const {
     std::lock_guard<std::mutex> lk(m_);
     return must_find_(samplers_, id);

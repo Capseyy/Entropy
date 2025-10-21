@@ -37,6 +37,8 @@ unsigned char* TagHash::getData() {
 	size = pkg->Entries[entryId].file_size;
 	reference = pkg->Entries[entryId].reference;
 	data = ReturnObject.data;
+	type = pkg->Entries[entryId].file_type;
+	sub_type = pkg->Entries[entryId].file_subtype;
 	return data;
 
 }
