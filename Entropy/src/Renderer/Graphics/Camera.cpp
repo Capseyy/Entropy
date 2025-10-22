@@ -157,7 +157,11 @@ void Camera::UpdateViewMatrix() //Updates view matrix and also updates the movem
 
 	XMVECTOR upDir = XMVector3TransformCoord(this->DEFAULT_UP_VECTOR, camRotationMatrix);
 
-	this->viewMatrix = XMMatrixLookAtLH(this->posVector, camTarget, upDir);
+
+	XMMATRIX view = XMMatrixLookAtLH(this->posVector, camTarget, upDir);
+
+	static const XMMATRIX MirrorX = XMMatrixScaling(-1.0f, 1.0f, 1.0f);
+	this->viewMatrix = MirrorX * view; 
 
 	XMMATRIX vecRotationMatrix = XMMatrixRotationRollPitchYaw(this->rot.x, this->rot.y, this->rot.z);
 	this->vec_forward = XMVector3TransformCoord(this->DEFAULT_FORWARD_VECTOR, vecRotationMatrix);

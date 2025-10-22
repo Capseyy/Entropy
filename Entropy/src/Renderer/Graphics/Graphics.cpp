@@ -6,7 +6,7 @@ static inline float asfloat_u32(std::uint32_t u) {
 	return std::bit_cast<float>(u);
 }
 
-constexpr float RadToDeg(float r) { return (r * 180.0f / 3.14159265358979323846f); }
+//constexpr float RadToDeg(float r) { return r * 180.0f / 3.14159265358979323846f; }
 auto ToZUp = [] {
 	// rotate +90° around +X: (x, y, z) -> (x, z, -y)
 	return XMMatrixRotationX(+XM_PIDIV2);
@@ -421,7 +421,7 @@ void Graphics::RenderFrame()
 		CameraPos.x, CameraPos.y, CameraPos.z);
 	auto CameraRot = camera.GetRotationFloat3();
 	std::string CameraPrintRot = std::format("Pitch: {:.2f}  Roll: {:.2f}  Yaw: {:.2f}",
-		CameraRot.x, CameraRot.y, RadToDeg(CameraRot.z));
+		CameraRot.x, CameraRot.y, CameraRot.z);
 
 	spriteBatch->Begin();
 	spriteFont->DrawString(spriteBatch.get(), StringConverter::StringToWide(fpsString).c_str(),
@@ -491,9 +491,6 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 			return false;
 		}
 		UINT createDeviceFlags = 0;
-#if defined(_DEBUG)
-		createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;  // Enable debug layer
-#endif
 		DXGI_SWAP_CHAIN_DESC scd = { 0 };
 		scd.BufferDesc.Width = this->windowWidth;
 		scd.BufferDesc.Height = this->windowHeight;
@@ -566,7 +563,7 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 
 		CD3D11_RASTERIZER_DESC rasterizerDesc(D3D11_DEFAULT);
 		rasterizerDesc.CullMode = D3D11_CULL_MODE::D3D11_CULL_BACK;
-		rasterizerDesc.FrontCounterClockwise = FALSE;
+		rasterizerDesc.FrontCounterClockwise = TRUE;
 
 		hr = this->pDevice->CreateRasterizerState(&rasterizerDesc, this->rasterizerState.GetAddressOf());
 
@@ -656,7 +653,7 @@ bool Graphics::InitializeScene()
 	}
 	InitializeInputLayouts();
 	staticMap = std::make_unique<StaticMap>(*this);
-	staticMap->Initialize(0x80AD0290);  // root map hash (or whatever yours is)
+	staticMap->Initialize(0x80AC5F28);  // root map hash (or whatever yours is)
 	staticsToDraw = staticMap->GetRenderList();
 	return true;
 }
