@@ -40,6 +40,24 @@ public:
 	uint8_t Unk6;
 };
 
+struct SStaticSpecial {
+	uint8_t TfxRenderStage;
+	uint8_t input_layout_index;
+	uint8_t LodCatagory;
+	int8_t _unk4;
+	uint8_t PrimitiveType;
+	int8_t _unk6;
+	uint16_t _unk7;
+	TagHash index_buffer;
+	TagHash vertex_buffer1;
+	TagHash vertex_biffer2;
+	TagHash color_buffer;
+	uint32_t index_start;
+	uint32_t index_count;
+	TagHash technique;
+
+};
+
 struct SStaticModel {
 public:
 	uint64_t FileSize{};

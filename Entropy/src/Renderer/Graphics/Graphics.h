@@ -18,6 +18,20 @@
 #include "Runtime/Assets/RuntimeAssetRegistry.h"
 #include "Model.h"
 #include "TigerEngine/Technique/input_layout.h"
+#include "Scope/instance.h"
+
+struct GBuffer {
+	UINT w = 0, h = 0;
+	Microsoft::WRL::ComPtr<ID3D11Texture2D> albedo, normalRgh, material;
+	Microsoft::WRL::ComPtr<ID3D11RenderTargetView> albedoRTV, normalRghRTV, materialRTV;
+	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> albedoSRV, normalRghSRV, materialSRV;
+
+	Microsoft::WRL::ComPtr<ID3D11Texture2D> depth;      // R24G8 typeless
+	Microsoft::WRL::ComPtr<ID3D11DepthStencilView> dsv;  // D24S8
+	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> depthSRV; // R24_UNORM_X8
+};
+
+enum class PipelineStage { Forward, GBuffer };
 
 class Graphics
 {
@@ -78,4 +92,19 @@ private:
 	std::vector<RenderStatic> staticsToDraw;
 
 	void DrawStaticMesh(const RenderStatic& rs, const View& view);
+
+	//gbuffer
+	bool useDeferred = true;
+	PipelineStage pipelineStage = PipelineStage::Forward;
+	GBuffer gbuf{};
+
+	Microsoft::WRL::ComPtr<ID3D11VertexShader> fsTriVS; // fullscreen triangle VS
+	Microsoft::WRL::ComPtr<ID3D11PixelShader>  gbufferPS;
+	Microsoft::WRL::ComPtr<ID3D11PixelShader>  deferredPS;
+	Microsoft::WRL::ComPtr<ID3D11Buffer>       deferredCamCB; // InvProj + CameraPos
+
+	// Helpers
+	void CreateOrResizeGBuffer(UINT w, UINT h);
+	void BindGBufferForWriting();
+	void RunDeferredLighting();
 };

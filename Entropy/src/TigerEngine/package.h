@@ -18,6 +18,8 @@
 namespace fs = std::filesystem;
 
 #pragma pack(push, 1)
+
+
 struct EntryHeaderRaw {
     uint32_t reference;
     uint32_t _type_info;
@@ -115,7 +117,6 @@ struct PkgHeader
 };
 
 
-
 struct Block
 {
     uint32_t offset;
@@ -128,6 +129,18 @@ struct Block
     void print() const;
 };
 
+struct NamedTagEntry
+{
+    uint32_t tag;
+    uint32_t reference;
+    uint64_t raw_name;
+};
+
+struct NamedTags {
+    uint32_t tag;
+    uint32_t reference;
+    std::string raw_name;
+};
 
 struct ExtractResult {
     unsigned char* data;
@@ -139,6 +152,7 @@ public:
     std::vector<Block> Blocks;
     std::vector<Entry> Entries;
     std::vector<Hash64> h64s;
+    std::vector<NamedTags> namedTags;
     PkgHeader Header;
     std::string PackageName;
     unsigned char nonce[12] =
@@ -182,6 +196,39 @@ public:
                 h64s.emplace_back(h64);
             }
         }
+        if (!Header.namedTagCount == 0) {
+            for (int i = 0; i < Header.namedTagCount; i++) {
+                file.seekg(Header.namedTagOffset + 0x30 + (i * 0x10), std::ios::beg);
+
+                NamedTagEntry ntag;
+                file.read(reinterpret_cast<char*>(&ntag), sizeof(ntag));
+                file.seekg(ntag.raw_name - 8, std::ios::cur);
+                std::string raw_name;
+                for (;;) {
+                    char byte;
+                    if (!file.get(byte)) {
+                        throw std::runtime_error("Unexpected EOF reading raw name");
+                    }
+                    if (byte == '\0') break;
+                    raw_name.push_back(byte);
+                }
+
+                if (!raw_name.empty()) {
+                    NamedTags name_object{};
+                    name_object.raw_name = std::move(raw_name);
+                    name_object.reference = ntag.reference;
+                    name_object.tag = ntag.tag;
+                    namedTags.emplace_back(std::move(name_object));
+                }
+            }
+
+            /*for (const auto& name : namedTags) {
+                std::printf("Name %s - Hash %08X - Reference %08X\n",
+                    name.raw_name.c_str(),
+                    static_cast<unsigned>(name.tag),
+                    static_cast<unsigned>(name.reference));
+            }*/
+        }
 
         ModifyNonce();
         return true;
@@ -205,7 +252,6 @@ public:
 
 
 const std::string PackagePath = "C:/Program Files (x86)/Steam/steamapps/common/Destiny 2/packages";
-
 
 #pragma once
 

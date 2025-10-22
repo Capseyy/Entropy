@@ -188,7 +188,6 @@ namespace bin {
         auto startPos = r.pos;
         t.offset = r.read_arith<int64_t>() + startPos;
     }
-
     // ---------- std::string: [u32 len][bytes] (no null) ----------
     inline void read_into(Reader& r, std::string& s) {
         uint32_t n = r.read_arith<uint32_t>();

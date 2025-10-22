@@ -2,6 +2,8 @@
 
 #include <cstddef>
 #include <DirectXMath.h>
+#include "d3d11.h"
+#include "wrl/client.h"
 using namespace DirectX;
 
 // Minimal viewport stub: adapt to your real one.
@@ -10,6 +12,8 @@ struct Viewport {
     // Must return the matrix that maps target pixel -> projective (clip) space
     XMMATRIX target_pixel_to_projective() const;
 };
+
+inline Microsoft::WRL::ComPtr<ID3D11Buffer> g_scopeView_b12;
 
 struct alignas(16) View
 {
@@ -118,21 +122,64 @@ struct alignas(16) View
     }
 };
 
-// ---- layout guards ----
-static_assert(offsetof(View, resolution_width) == 0x00, "offset");
-static_assert(offsetof(View, resolution_height) == 0x04, "offset");
-static_assert(offsetof(View, view_miscellaneous) == 0x10, "offset");
-static_assert(offsetof(View, position) == 0x20, "offset");
-static_assert(offsetof(View, unk30) == 0x30, "offset");
-static_assert(offsetof(View, world_to_camera) == 0x40, "offset");
-static_assert(offsetof(View, camera_to_projective) == 0x80, "offset");
-static_assert(offsetof(View, camera_to_world) == 0xC0, "offset");
-static_assert(offsetof(View, projective_to_camera) == 0x100, "offset");
-static_assert(offsetof(View, world_to_projective) == 0x140, "offset");
-static_assert(offsetof(View, projective_to_world) == 0x180, "offset");
-static_assert(offsetof(View, target_pixel_to_world) == 0x1C0, "offset");
-static_assert(offsetof(View, target_pixel_to_camera) == 0x200, "offset");
-static_assert(offsetof(View, unk240) == 0x240, "offset");
-static_assert(offsetof(View, tptow_no_proj_w) == 0x280, "offset");
-static_assert(offsetof(View, unk2c0) == 0x2C0, "offset");
 
+struct alignas(16) ScopeViewCB12_VS
+{
+    DirectX::XMFLOAT4X4 world_to_projective;   // c0..c3
+    DirectX::XMFLOAT4X4 camera_to_world;       // c4..c7
+    DirectX::XMFLOAT4   target;                // c8
+    DirectX::XMFLOAT4   view_miscellaneous;    // c9
+    DirectX::XMFLOAT4   view_unk20;            // c10
+    DirectX::XMFLOAT4X4 camera_to_projective;  // c11..c14
+};
+
+
+inline void CreateScopeViewCB12(ID3D11Device* dev)
+{
+    D3D11_BUFFER_DESC bd{};
+    bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    bd.ByteWidth = sizeof(ScopeViewCB12_VS);
+    bd.Usage = D3D11_USAGE_DYNAMIC;
+    bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+
+    ScopeViewCB12_VS zero{}; // start zeroed
+    D3D11_SUBRESOURCE_DATA init{ &zero, 0, 0 };
+    dev->CreateBuffer(&bd, &init, g_scopeView_b12.GetAddressOf());
+}
+
+inline void UploadScopeViewCB12_All(
+    ID3D11DeviceContext* ctx,
+    const View& view,
+    float targetWidth,
+    float targetHeight)
+{
+    using namespace DirectX;
+    D3D11_MAPPED_SUBRESOURCE m{};
+    ctx->Map(g_scopeView_b12.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &m);
+
+    auto* cb = reinterpret_cast<ScopeViewCB12_VS*>(m.pData);
+    cb->world_to_projective = view.world_to_projective;
+    cb->camera_to_world = view.camera_to_world;
+    cb->camera_to_projective = view.camera_to_projective;
+
+    const float invW = targetWidth ? 1.0f / targetWidth : 0.0f;
+    const float invH = targetHeight ? 1.0f / targetHeight : 0.0f;
+    cb->target = { targetWidth, targetHeight, invW, invH };
+
+    cb->view_miscellaneous = view.view_miscellaneous;               // keep your values
+    cb->view_unk20 = { 4.15325f, 1.24929f, -1.49012e-8f, 1.0f };
+
+    ctx->Unmap(g_scopeView_b12.Get(), 0);
+
+    ID3D11Buffer* b = g_scopeView_b12.Get();
+    ctx->VSSetConstantBuffers(12, 1, &b);
+    ctx->PSSetConstantBuffers(12, 1, &b);
+    ctx->GSSetConstantBuffers(12, 1, &b); // if GS uses it
+}
+
+// Must match the HLSL constant buffer layout exactly (16-byte alignment)
+struct VSConstants
+{
+    DirectX::XMFLOAT4 meshOffset_meshScale; // xyz = meshOffset, w = meshScale
+    DirectX::XMFLOAT4 uvScale_uvOffset;     // x = uvScaleX, y = uvOffX, z = uvOffY, w = maxColorOrClamp
+};

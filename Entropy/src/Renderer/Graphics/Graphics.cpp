@@ -2,25 +2,6 @@
 #include <filesystem>
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
 
-static inline float asfloat_u32(std::uint32_t u) {
-	return std::bit_cast<float>(u);
-}
-
-//constexpr float RadToDeg(float r) { return r * 180.0f / 3.14159265358979323846f; }
-auto ToZUp = [] {
-	// rotate +90° around +X: (x, y, z) -> (x, z, -y)
-	return XMMatrixRotationX(+XM_PIDIV2);
-	};
-
-
-struct ScopeInstancesCB {
-	// 32-byte header (two float4s)
-	DirectX::XMFLOAT4 meshOffset_meshScale; // xyz, w
-	DirectX::XMFLOAT4 uvScale_uvOffset;     // x=uvScale, y=offX, z=offY, w = asfloat(maxColorOrClamp)
-	// then 64 bytes per instance: 4 float4
-	// store for i=0..N-1 the 3 basis vectors + packed flags/translation just like your VS expects
-	DirectX::XMFLOAT4 rows[/*4 * N*/];
-};
 
 struct GpuMarker {
 	ID3DUserDefinedAnnotation* a{};
@@ -51,35 +32,6 @@ struct ScopedGpuEvent {
 	~ScopedGpuEvent() { if (a) a->EndEvent(); }
 };
 
-// Max instances you plan to send per draw (<= 63 to stay within 4KB)
-constexpr uint32_t MAX_INST = 1024;
-
-// Raw cb1 payload = 32 bytes header + 64 bytes per instance * MAX_INST.
-// 32 + 64*63 = 4064 bytes (fits <= 4096).
-struct CB1Payload {
-	// cb1[0]
-	DirectX::XMFLOAT4 meshOffset_meshScale;   // xyz, w
-	// cb1[1]
-	DirectX::XMFLOAT4 uvScale_uvOffset;       // x, y, z, w(as float)
-	// cb1[2..] rows for instances
-	DirectX::XMFLOAT4 instances[MAX_INST][4];
-};
-
-Microsoft::WRL::ComPtr<ID3D11Buffer> g_cb1;
-
-inline DirectX::XMMATRIX MakeWorld(const SStaticInstanceTransform& s) {
-	using namespace DirectX;
-	const XMMATRIX S = XMMatrixScaling(s.scale.x, s.scale.x, s.scale.x);
-
-	// If your quat is (w,x,y,z) -> reorder to (x,y,z,w)
-	const XMVECTOR q = XMVectorSet(s.rotation.w, s.rotation.x, s.rotation.y, s.rotation.z);
-	const XMMATRIX R = XMMatrixRotationQuaternion(q);
-
-	const XMMATRIX T = XMMatrixTranslation(s.translation.x, s.translation.y, s.translation.z);
-
-	// Row-major world (DirectXMath is row-major)
-	return S * R * T;
-}
 
 void CreateCB1(ID3D11Device* dev) {
 	D3D11_BUFFER_DESC bd{};
@@ -110,111 +62,6 @@ void Graphics::InitializeInputLayouts()
 	}
 }
 
-void UpdateCB1(
-	ID3D11DeviceContext* ctx,
-	const DirectX::XMFLOAT3& meshOffset, float meshScale,
-	float uvScaleX, float uvOffX, float uvOffY, std::uint32_t maxColorOrClampBits,
-	const std::vector<SStaticInstanceTransform>& worlds
-) {
-	using namespace DirectX;
-
-	D3D11_MAPPED_SUBRESOURCE m{};
-	ctx->Map(g_cb1.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &m);
-	auto* cb = reinterpret_cast<CB1Payload*>(m.pData);
-
-	// Header (matches cbl_v0 / cbl_v1)
-	cb->meshOffset_meshScale = XMFLOAT4(meshOffset.x, meshOffset.y, meshOffset.z, meshScale);
-	cb->uvScale_uvOffset = XMFLOAT4(uvScaleX, uvOffX, uvOffY, asfloat_u32(maxColorOrClampBits));
-
-	// Per-instance 4x float4 rows
-	const UINT n = (UINT)std::min<std::size_t>(worlds.size(), MAX_INST);
-	for (UINT i = 0; i < n; ++i) {
-		XMMATRIX M = MakeWorld(worlds[i]);
-		// If shader expects column-major, uncomment:
-		M = XMMatrixTranspose(M);
-
-		XMStoreFloat4(&cb->instances[i][0], M.r[0]);
-		XMStoreFloat4(&cb->instances[i][1], M.r[1]);
-		XMStoreFloat4(&cb->instances[i][2], M.r[2]);
-		XMStoreFloat4(&cb->instances[i][3], M.r[3]);
-	}
-
-	// Zero the rest (optional, but keeps the debugger view clean)
-	for (UINT i = n; i < MAX_INST; ++i) {
-		cb->instances[i][0] = XMFLOAT4(1, 0, 0, 0);
-		cb->instances[i][1] = XMFLOAT4(1, 0, 0, 0);
-		cb->instances[i][2] = XMFLOAT4(1, 0, 0, 0);
-		cb->instances[i][3] = XMFLOAT4(1, 0, 0, 0);
-	}
-
-	ctx->Unmap(g_cb1.Get(), 0);
-
-	ID3D11Buffer* b = g_cb1.Get();
-	ctx->VSSetConstantBuffers(1, 1, &b);
-}
-
-Microsoft::WRL::ComPtr<ID3D11Buffer> g_scopeView_b12;
-
-struct alignas(16) ScopeViewCB12_VS
-{
-	DirectX::XMFLOAT4X4 world_to_projective;   // c0..c3
-	DirectX::XMFLOAT4X4 camera_to_world;       // c4..c7
-	DirectX::XMFLOAT4   target;                // c8
-	DirectX::XMFLOAT4   view_miscellaneous;    // c9
-	DirectX::XMFLOAT4   view_unk20;            // c10
-	DirectX::XMFLOAT4X4 camera_to_projective;  // c11..c14
-};
-static_assert(sizeof(ScopeViewCB12_VS) % 16 == 0, "cb must be 16-byte aligned");
-
-void CreateScopeViewCB12(ID3D11Device* dev)
-{
-	D3D11_BUFFER_DESC bd{};
-	bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-	bd.ByteWidth = sizeof(ScopeViewCB12_VS);
-	bd.Usage = D3D11_USAGE_DYNAMIC;
-	bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-
-	ScopeViewCB12_VS zero{}; // start zeroed
-	D3D11_SUBRESOURCE_DATA init{ &zero, 0, 0 };
-	dev->CreateBuffer(&bd, &init, g_scopeView_b12.GetAddressOf());
-}
-
-inline void UploadScopeViewCB12_All(
-	ID3D11DeviceContext* ctx,
-	const View& view,
-	float targetWidth,
-	float targetHeight)
-{
-	using namespace DirectX;
-	D3D11_MAPPED_SUBRESOURCE m{};
-	ctx->Map(g_scopeView_b12.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &m);
-
-	auto* cb = reinterpret_cast<ScopeViewCB12_VS*>(m.pData);
-	cb->world_to_projective = view.world_to_projective;
-	cb->camera_to_world = view.camera_to_world;
-	cb->camera_to_projective = view.camera_to_projective;
-
-	const float invW = targetWidth ? 1.0f / targetWidth : 0.0f;
-	const float invH = targetHeight ? 1.0f / targetHeight : 0.0f;
-	cb->target = { targetWidth, targetHeight, invW, invH };
-
-	cb->view_miscellaneous = view.view_miscellaneous;               // keep your values
-	cb->view_unk20 = { 4.15325f, 1.24929f, -1.49012e-8f, 1.0f };
-
-	ctx->Unmap(g_scopeView_b12.Get(), 0);
-
-	ID3D11Buffer* b = g_scopeView_b12.Get();
-	ctx->VSSetConstantBuffers(12, 1, &b);
-	ctx->PSSetConstantBuffers(12, 1, &b);
-	ctx->GSSetConstantBuffers(12, 1, &b); // if GS uses it
-}
-
-// Must match the HLSL constant buffer layout exactly (16-byte alignment)
-struct VSConstants
-{
-	DirectX::XMFLOAT4 meshOffset_meshScale; // xyz = meshOffset, w = meshScale
-	DirectX::XMFLOAT4 uvScale_uvOffset;     // x = uvScaleX, y = uvOffX, z = uvOffY, w = maxColorOrClamp
-};
 
 inline float float_from_bits(std::uint32_t bits) {
 	return std::bit_cast<float>(bits);
@@ -265,7 +112,6 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 			ID3D11PixelShader* ps = tech->PS[0]->ps.Get();
 			ctx->PSSetShader(ps, nullptr, 0);
 		}
-	
 
 		// --- Input layout: prefer per-part, else VS-owned
 		//printf("mesh.input_layout_index %d\n", mesh.input_layout_index);
@@ -369,7 +215,6 @@ void Graphics::RenderFrame()
 	pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	pContext->RSSetState(rasterizerState.Get());
 	pContext->OMSetDepthStencilState(depthStencilState.Get(), 0);
-	pContext->OMSetBlendState(bsOpaque.Get(), nullptr, 0xFFFFFFFF);
 
 
 	const XMMATRIX view = camera.GetViewMatrix();
@@ -382,9 +227,8 @@ void Graphics::RenderFrame()
 	View viewState_ps{};
 	XMStoreFloat4x4(&viewState_ps.world_to_camera, camera.GetViewMatrix());
 	XMStoreFloat4x4(&viewState_ps.camera_to_projective, camera.GetProjectionMatrix());
-
 	viewState_ps.derive_matrices_vs(Viewport{ { (float)windowWidth, (float)windowHeight } });
-
+	pContext->OMSetBlendState(bsOpaque.Get(), nullptr, 0xFFFFFFFF);
 	if (!s_vsCB) {
 		D3D11_BUFFER_DESC cbDesc{};
 		cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
@@ -398,8 +242,8 @@ void Graphics::RenderFrame()
 	}
 
 	for (const auto& rs : staticsToDraw) {   
-		if (rs.mesh->id != 0x80E86EED) {
-			//continue;
+		if (rs.mesh->id != 0x80bd4bcf) {
+			continue;
 		}
         DrawStaticMesh(rs, viewState_ps);
     }
@@ -455,11 +299,6 @@ bool Graphics::Initialize(HWND hWnd, int width, int height)
 	if (!InitializeDirectX(hWnd))
 		return false;
 	OutputDebugStringA("DirectX initialized.\n");
-
-	//StaticMap static_map();
-	//static_map.Initialize(TagHash(0x80AD122C));
-	//static_map.LoadStaticData();
-		
 	if (!InitializeShaders())
 		return false;
 	OutputDebugStringA("Shaders initialized.\n");
@@ -537,14 +376,26 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		
 		COM_ERROR_IF_FAILED(hr, "Failed to create RTV.");
 
-		CD3D11_TEXTURE2D_DESC depthStencilDesc(DXGI_FORMAT_D24_UNORM_S8_UINT, windowWidth, windowHeight);
-		depthStencilDesc.MipLevels = 1;
-		depthStencilDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+		{
+			CD3D11_TEXTURE2D_DESC dd(DXGI_FORMAT_R24G8_TYPELESS, windowWidth, windowHeight);
+			dd.MipLevels = 1;
+			dd.BindFlags = D3D11_BIND_DEPTH_STENCIL | D3D11_BIND_SHADER_RESOURCE;
+			HRESULT hr = pDevice->CreateTexture2D(&dd, nullptr, depthStencilBuffer.GetAddressOf());
+			COM_ERROR_IF_FAILED(hr, "Failed to create typeless depth.");
 
-		hr = this->pDevice->CreateTexture2D(&depthStencilDesc, NULL, this->depthStencilBuffer.GetAddressOf());
-		COM_ERROR_IF_FAILED(hr, "Failed to Depth Stencil.");
+			D3D11_DEPTH_STENCIL_VIEW_DESC dsvd{};
+			dsvd.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+			dsvd.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
+			hr = pDevice->CreateDepthStencilView(depthStencilBuffer.Get(), &dsvd, depthStencilView.GetAddressOf());
+			COM_ERROR_IF_FAILED(hr, "Failed to create DSV.");
 
-		hr = this->pDevice->CreateDepthStencilView(this->depthStencilBuffer.Get(), NULL, this->depthStencilView.GetAddressOf());
+			D3D11_SHADER_RESOURCE_VIEW_DESC srvd{};
+			srvd.Format = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
+			srvd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+			srvd.Texture2D.MipLevels = 1;
+			hr = pDevice->CreateShaderResourceView(depthStencilBuffer.Get(), &srvd, /*keep a copy?*/ nullptr);
+			// (We keep the SRV for the *GBuffer* depth below; the default depth SRV is optional here.)
+		}
 
 		COM_ERROR_IF_FAILED(hr, "Failed to create depth stencil view.");
 
@@ -581,25 +432,25 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
 
 		hr = this->pDevice->CreateSamplerState(&samplerDesc, this->samplerState.GetAddressOf());
-
+		COM_ERROR_IF_FAILED(hr, "Failed to create device sampler state.");
 		D3D11_BLEND_DESC desc = {};
 		desc.AlphaToCoverageEnable = FALSE;
-		desc.IndependentBlendEnable = TRUE;
+		desc.IndependentBlendEnable = FALSE;
 
 		auto& rt = desc.RenderTarget[0];
-		rt.BlendEnable = TRUE;                          // <-- this line
+		rt.BlendEnable = FALSE;                          // <-- this line
 		rt.RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
 
-		pDevice->CreateBlendState(&desc, &bsOpaque);
+		hr = pDevice->CreateBlendState(&desc, &bsOpaque);
 
-		COM_ERROR_IF_FAILED(hr, "Failed to create device sampler state.");
+		COM_ERROR_IF_FAILED(hr, "Failed to CreateBlendState.");
 	}
 	catch (COMException& exception)
 	{
 		ErrorLogger::Log(exception);
 		return false;
 	}
-
+	CreateOrResizeGBuffer(windowWidth, windowHeight);
 	pool = std::make_unique<ThreadPool>();
 	mainQueue = std::make_unique<MainThreadQueue>();
 	registry = std::make_unique<RuntimeAssetRegistry>();
@@ -634,17 +485,8 @@ bool Graphics::InitializeShaders()
 bool Graphics::InitializeScene()
 {	
 	try {
-		//HRESULT hr = this->constantBuffer.Initialize(this->pDevice.Get(), this->pContext.Get());
-		//COM_ERROR_IF_FAILED(hr, "Failed to initialize constant buffer");
-
 		camera.SetPosition(3.0f, 0.0f, 0.0f);
 		camera.SetProjectionValues(90.0f, static_cast<float>(windowWidth) / static_cast<float>(windowHeight), 0.01f, 10000.0f);
-
-		//for (auto& Static : this->static_objects_to_render)
-		//{
-		//	Static.InitializeRender(pDevice.Get(), pContext.Get());
-
-		//}
 	}
 	catch (COMException& exception) 
 	{
@@ -653,7 +495,7 @@ bool Graphics::InitializeScene()
 	}
 	InitializeInputLayouts();
 	staticMap = std::make_unique<StaticMap>(*this);
-	staticMap->Initialize(0x80AC5F28);  // root map hash (or whatever yours is)
+	staticMap->Initialize(0x80BD8A74);  // root map hash (or whatever yours is)
 	staticsToDraw = staticMap->GetRenderList();
 	return true;
 }

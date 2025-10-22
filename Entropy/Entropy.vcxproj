@@ -225,6 +225,8 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\Renderer\Graphics\Render\gbuffer.cpp" />
+    <ClCompile Include="src\Renderer\Graphics\Scope\instance.cpp" />
     <ClCompile Include="src\Runtime\Assets\AssetSystem.cpp" />
     <ClCompile Include="src\Runtime\Assets\RuntimeAssetRegistry.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Scope\view.cpp" />
@@ -265,6 +267,7 @@
     <ClCompile Include="src\Renderer\Loaders\StaticMap.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\Renderer\Graphics\Scope\instance.h" />
     <ClInclude Include="src\Renderer\Loaders\RenderStatic.h" />
     <ClInclude Include="src\Renderer\Loaders\TextureLoader.h" />
     <ClInclude Include="src\Runtime\Assets\AssetCache.h" />
@@ -275,6 +278,7 @@
     <ClInclude Include="src\Runtime\Assets\Sampler.h" />
     <ClInclude Include="src\Runtime\Threading\MainThreadQueue.h" />
     <ClInclude Include="src\Renderer\Graphics\Scope\view.h" />
+    <ClInclude Include="src\TigerEngine\ClientStartup\RenderGlobals.h" />
     <ClInclude Include="src\TigerEngine\crypto.h" />
     <ClInclude Include="src\TigerEngine\mapped_file.h" />
     <ClInclude Include="src\Renderer\Tools\COMException.h" />
