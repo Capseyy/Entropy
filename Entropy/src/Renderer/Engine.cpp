@@ -40,14 +40,14 @@ void Engine::Update()
 		{
 			if (me.GetType() == MouseEvent::EventType::RAW_MOVE)
 			{
-				this->gfx.camera.AdjustRotation((float)me.GetPosY()/8 * 0.01f, (float)me.GetPosX()/10 * 0.01f, 0);
+				this->gfx.camera.AdjustRotation(0.0f, (float)me.GetPosY() / 8 * 0.01f, (float)me.GetPosX() / 8 * 0.01f);
 			}
 		}
 	}
 	float cameraSpeed;
 	if (keyboard.KeyIsPressed(VK_SHIFT))
 	{
-		cameraSpeed = gfx.camera.GetSpeed() * 2;
+		cameraSpeed = gfx.camera.GetSpeed() * 10;
 	}
 	else
 	{

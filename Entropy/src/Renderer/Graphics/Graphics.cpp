@@ -6,7 +6,7 @@ static inline float asfloat_u32(std::uint32_t u) {
 	return std::bit_cast<float>(u);
 }
 
-
+constexpr float RadToDeg(float r) { return (r * 180.0f / 3.14159265358979323846f); }
 auto ToZUp = [] {
 	// rotate +90° around +X: (x, y, z) -> (x, z, -y)
 	return XMMatrixRotationX(+XM_PIDIV2);
@@ -398,7 +398,7 @@ void Graphics::RenderFrame()
 	}
 
 	for (const auto& rs : staticsToDraw) {   
-		if (rs.mesh->id != 0x80fbab45) {
+		if (rs.mesh->id != 0x80E86EED) {
 			//continue;
 		}
         DrawStaticMesh(rs, viewState_ps);
@@ -419,12 +419,17 @@ void Graphics::RenderFrame()
 	auto CameraPos = camera.GetPositionFloat3();
 	std::string CameraPrint = std::format("X: {:.2f}  Y: {:.2f}  Z: {:.2f}",
 		CameraPos.x, CameraPos.y, CameraPos.z);
+	auto CameraRot = camera.GetRotationFloat3();
+	std::string CameraPrintRot = std::format("Pitch: {:.2f}  Roll: {:.2f}  Yaw: {:.2f}",
+		CameraRot.x, CameraRot.y, RadToDeg(CameraRot.z));
 
 	spriteBatch->Begin();
 	spriteFont->DrawString(spriteBatch.get(), StringConverter::StringToWide(fpsString).c_str(),
 		DirectX::XMFLOAT2(0, 0), DirectX::Colors::Wheat);
 	spriteFont->DrawString(spriteBatch.get(), StringConverter::StringToWide(CameraPrint).c_str(),
 		DirectX::XMFLOAT2(0, 50), DirectX::Colors::Wheat);
+	spriteFont->DrawString(spriteBatch.get(), StringConverter::StringToWide(CameraPrintRot).c_str(),
+		DirectX::XMFLOAT2(0, 100), DirectX::Colors::Wheat);
 	spriteBatch->End();
 
 	ImGui_ImplDX11_NewFrame();
@@ -582,10 +587,10 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 
 		D3D11_BLEND_DESC desc = {};
 		desc.AlphaToCoverageEnable = FALSE;
-		desc.IndependentBlendEnable = FALSE;
+		desc.IndependentBlendEnable = TRUE;
 
 		auto& rt = desc.RenderTarget[0];
-		rt.BlendEnable = FALSE;                          // <-- this line
+		rt.BlendEnable = TRUE;                          // <-- this line
 		rt.RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
 
 		pDevice->CreateBlendState(&desc, &bsOpaque);
@@ -651,7 +656,7 @@ bool Graphics::InitializeScene()
 	}
 	InitializeInputLayouts();
 	staticMap = std::make_unique<StaticMap>(*this);
-	staticMap->Initialize(0x8102A565);  // root map hash (or whatever yours is)
+	staticMap->Initialize(0x80AD0290);  // root map hash (or whatever yours is)
 	staticsToDraw = staticMap->GetRenderList();
 	return true;
 }
