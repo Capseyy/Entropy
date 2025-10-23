@@ -2,6 +2,13 @@
 #include <cstdint>
 #include "TigerEngine/tag.h"
 
+struct namedTagEntry
+{
+    TagHash tag;
+    uint32_t reference;
+    std::string name;
+};
+
 class GlobalData {
 public:
     // Provides access to the single shared unordered_map
@@ -13,6 +20,11 @@ public:
     static std::unordered_map<uint64_t, TagHash>& getH64() {
         static std::unordered_map<uint64_t, TagHash> h64_cache;
         return h64_cache;
+    }
+
+    static std::vector<namedTagEntry>& getNamedTags() {
+        static std::vector<namedTagEntry> namedTags;
+        return namedTags;
     }
 };
 

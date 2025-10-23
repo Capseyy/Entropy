@@ -96,6 +96,25 @@ std::vector<std::pair<uint32_t, const Package*>> GetAllTagsOfType(uint16_t type,
     }
     return out;
 }
+
+void GetAllNamedTags() {
+    printf("Collect all named tags\n");
+
+    // IMPORTANT: get a reference to the actual object in the map
+    for (const auto& kv : GlobalData::getMap()) {
+        const Package& pkg = kv.second;            // reference (NO copy)
+        size_t entryID = 0;
+
+        for (const auto& entry : pkg.namedTags) {    // const is fine
+            namedTagEntry named;
+            named.name = entry.raw_name;
+            named.reference = entry.reference;
+            named.tag = TagHash(entry.tag);
+            GlobalData::getNamedTags().push_back(named);
+        }
+    }
+}
+
 bool Package::initOodle()
 {
     std::call_once(g_oodle_once, [] {

@@ -27,6 +27,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int)
 			GlobalData::getH64().insert({ h64entry.hash64, TagHash(h64entry.hash32, true)});
 		}
 	}
+	GetAllNamedTags();
 	printf("Loaded %zu packages\n", GlobalData::getMap().size());
 	printf("Loaded %zu h64 entries\n", GlobalData::getH64().size());
 	auto start = std::chrono::high_resolution_clock::now();
