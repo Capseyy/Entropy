@@ -231,6 +231,7 @@
     <ClCompile Include="src\Runtime\Assets\RuntimeAssetRegistry.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Scope\view.cpp" />
     <ClCompile Include="src\Runtime\Assets\Sampler.cpp" />
+    <ClCompile Include="src\TigerEngine\ClientStartup\RenderGlobals.cpp" />
     <ClCompile Include="src\TigerEngine\crypto.cpp" />
     <ClCompile Include="src\TigerEngine\mapped_file.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Camera.cpp" />
@@ -267,6 +268,7 @@
     <ClCompile Include="src\Renderer\Loaders\StaticMap.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\Renderer\Graphics\Render\gbuffer.h" />
     <ClInclude Include="src\Renderer\Graphics\Scope\instance.h" />
     <ClInclude Include="src\Renderer\Loaders\RenderStatic.h" />
     <ClInclude Include="src\Renderer\Loaders\TextureLoader.h" />

@@ -26,6 +26,11 @@ public:
         static std::vector<namedTagEntry> namedTags;
         return namedTags;
     }
+
+    static std::unordered_map<std::string, TagHash>& getGlobalTechniques() {
+        static std::unordered_map<std::string, TagHash> globalTechs;
+        return globalTechs;
+    }
 };
 
 #pragma once

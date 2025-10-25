@@ -17,8 +17,6 @@
 
 namespace fs = std::filesystem;
 
-#pragma pack(push, 1)
-
 
 struct EntryHeaderRaw {
     uint32_t reference;
@@ -252,9 +250,9 @@ public:
 
 void GetAllNamedTags();
 
-//const std::string PackagePath = "C:/Program Files (x86)/Steam/steamapps/common/Destiny 2/packages";
+const std::string PackagePath = "C:/Program Files (x86)/Steam/steamapps/common/Destiny 2/packages";
 
-const std::string PackagePath = "D:/SteamLibrary/steamapps/common/Destiny 2/packages";
+//const std::string PackagePath = "D:/SteamLibrary/steamapps/common/Destiny 2/packages";
 
 #pragma once
 

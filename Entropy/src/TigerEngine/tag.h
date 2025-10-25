@@ -12,7 +12,6 @@
 #include <span>
 #include <limits>
 #include <string>
-#include <cstdint>
 #include <cstdio>
 #include <cinttypes>
 #include <glm/glm.hpp>
@@ -23,6 +22,12 @@ public:
     uint32_t Unk0{ 0 };
     uint32_t Unk4{ 0 };
     uint64_t Hash64{ 0 };
+};
+
+struct RawStringPointer64
+{
+    int64_t offset;
+    std::string name;
 };
 
 class Package;
@@ -69,6 +74,7 @@ public:
     void free();
     unsigned char* getDatawithPkg(Package* pkg);
     unsigned char* getDatawithPkg(const Package* pkg);
+    std::string GetPackageName();
 };
 
 struct RelativePointer64 {
@@ -165,6 +171,19 @@ namespace bin {
     }
     inline void read_into(Reader& r, glm::quat& q) { 
         q.w = r.read_arith<float>(); q.x = r.read_arith<float>(); q.y = r.read_arith<float>(); q.z = r.read_arith<float>(); 
+    }
+    inline void read_into(Reader& r, RawStringPointer64& q) {
+        int base = r.pos;
+        q.offset = r.read_arith<uint64_t>();
+        r.seek(q.offset + base);
+        std::string raw_name;
+        for (;;) {
+            auto byte = r.read_arith<char>();
+            if (byte == '\0') break;
+            raw_name.push_back(byte);
+        }
+        q.name = raw_name;
+        r.seek(base + 0x8);
     }
 
     inline void read_into(Reader& r, glm::vec3& q) {

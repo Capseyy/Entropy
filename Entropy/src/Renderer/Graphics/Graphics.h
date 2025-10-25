@@ -19,19 +19,14 @@
 #include "Model.h"
 #include "TigerEngine/Technique/input_layout.h"
 #include "Scope/instance.h"
+#include "TigerEngine/globaldata.h"
+#include <dxgi.h>    
+#include <dxgiformat.h> 
+#include "Renderer/Graphics/Render/gbuffer.h"
 
-struct GBuffer {
-	UINT w = 0, h = 0;
-	Microsoft::WRL::ComPtr<ID3D11Texture2D> albedo, normalRgh, material;
-	Microsoft::WRL::ComPtr<ID3D11RenderTargetView> albedoRTV, normalRghRTV, materialRTV;
-	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> albedoSRV, normalRghSRV, materialSRV;
 
-	Microsoft::WRL::ComPtr<ID3D11Texture2D> depth;      // R24G8 typeless
-	Microsoft::WRL::ComPtr<ID3D11DepthStencilView> dsv;  // D24S8
-	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> depthSRV; // R24_UNORM_X8
-};
+enum class PipelineStage { Forward, GBuffer, Lighting };
 
-enum class PipelineStage { Forward, GBuffer };
 
 class Graphics
 {
@@ -52,6 +47,7 @@ private:
 	bool InitializeDirectX(HWND hWnd);
 	bool InitializeShaders();
 	bool InitializeScene();
+	bool InitializeRenderGlobals();
 	void InitializeInputLayouts();
 	void InitAnnotation();
 	std::array<Microsoft::WRL::ComPtr<ID3D11InputLayout>,15> tiger_input_layouts;
@@ -83,28 +79,45 @@ private:
 
 	Microsoft::WRL::ComPtr<ID3D11SamplerState> samplerState;
 	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> myTexture;
+	Microsoft::WRL::ComPtr <ID3D11Buffer> cbCombine;
+	Microsoft::WRL::ComPtr <ID3D11Buffer> cbGlobalAmbient;
 
+	ComPtr<ID3D11SamplerState> samplerPointClamp;
+	ComPtr<ID3D11SamplerState> samplerLinearClamp;
+
+
+	Microsoft::WRL::ComPtr<ID3D11BlendState> bsAdditive; // optional, for later draws
+
+	void BeginLightingPass();
+	void EndLightingPass();
 	int windowWidth = 0;
 	int windowHeight = 0;
+
+	Microsoft::WRL::ComPtr<ID3D11SamplerState> pointSampler;
+
+	PipelineStage pipelineStage = PipelineStage::Forward;
 
 	Timer fpsTimer;
 
 	std::vector<RenderStatic> staticsToDraw;
 
 	void DrawStaticMesh(const RenderStatic& rs, const View& view);
+	void RunDeferredLighting();
+	void FullScreenSolidColor();
+	void DebugCopyRT0ToBackbuffer();
+	void CreateWhite1x1SRV();
+	void CreateBackbufferRTV();
+	void RunGlobalLightingPass();
+	void BlitSRVToBackbuffer(ID3D11ShaderResourceView* srv);
 
-	//gbuffer
-	bool useDeferred = true;
-	PipelineStage pipelineStage = PipelineStage::Forward;
-	GBuffer gbuf{};
+	std::unordered_map<std::string, std::shared_future<std::shared_ptr<EntropyAssets::Technique>>> globalTechniques;
 
 	Microsoft::WRL::ComPtr<ID3D11VertexShader> fsTriVS; // fullscreen triangle VS
 	Microsoft::WRL::ComPtr<ID3D11PixelShader>  gbufferPS;
 	Microsoft::WRL::ComPtr<ID3D11PixelShader>  deferredPS;
 	Microsoft::WRL::ComPtr<ID3D11Buffer>       deferredCamCB; // InvProj + CameraPos
+	Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerStateNoCull;
+	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> white1x1SRV;
 
-	// Helpers
-	void CreateOrResizeGBuffer(UINT w, UINT h);
-	void BindGBufferForWriting();
-	void RunDeferredLighting();
+	GBuffer gbufA;
 };

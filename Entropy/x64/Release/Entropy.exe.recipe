@@ -2,15 +2,15 @@
 <Project>
   <ProjectOutputs>
     <ProjectOutput>
-      <FullPath>D:\Entropy\x64\Release\Entropy.exe</FullPath>
+      <FullPath>C:\Users\SAM-PC\source\repos\Entropy\x64\Release\Entropy.exe</FullPath>
     </ProjectOutput>
   </ProjectOutputs>
   <ContentFiles>
     <ContentFile>
-      <FullPath>D:\Entropy\x64\Release\pixelshader.cso</FullPath>
+      <FullPath>C:\Users\SAM-PC\source\repos\Entropy\x64\Release\pixelshader.cso</FullPath>
     </ContentFile>
     <ContentFile>
-      <FullPath>D:\Entropy\x64\Release\vertexshader.cso</FullPath>
+      <FullPath>C:\Users\SAM-PC\source\repos\Entropy\x64\Release\vertexshader.cso</FullPath>
     </ContentFile>
   </ContentFiles>
   <SatelliteDlls />

@@ -5,6 +5,23 @@
 using Microsoft::WRL::ComPtr;
 
 
+inline void SetDebugName(ID3D11DeviceChild* obj, const char* name)
+{
+    if (!obj || !name) return;
+    obj->SetPrivateData(WKPDID_D3DDebugObjectName,
+        static_cast<UINT>(std::strlen(name)), name);
+}
+
+inline void SetDebugNameFmt(ID3D11DeviceChild* obj, const char* fmt, ...)
+{
+    if (!obj || !fmt) return;
+    char buf[128];
+    va_list ap; va_start(ap, fmt);
+    std::vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    obj->SetPrivateData(WKPDID_D3DDebugObjectName,
+        static_cast<UINT>(std::strlen(buf)), buf);
+}
 
 //------------------------------------------------------------------------------
 // Shader creation helper (C++11-friendly explicit specializations)
@@ -78,6 +95,7 @@ AssetSystem::createVertexShader_(uint32_t id, const ShaderPayload& p)
             p.bytecode.size() >= 4 ? *(const uint32_t*)p.bytecode.data() : 0u);
         throw std::runtime_error("CreateVertexShader failed");
     }
+    SetDebugNameFmt(vs.Get(), "VS_%08X", id);
     //printf("CreateVS hr=0x%08X size=%zu magic=0x%08X\n", (unsigned)hr, p.bytecode.size(),
      //   p.bytecode.size() >= 4 ? *(const uint32_t*)p.bytecode.data() : 0u);
 
@@ -96,7 +114,7 @@ AssetSystem::createPixelShader_(const ShaderPayload& p)
     if (FAILED(hr)) {
         throw std::runtime_error("CreatePixelShader failed");
     }
-
+    //SetDebugNameFmt(ps.Get(), "VS_%08X", );
     auto out = std::make_shared<EntropyAssets::PixelShader>();
     out->ps = ps;
     return out;

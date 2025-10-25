@@ -4,7 +4,6 @@
 #include <optional>
 
 
-#pragma pack(push, 1)
 struct UT_SamplerRaw
 {
 	uint32_t Filter;          // numeric D3D11_FILTER value in your data

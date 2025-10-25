@@ -163,7 +163,6 @@ RenderStatic StaticRenderer::Build()
         groupF.push_back(fut);
     }
 
-    // ---- Enqueue techniques (one per part) ----
     std::vector<std::shared_future<std::shared_ptr<EntropyAssets::Technique>>> techF(techIds.size());
     for (size_t i = 0; i < techIds.size(); ++i) {
         const uint32_t tid32 = techIds[i].hash;

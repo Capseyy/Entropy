@@ -14,6 +14,21 @@ int TagHash::getEntryID() {
 	return entryId;
 }
 
+std::string TagHash::GetPackageName()
+{
+	auto& map = GlobalData::getMap();
+	int pkgId = getPkgId();
+	auto it = map.find(pkgId);
+	if (it == map.end()) {
+		printf("Invalid package ID: %d found for taghash %d\n ", pkgId, hash);
+		size = 0;
+		data = nullptr;
+		return nullptr;
+	}
+	Package* pkg = &it->second;
+	return pkg->PackageName;
+}
+
 unsigned char* TagHash::getData() {
 	if (hash == 0 or hash == 4294967295) {
 		size = 0;

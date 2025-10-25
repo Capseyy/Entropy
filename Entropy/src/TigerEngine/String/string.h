@@ -2,7 +2,6 @@
 #include <string>
 #include <unordered_map>
 #include "string.h"
-#include "TigerEngine/package.h"
 #include <future>
 #include "TigerEngine/tag.h"
 #include <iostream>
@@ -41,7 +40,6 @@ struct SStringMetadata {
 	RelativePointer64 partOffset{};
 	uint64_t partCount{};
 };
-
 
 struct SStringBank {
 public:
