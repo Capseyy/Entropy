@@ -86,6 +86,84 @@ RenderStatic StaticRenderer::Build()
         }
         groupRefs.push_back(gr);
     }
+    int max_detail_special = 0xff;
+    for (auto& group : s.special_meshes) {
+        if (group.TfxRenderStage < max_detail_special) {
+            max_detail_special = group.TfxRenderStage;
+        }
+    }
+    UINT highestDetail_special = 99;
+    for (const auto& party : s.special_meshes) {
+        if (party.LodCatagory < highestDetail_special) {
+            highestDetail_special = party.LodCatagory;
+        }
+    }
+
+    std::vector<StaticSpecial> specials;
+    for (auto& bg : s.special_meshes)
+    {
+        if (max_detail_special != bg.TfxRenderStage) {
+            continue;
+        }
+        if (highestDetail_special != bg.LodCatagory) {
+            continue;
+        }
+        GroupRef gr_special{};
+        StaticSpecial special;
+        auto grp = std::make_shared<BufferGroup>();
+        if (bg.IndexBuffer.hash != 0xffffffff) {
+            auto ibh = bin::parse<IndexBufferHeader>(bg.IndexBuffer.data, bg.IndexBuffer.size, bin::Endian::Little);
+            auto ib_bytes = TagHash(bg.IndexBuffer.reference).data;
+            gr_special.idxId = RegisterBufferBlob(ib_bytes, ibh.dataSize, bg.IndexBuffer.hash, D3D11_BIND_INDEX_BUFFER);
+            gr_special.idx32 = (ibh.is32 != 0);
+            const UINT byteWidth = gfx_.registry->GetBuffer(gr_special.idxId).desc.ByteWidth;
+            grp->index = gfx_.assets->EnqueueBuffer(gr_special.idxId).future.get();
+            grp->indexFormat = gr_special.idx32 ? DXGI_FORMAT_R32_UINT : DXGI_FORMAT_R16_UINT;
+            grp->indexCount = gr_special.idx32 ? (byteWidth / 4u) : (byteWidth / 2u);
+        }
+        if (bg.VertexBuffer1.hash != 0xffffffff) {
+            auto vbh = bin::parse<VertexBufferHeader>(bg.VertexBuffer1.data, bg.VertexBuffer1.size, bin::Endian::Little);
+            auto vb_bytes = TagHash(bg.VertexBuffer1.reference).data;
+            gr_special.posId = RegisterBufferBlob(vb_bytes, vbh.dataSize, bg.VertexBuffer1.hash, D3D11_BIND_VERTEX_BUFFER, vbh.stride);
+            grp->vertex = gfx_.assets->EnqueueBuffer(gr_special.posId).future.get();
+            grp->vertexStride = gfx_.registry->GetBuffer(gr_special.posId).stride;
+        }
+        if (bg.VertexBuffer2.hash != 0xffffffff) {
+            auto uvbh = bin::parse<VertexBufferHeader>(bg.VertexBuffer2.data, bg.VertexBuffer2.size, bin::Endian::Little);
+            auto uv_bytes = TagHash(bg.VertexBuffer2.reference).data;
+            gr_special.uvId = RegisterBufferBlob(uv_bytes, uvbh.dataSize, bg.VertexBuffer2.hash, D3D11_BIND_VERTEX_BUFFER, uvbh.stride);
+            grp->uv = gfx_.assets->EnqueueBuffer(gr_special.uvId).future.get();
+            grp->uvStride = gfx_.registry->GetBuffer(gr_special.uvId).stride;
+        }
+        if (bg.VertexColourBuffer.hash != 0xffffffff) {
+            auto vcbh = bin::parse<VertexBufferHeader>(bg.VertexColourBuffer.data, bg.VertexColourBuffer.size, bin::Endian::Little);
+            auto vc_bytes = TagHash(bg.VertexColourBuffer.reference).data;
+            gr_special.colId = RegisterBufferBlob(vc_bytes, vcbh.dataSize, bg.VertexColourBuffer.hash, D3D11_BIND_VERTEX_BUFFER, vcbh.stride);
+            const auto& buf = gfx_.registry->GetBuffer(gr_special.colId);
+            const UINT stride = buf.stride;
+            const UINT byteWidth = buf.desc.ByteWidth;
+            BufferSRVMeta meta{};
+            if (stride == 1) {
+                meta.typedFormat = DXGI_FORMAT_R8_UNORM;
+            }
+            else {
+                meta.typedFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+            }
+            meta.bytesPerElement = stride;
+            auto res = gfx_.assets->EnqueueBufferSRV(gr_special.colId, meta).future.get();
+
+            ID3D11ShaderResourceView* raw = res->srv.Get();
+            if (raw) raw->AddRef();  // take our own ref
+
+            grp->color.reset(raw, [](ID3D11ShaderResourceView* p) { if (p) p->Release(); });
+            grp->colorStride = gfx_.registry->GetBuffer(gr_special.colId).stride;
+        }
+        special.group = grp;
+        special.input_layout_index = bg.input_layout_index;
+        special.part = bg;
+        specials.push_back(special);
+        //this->
+    }
 
     UINT highestDetail = 99;
     for (const auto& party : m.parts) {
@@ -170,6 +248,12 @@ RenderStatic StaticRenderer::Build()
         techF[i] = gfx_.assets->EnqueueTechnique(techIds[i]); // returns shared_future<shared_ptr<Technique>>
     }
 
+    std::vector<std::shared_future<std::shared_ptr<EntropyAssets::Technique>>> techF_specials(specials.size());
+    for (size_t i = 0; i < specials.size(); ++i) {
+        auto& tid32 = specials[i].part.technique.hash;
+        printf("[Build] part %zu technique %08X\n", i, tid32);
+        techF_specials[i] = gfx_.assets->EnqueueTechnique(specials[i].part.technique); // returns shared_future<shared_ptr<Technique>>
+    }
     // ---- Assemble mesh ----
     auto mesh = std::make_shared<StaticMesh>();
     mesh->groups.reserve(groupF.size());
@@ -199,11 +283,28 @@ RenderStatic StaticRenderer::Build()
         mesh->input_layout_index = partInputLayoutIdx[i];
     }
     mesh->id = static_hash_.hash;
-
     // ---- Output renderable ----
     RenderStatic out{};
     out.mesh = std::move(mesh);
     out.meshData = m; // if you need original meta later
+    out.specials.resize(specials.size());
+    for (size_t i = 0; i < specials.size(); ++i)
+    {
+        std::shared_ptr<EntropyAssets::Technique> t;
+        try {
+            if (techF_specials[i].valid()) t = techF_specials[i].get();
+        }
+        catch (const std::exception& e) {
+            //printf("[Build][Tech] id=%08X get() failed: %s\n", techF_specials[i], e.what());
+        }
+        auto mesh_special = std::make_shared<StaticSpecial>();
+        mesh_special->group = specials[i].group;
+        mesh_special->input_layout_index = specials[i].input_layout_index;
+        mesh_special->part = specials[i].part;
+        mesh_special->technique = t;
+        mesh_special->techniqueId = specials[i].part.technique.hash;
+        out.specials[i] = std::move(mesh_special);
+    }
     return out;
 }
 

@@ -24,6 +24,8 @@
 #include <dxgiformat.h> 
 #include "Renderer/Graphics/Render/gbuffer.h"
 #include "GameTimer.h"
+#include "TigerEngine/Technique/rasterizer_states.h"
+#include "RenderStates.h"
 
 
 enum class PipelineStage { Forward, GBuffer, Lighting };
@@ -66,7 +68,7 @@ private:
 
 	GameTimer gTimer;
 
-	ExternStorage externs;
+	ExternStorage externs = ExternStorage::FilledDefaults();
 
 	Model model;
 
@@ -89,6 +91,10 @@ private:
 
 	ComPtr<ID3D11SamplerState> samplerPointClamp;
 	ComPtr<ID3D11SamplerState> samplerLinearClamp;
+
+	Microsoft::WRL::ComPtr<ID3D11BlendState> bsGBufferOpaqueIndependent;
+
+	RenderStates states;
 
 
 	Microsoft::WRL::ComPtr<ID3D11BlendState> bsAdditive; // optional, for later draws
@@ -114,6 +120,8 @@ private:
 	void CreateBackbufferRTV();
 	void RunGlobalLightingPass();
 	void BlitSRVToBackbuffer(ID3D11ShaderResourceView* srv);
+	void DrawLightingPass();
+	void SeedExternsForLighting();
 
 	std::unordered_map<std::string, std::shared_future<std::shared_ptr<EntropyAssets::Technique>>> globalTechniques;
 

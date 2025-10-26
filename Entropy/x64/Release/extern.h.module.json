@@ -1,0 +1,22 @@
+{
+    "version": 1,
+    "revision": 0,
+    "rules": [
+        {
+            "primary-output": "x64\\Release\\extern.h.obj",
+            "outputs": [
+                "C:\\Users\\SAM-PC\\source\\repos\\Entropy\\Entropy\\x64\\Release\\vc143.pdb",
+                "x64\\Release\\",
+                "C:\\Users\\SAM-PC\\source\\repos\\Entropy\\Entropy\\x64\\Release\\extern.h.ifc"
+            ],
+            "provides": [
+                {
+                    "logical-name": "src\\TigerEngine\\Technique\\Tfx\\extern.h",
+                    "source-path": "c:\\users\\sam-pc\\source\\repos\\entropy\\entropy\\src\\tigerengine\\technique\\tfx\\extern.h",
+                    "lookup-method": "absolute"
+                }
+            ],
+            "requires": []
+        }
+    ]
+}

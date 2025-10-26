@@ -57,7 +57,7 @@ public:
 	std::array<uint32_t,6> Unk08;
 	uint64_t UsedScopes;
 	uint64_t CompatibleScopes;
-	uint32_t RenderStates;
+	uint32_t StateSelection;
 	std::array<uint32_t, 15> Unk34;
 	STechniqueShader VertexShader;
 	STechniqueShader UnkShader1;

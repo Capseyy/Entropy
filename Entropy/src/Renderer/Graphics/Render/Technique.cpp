@@ -3,16 +3,81 @@
 #undef max
 #include "TigerEngine/Technique/Tfx/tfx_program.h"
 
+struct DecodedSelection {
+    std::optional<uint8_t> blend;
+    std::optional<uint8_t> depthStencilCombo; // index into DEPTH_STENCIL_COMBOS
+    std::optional<uint8_t> rasterizer;        // 0..8
+    std::optional<uint8_t> depthBias;         // 0..8
+};
+
+static inline DecodedSelection DecodeStateSelection(uint32_t sel) {
+    auto get = [&](int shift)->std::optional<uint8_t> {
+        uint8_t v = uint8_t((sel >> shift) & 0xFF);
+        return (v & 0x80) ? std::optional<uint8_t>(v & 0x7F) : std::nullopt;
+        };
+    return {
+        /*blend*/            get(0),
+        /*depthStencilCombo*/get(8),
+        /*rasterizer*/       get(16),
+        /*depthBias*/        get(24)
+    };
+}
+
 bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice,
-    Microsoft::WRL::ComPtr<ID3D11DeviceContext> pContext, ExternStorage externs)
+    Microsoft::WRL::ComPtr<ID3D11DeviceContext> pContext, ExternStorage externs, RenderStates states)
 {
-    // ---- 1) Evaluate TFX to fill cb0 (float4 array) ----
+    uint32_t StateSelection = this->StateSelection;
+
+
+    const auto sel = DecodeStateSelection(this->StateSelection);
+
+    // Blend ----------------------------------------------------------
+    if (sel.blend && *sel.blend < states.blend_states.size() &&
+        states.blend_states[*sel.blend]) {
+        const float blendFactor[4] = { 1.f, 1.f, 1.f, 1.f };
+        const UINT sampleMask = 0xFFFFFFFFu;
+        //printf("Mapped blend\n");
+        pContext->OMSetBlendState(states.blend_states[*sel.blend].Get(), blendFactor, sampleMask);
+    }
+
+    if (sel.rasterizer && *sel.rasterizer < 9 &&
+        sel.depthBias && *sel.depthBias < 9) {
+        auto& rs = states.rasterizer_states[*sel.depthBias][*sel.rasterizer];
+        if (rs) {
+            //printf("Mapped raster\n");
+            pContext->RSSetState(rs.Get());
+        }
+    }
+    if (sel.depthStencilCombo && *sel.depthStencilCombo < states.depth_stencil_states.size()) {
+        // Choose primary or "alt" (reverse) depth func variant.
+        // Wire this to whatever logic you use to flip GREATER/LESS, etc.
+        const bool useAltDepth = false;               // TODO: set this from your engine state
+        const UINT stencilRef = 0;                   // TODO: set if your pass needs a non-zero ref
+
+        auto& pair = states.depth_stencil_states[*sel.depthStencilCombo];
+        ID3D11DepthStencilState* ds = (useAltDepth ? pair.second : pair.first).Get();
+        printf("Mapped stencil\n");
+        pContext->OMSetDepthStencilState(ds, stencilRef);
+    }
+
+    if (!this->VS.empty()) {
+
+        ID3D11VertexShader* vs = this->VS[0]->vs.Get();
+        pContext->VSSetShader(vs, nullptr, 0);
+    }
+    if (!this->PS.empty()) {
+
+        ID3D11PixelShader* ps = this->PS[0]->ps.Get();
+        pContext->PSSetShader(ps, nullptr, 0);
+    }
     TfxProgram prog = TfxProgram::FromBytecode(this->pixeldata.TFX_Bytecode,
         this->pixeldata.TFX_Constants);
     // implement getFloat/getVec4/getMat4 in extern.cpp
     auto& cb0 = this->pixeldata.SamplerFallback; // std::vector<Vec4> used as cb0 backing
     prog.Evaluate(externs, cb0);         // writes float4s to cb0[..] as dictated by bytecode
-
+    if (this->id == 0x80C0D09E) {
+        //printf("%s \n", prog.DecompilePretty().c_str());
+    }
     // ---- 2) Upload cb0 into a D3D11 constant buffer (slot 0 by convention) ----
     if (this->CBuffers.empty() && this->CBuffers_fallback != nullptr)  {
         ID3D11Buffer* buf = this->CBuffers_fallback->buffer.Get();

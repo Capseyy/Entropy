@@ -41,3 +41,12 @@ struct StaticMesh {
     std::vector<StaticMeshPart> parts;
     uint16_t input_layout_index;
 };
+
+struct StaticSpecial {
+    uint32_t id = 0;
+    std::shared_ptr<BufferGroup> group;
+    SStaticSpecial part;
+    uint16_t input_layout_index;
+    uint32_t techniqueId = 0;
+    std::shared_ptr<EntropyAssets::Technique> technique;
+};

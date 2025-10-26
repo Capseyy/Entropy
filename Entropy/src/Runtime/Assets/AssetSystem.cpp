@@ -753,6 +753,7 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
         } 
         tech->vertexdata = Tfx.VertexShader;
         tech->pixeldata = Tfx.PixelShader;
+        tech->StateSelection = Tfx.StateSelection;
 
         return tech;
         });

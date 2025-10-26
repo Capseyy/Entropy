@@ -6,14 +6,9 @@
 #include <cstdio>
 #include <unordered_map>           // <-- added
 #include "tfx_runtime.h"
+#include "extern.h"
 
-enum class TfxExtern : uint8_t {
-    None = 0,
-    Frame = 1,   // <- game_time, render_time, etc.
-    World = 2,
-    View = 3,
-    // ...
-};
+
 
 // ====================== OPCODES (EoF exact) ======================
 enum class TfxBytecode : uint8_t {
@@ -53,46 +48,7 @@ enum class TfxBytecode : uint8_t {
     Unknown = 0xFF
 };
 
-// ====================== EXTERNS ======================
 
-struct FrameExtern {
-    float game_time;       // offset 0 * 4 bytes
-    float render_time;     // offset 1
-    float delta_game_time; // offset 2
-    float exposure_time;   // offset 3
-    
-};
-
-
-struct ExternStorage {
-    struct Blob { const uint8_t* ptr{ nullptr }; size_t size{ 0 }; };
-    std::unordered_map<TfxExtern, Blob> blobs;
-
-    template <class T>
-    void set(TfxExtern id, const T& pod) {
-        blobs[id] = { reinterpret_cast<const uint8_t*>(&pod), sizeof(T) };
-    }
-    void set_raw(TfxExtern id, const void* p, size_t n) { blobs[id] = { (const uint8_t*)p, n }; }
-
-    float getFloat(TfxExtern id, size_t byteOffset) const {
-        auto it = blobs.find(id);
-        if (it == blobs.end() || byteOffset + sizeof(float) > it->second.size) return 0.0f;
-        float v; std::memcpy(&v, it->second.ptr + byteOffset, sizeof(v));
-        return v;
-    }
-    Vec4 getVec4(TfxExtern id, size_t byteOffset) const {
-        auto it = blobs.find(id);
-        if (it == blobs.end() || byteOffset + sizeof(Vec4) > it->second.size) return Vec4::zero();
-        Vec4 v; std::memcpy(&v, it->second.ptr + byteOffset, sizeof(v));
-        return v;
-    }
-    Mat4 getMat4(TfxExtern id, size_t byteOffset) const {
-        auto it = blobs.find(id);
-        if (it == blobs.end() || byteOffset + sizeof(Mat4) > it->second.size) return Mat4{};
-        Mat4 m; std::memcpy(&m, it->second.ptr + byteOffset, sizeof(m));
-        return m;
-    }
-};
 // ====================== PAYLOADS ======================
 struct PermuteData { uint8_t fields; };
 struct PushConstantVec4Data { uint8_t constant_index; };

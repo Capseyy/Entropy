@@ -6,8 +6,7 @@
 #include <memory>
 #include "TigerEngine/Technique/tfx/tfx.h"
 #include "TigerEngine/Technique/technique.h"
-
-
+#include "Renderer/Graphics/RenderStates.h"
 
 namespace EntropyAssets {           // <<< add
 
@@ -74,8 +73,10 @@ namespace EntropyAssets {           // <<< add
 
         STechniqueShader vertexdata;
         STechniqueShader pixeldata;
+
+        uint32_t StateSelection;
         
-        bool Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice, Microsoft::WRL::ComPtr<ID3D11DeviceContext> pContext, ExternStorage externs);
+        bool Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice, Microsoft::WRL::ComPtr<ID3D11DeviceContext> pContext, ExternStorage externs, RenderStates states);
     };
 
 } // namespace EntropyAssets       // <<< add

@@ -5,6 +5,7 @@
 #include <string>
 #include <DirectXMath.h>
 #include <DirectXPackedVector.h>
+#include <atomic>
 
 inline HRESULT SetDebugName(ID3D11DeviceChild* obj, const char* name) {
 #if defined(_DEBUG)
@@ -72,10 +73,6 @@ bool CreateColorRT(ID3D11Device* dev, UINT w, UINT h,
     DXGI_FORMAT texTypeless, DXGI_FORMAT rtvFmt, DXGI_FORMAT srvFmt,
     const char* debugName, RenderTarget& out);
 
-inline bool CreateColorRTSimple(ID3D11Device* dev, UINT w, UINT h,
-    DXGI_FORMAT fmt, const char* name, RenderTarget& out) {
-    return CreateColorRT(dev, w, h, fmt, fmt, fmt, name, out);
-}
 
 bool CreateStaging(ID3D11Device* dev, UINT w, UINT h,
     DXGI_FORMAT fmt, const char* name, CpuStagingBuffer& out);
@@ -104,4 +101,16 @@ struct GBuffer {
     void Resize(ID3D11Device* dev, UINT W, UINT H);
     void BindGBufferForWriting(ID3D11DeviceContext* ctx) const;
     void UnbindMRTs(ID3D11DeviceContext* ctx) const;
+
+public:
+    // Ping–pong helpers
+    void GetPostprocessRT(RenderTarget*& src, RenderTarget*& dst, bool swapAfterUse);
+    RenderTarget* GetPostprocessOutput();
+
+    // CPU depth readback helpers
+    void CopyDepthToStaging(ID3D11DeviceContext* ctx) const;
+    bool ReadDepthPixel(ID3D11DeviceContext* ctx, UINT x, UINT y, float& outDepth) const;
+
+private:
+    std::atomic<bool> post_is_ping{ true };
 };

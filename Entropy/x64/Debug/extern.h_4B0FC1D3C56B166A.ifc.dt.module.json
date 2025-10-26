@@ -1,0 +1,22 @@
+{
+    "version": 1,
+    "revision": 0,
+    "rules": [
+        {
+            "primary-output": "x64\\Debug\\extern.obj",
+            "outputs": [
+                "x64\\Debug\\extern.h_4B0FC1D3C56B166A.ifc.dt.module.json",
+                "x64\\Debug\\extern.h_4B0FC1D3C56B166A.ifc.dt.d.json",
+                "x64\\Debug\\extern.h.ifc"
+            ],
+            "provides": [
+                {
+                    "logical-name": "C:\\Users\\SAM-PC\\source\\repos\\Entropy\\Entropy\\src\\TigerEngine\\Technique\\Tfx\\extern.h",
+                    "source-path": "c:\\users\\sam-pc\\source\\repos\\entropy\\entropy\\src\\tigerengine\\technique\\tfx\\extern.h",
+                    "lookup-method": "absolute"
+                }
+            ],
+            "requires": []
+        }
+    ]
+}

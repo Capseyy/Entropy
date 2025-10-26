@@ -4,7 +4,7 @@
 #include <cmath>
 #include <algorithm>
 #include <string>
-
+#include "extern.h"
 
 #ifndef TFX_EVAL_HELPERS_DEFINED
 #define TFX_EVAL_HELPERS_DEFINED
@@ -155,8 +155,8 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
     std::vector<Vec4>& cb,
     const std::vector<Vec4>& constants,
     std::array<Vec4, 16>& temp,
-    void*  = nullptr,
-    void*  = nullptr,
+    void*  /*user_tex_hook*/ = nullptr,
+    void*  /*user_samp_hook*/ = nullptr,
     bool trace = false)
 {
     using namespace tfx_eval_detail;
@@ -182,7 +182,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
         }
 
         switch (i.op) {
-            // math
+            // ---------------- math ----------------
         case TfxBytecode::Add:
         case TfxBytecode::Add2: { auto b = pop1(ip, "Add"), a = pop1(ip, "Add"); push(a + b); break; }
         case TfxBytecode::Subtract: { auto b = pop1(ip, "Sub"), a = pop1(ip, "Sub"); push(a - b); break; }
@@ -228,7 +228,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
         case TfxBytecode::PermuteAllX: { auto a = pop1(ip, "PermXXXX"); push(Vec4(a.x, a.x, a.x, a.x)); break; }
         case TfxBytecode::Permute: { auto d = std::get<PermuteData>(i.data); auto a = pop1(ip, "Perm"); push(swizzle_fields(a, d.fields)); break; }
 
-                                 // constants / externs
+                                 // ------------- constants / externs -------------
         case TfxBytecode::PushConstantVec4: {
             auto d = std::get<PushConstantVec4Data>(i.data);
             Vec4 v = (d.constant_index < constants.size()) ? constants[d.constant_index] : Vec4::zero();
@@ -252,7 +252,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
         }
         case TfxBytecode::PushExternInputVec4: {
             auto d = std::get<PushExternInputVec4Data>(i.data);
-            push(externs.getVec4(d.ext, size_t(d.offset) * 16)); break;
+            push(externs.getVec4(d.ext, size_t(d.offset))); break;
         }
         case TfxBytecode::PushExternInputMat4: {
             auto d = std::get<PushExternInputMat4Data>(i.data);
@@ -268,7 +268,23 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             push(mul_vec4_mat(v, cachedM)); break;
         }
 
-                                       // temps / outputs
+                                       // ----------- channels (NEW: actually fetch) -----------
+        //case TfxBytecode::PushGlobalChannelVector: {
+        //    // Expect channels packed as 256 Vec4s in the RAW blob:
+        //    // offset = index * 16 bytes. If absent -> zero.
+        //    auto d = std::get<PushGlobalChannelVectorData>(i.data);
+        //    Vec4 ch = externs.getVec4(TfxExtern::Raw, size_t(d.unk1) * 16);
+        //    push(ch);
+        //    break;
+        //}
+        case TfxBytecode::PushObjectChannelVector: {
+            // Object channels not wired; push zero for now.
+            // If you have an object-channel table, read it here via externs.getVec4(...)
+            push(Vec4::zero());
+            break;
+        }
+
+                                                 // ------------- temps / outputs -------------
         case TfxBytecode::PushTemp: { auto d = std::get<PushTempData>(i.data); push(temp[d.slot]); break; }
         case TfxBytecode::PopTemp: { auto d = std::get<PopTempData>(i.data);  temp[d.slot] = pop1(ip, "PopTemp"); break; }
         case TfxBytecode::PushFromOutput: {
@@ -294,7 +310,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             break;
         }
 
-                                       
+                                       // ------------- resource/sampler ops: no buffer effect -------------
         case TfxBytecode::PushSampler:
         case TfxBytecode::SetShaderSampler:
         case TfxBytecode::SetShaderTexture:
@@ -306,8 +322,6 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
         case TfxBytecode::Unk4c:
         case TfxBytecode::Unk50:
         case TfxBytecode::Unk51:
-        case TfxBytecode::PushObjectChannelVector:
-        case TfxBytecode::PushGlobalChannelVector:
         case TfxBytecode::PushTexDimensions:
         case TfxBytecode::PushTexTileParams:
         case TfxBytecode::PushTexTileCount:
@@ -316,6 +330,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
         case TfxBytecode::Unk56:
         case TfxBytecode::Unk57:
         case TfxBytecode::Unk58:
+            // Ignored here on purpose; binding is handled elsewhere.
             break;
 
         default:

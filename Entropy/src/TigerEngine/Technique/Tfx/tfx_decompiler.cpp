@@ -5,6 +5,39 @@
 static void push(std::vector<std::string>& st, std::string s) { st.push_back(std::move(s)); }
 static std::string pop(std::vector<std::string>& st) { auto s = std::move(st.back()); st.pop_back(); return s; }
 
+// ---- extern name + formatter helpers (for pretty output) --------------------
+static inline const char* ExtName(TfxExtern e) {
+    switch (e) {
+    case TfxExtern::Frame:          return "frame";
+    case TfxExtern::View:           return "view";
+    case TfxExtern::Deferred:       return "deferred";
+    case TfxExtern::DeferredLight:  return "deferred_light";
+    case TfxExtern::DeferredShadow: return "deferred_shadow";
+    case TfxExtern::Transparent:    return "transparent";
+    case TfxExtern::RigidModel:     return "rigid_model";
+    case TfxExtern::Decal:          return "decal";
+    case TfxExtern::SimpleGeometry: return "simple_geometry";
+    case TfxExtern::Atmosphere:     return "atmosphere";
+    case TfxExtern::Water:          return "water";
+    case TfxExtern::Hdao:           return "hdao";
+    case TfxExtern::GlobalLighting: return "global_lighting";
+    case TfxExtern::Cubemaps:       return "cubemaps";
+    case TfxExtern::SpeedtreePlacements: return "speedtree_placements";
+    case TfxExtern::DecoratorWind:  return "decorator_wind";
+    case TfxExtern::Postprocess:    return "postprocess";
+    case TfxExtern::ShadowMask:     return "shadowmask";
+    case TfxExtern::Fxaa:           return "fxaa";
+    default:                        return "extern";
+    }
+}
+
+static inline std::string extern_expr(const char* ty, TfxExtern ext, size_t byteOffset) {
+    char buf[96];
+    std::snprintf(buf, sizeof(buf), "%s+0x%zX", ExtName(ext), byteOffset);
+    return std::string("extern<") + ty + ">(" + buf + ")";
+}
+
+
 std::string DecompilationResult::pretty_print() const {
     std::string r;
     if (!samplers.empty()) {
@@ -161,7 +194,7 @@ DecompilationResult TfxBytecodeDecompiler::decompile(
         }
 
                                                // ---------- externs (optional; keep commented if you don’t have a path helper) ----------
-                                               // case TfxBytecode::PushExternInputFloat: {
+                                               //case TfxBytecode::PushExternInputFloat: {
                                                //     const auto d = std::get<PushExternInputFloatData>(i.data);
                                                //     const size_t off = size_t(d.offset) * 4;
                                                //     pushS("extern<float>(" + ExternStorage::get_field_path(d.ext, off) + ")");
@@ -217,6 +250,33 @@ DecompilationResult TfxBytecodeDecompiler::decompile(
             const auto d = std::get<PermuteData>(i.data);
             auto a = popS();
             pushS(swizzle4(a, d.fields));
+            break;
+        }
+
+        case TfxBytecode::PushExternInputTextureView: {
+            // nice to see where textures come from in the pretty output:
+            const auto d = std::get<PushExternInputTexData>(i.data);
+            const size_t off = size_t(d.offset) * 8;   // texture/u64 handles are 8 bytes in the spec
+            pushS(extern_expr("Texture", d.ext, off));
+            break;
+        }
+        case TfxBytecode::PushExternInputMat4: {
+            const auto d = std::get<PushExternInputMat4Data>(i.data);
+            const size_t off = size_t(d.offset) * 16;  // offset is in vec4s for mat4 too
+            // If your pipeline later pops 4 rows into cb, this string is still useful context.
+            pushS(extern_expr("float4x4", d.ext, off));
+            break;
+        }
+        case TfxBytecode::PushExternInputFloat: {
+            const auto d = std::get<PushExternInputFloatData>(i.data);
+            const size_t off = size_t(d.offset) * 4;   // floats are 4 bytes
+            pushS(extern_expr("float", d.ext, off));
+            break;
+        }
+        case TfxBytecode::PushExternInputVec4: {
+            const auto d = std::get<PushExternInputVec4Data>(i.data);
+            const size_t off = size_t(d.offset) * 16;  // vec4s are 16 bytes
+            pushS(extern_expr("float4", d.ext, off));
             break;
         }
 

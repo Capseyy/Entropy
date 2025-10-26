@@ -225,6 +225,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\Renderer\Graphics\RenderStates.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Render\gbuffer.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Render\Technique.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Scope\instance.cpp" />
@@ -267,13 +268,15 @@
     <ClCompile Include="src\Runtime\Threading\ThreadPool.cpp" />
     <ClCompile Include="src\Renderer\Loaders\StaticRenderer.cpp" />
     <ClCompile Include="src\Renderer\Loaders\StaticMap.cpp" />
-    <ClCompile Include="src\TigerEngine\Technique\Tfx\extern.cpp" />
+    <ClCompile Include="src\TigerEngine\Technique\Tfx\extern.h" />
     <ClCompile Include="src\TigerEngine\Technique\Tfx\tfx_decompiler.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\..\..\Downloads\depth_stencil_states.h" />
     <ClInclude Include="src\Renderer\Graphics\GameTimer.h" />
     <ClInclude Include="src\Renderer\Graphics\Render\gbuffer.h" />
     <ClInclude Include="src\Renderer\Graphics\Scope\instance.h" />
+    <ClInclude Include="src\Renderer\Graphics\RenderStates.h" />
     <ClInclude Include="src\Renderer\Loaders\RenderStatic.h" />
     <ClInclude Include="src\Renderer\Loaders\TextureLoader.h" />
     <ClInclude Include="src\Runtime\Assets\AssetCache.h" />
@@ -301,6 +304,9 @@
     <ClInclude Include="src\Renderer\Graphics\ImGui\imstb_textedit.h" />
     <ClInclude Include="src\Renderer\Graphics\ImGui\imstb_truetype.h" />
     <ClInclude Include="src\TigerEngine\Map\TigerBuffer.h" />
+    <ClInclude Include="src\TigerEngine\Technique\blend_state_descs.h" />
+    <ClInclude Include="src\TigerEngine\Technique\depth_bias_states.h" />
+    <ClInclude Include="src\TigerEngine\Technique\depth_stencil_states.h" />
     <ClInclude Include="src\TigerEngine\Technique\input_layout.h" />
     <ClInclude Include="src\Renderer\Graphics\Shaders\Shaders.h" />
     <ClInclude Include="src\Renderer\Graphics\GPUAdapter.h" />
@@ -317,6 +323,7 @@
     <ClInclude Include="src\TigerEngine\helpers.h" />
     <ClInclude Include="src\TigerEngine\Map\static.h" />
     <ClInclude Include="src\TigerEngine\package.h" />
+    <ClInclude Include="src\TigerEngine\Technique\rasterizer_states.h" />
     <ClInclude Include="src\TigerEngine\Technique\technique.h" />
     <ClInclude Include="src\TigerEngine\String\string.h" />
     <ClInclude Include="src\TigerEngine\tag.h" />

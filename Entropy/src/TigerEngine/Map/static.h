@@ -48,14 +48,13 @@ struct SStaticSpecial {
 	uint8_t PrimitiveType;
 	int8_t _unk6;
 	uint16_t _unk7;
-	TagHash index_buffer;
-	TagHash vertex_buffer1;
-	TagHash vertex_biffer2;
-	TagHash color_buffer;
+	TagHash IndexBuffer;
+	TagHash VertexBuffer1;
+	TagHash VertexBuffer2;
+	TagHash VertexColourBuffer;
 	uint32_t index_start;
 	uint32_t index_count;
 	TagHash technique;
-
 };
 
 struct SStaticModel {
@@ -64,7 +63,7 @@ public:
 	TagHash opaque_meshes{};
 	uint32_t Unk0C{};
 	std::vector<Unk_0x14008080> Techniques{};
-	std::array<uint32_t, 4> Unk20; //todo special_meshes
+	std::vector<SStaticSpecial> special_meshes; //todo special_meshes
 	uint32_t Unk30{};
 	uint64_t Unk34{};
 	std::array<float_t,3> Unk3C;
