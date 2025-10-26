@@ -16,6 +16,7 @@
 #include <cinttypes>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include "TigerEngine/Technique/Tfx/tfx_runtime.h"
 
 class WideHashData {
 public:
@@ -188,6 +189,9 @@ namespace bin {
 
     inline void read_into(Reader& r, glm::vec3& q) {
         q.x = r.read_arith<float>(); q.y = r.read_arith<float>(); q.z = r.read_arith<float>();
+    }
+    inline void read_into(Reader& r, Vec4& q) {
+        q.x = r.read_arith<float>(); q.y = r.read_arith<float>(); q.z = r.read_arith<float>(); q.w = r.read_arith<float>();
     }
 
     inline void read_into(Reader& r, TagHash& t) {

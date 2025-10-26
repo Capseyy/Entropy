@@ -226,6 +226,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\Renderer\Graphics\Render\gbuffer.cpp" />
+    <ClCompile Include="src\Renderer\Graphics\Render\Technique.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Scope\instance.cpp" />
     <ClCompile Include="src\Runtime\Assets\AssetSystem.cpp" />
     <ClCompile Include="src\Runtime\Assets\RuntimeAssetRegistry.cpp" />
@@ -266,6 +267,8 @@
     <ClCompile Include="src\Runtime\Threading\ThreadPool.cpp" />
     <ClCompile Include="src\Renderer\Loaders\StaticRenderer.cpp" />
     <ClCompile Include="src\Renderer\Loaders\StaticMap.cpp" />
+    <ClCompile Include="src\TigerEngine\Technique\Tfx\extern.cpp" />
+    <ClCompile Include="src\TigerEngine\Technique\Tfx\tfx_decompiler.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\Renderer\Graphics\Render\gbuffer.h" />
@@ -327,6 +330,11 @@
     <ClInclude Include="src\Runtime\Assets\StaticMesh.h" />
     <ClInclude Include="src\Renderer\Loaders\StaticRenderer.h" />
     <ClInclude Include="src\Renderer\Loaders\StaticMap.h" />
+    <ClInclude Include="src\TigerEngine\Technique\Tfx\tfx.h" />
+    <ClInclude Include="src\TigerEngine\Technique\Tfx\tfx_decompiler.h" />
+    <ClInclude Include="src\TigerEngine\Technique\Tfx\tfx_eval.h" />
+    <ClInclude Include="src\TigerEngine\Technique\Tfx\tfx_program.h" />
+    <ClInclude Include="src\TigerEngine\Technique\Tfx\tfx_runtime.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

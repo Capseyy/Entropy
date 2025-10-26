@@ -4,6 +4,8 @@
 #include <vector>
 #include <cstdint>
 #include <memory>
+#include "TigerEngine/Technique/tfx/tfx.h"
+#include "TigerEngine/Technique/technique.h"
 
 
 
@@ -67,6 +69,10 @@ namespace EntropyAssets {           // <<< add
         std::vector<std::shared_ptr<CBufferRes>>     CBuffers;
         std::vector<UINT>                            psCBSlots;        // <— add
 
+        STechniqueShader vertexdata;
+        STechniqueShader pixeldata;
+        
+        bool Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice, Microsoft::WRL::ComPtr<ID3D11DeviceContext> pContext);
     };
 
 } // namespace EntropyAssets       // <<< add

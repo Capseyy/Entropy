@@ -4,6 +4,20 @@
 #include <optional> 
 using Microsoft::WRL::ComPtr;
 
+#include <string>
+#include <sstream>
+#include <iomanip>
+
+
+std::string BytesToHex(const std::vector<uint8_t>& v, char sep = ' ') {
+    std::ostringstream oss;
+    oss << std::uppercase << std::hex << std::setfill('0');
+    for (size_t i = 0; i < v.size(); ++i) {
+        oss << std::setw(2) << static_cast<unsigned>(v[i]);
+        if (sep && i + 1 < v.size()) oss << sep;
+    }
+    return oss.str();
+}
 
 inline void SetDebugName(ID3D11DeviceChild* obj, const char* name)
 {
@@ -21,6 +35,10 @@ inline void SetDebugNameFmt(ID3D11DeviceChild* obj, const char* fmt, ...)
     va_end(ap);
     obj->SetPrivateData(WKPDID_D3DDebugObjectName,
         static_cast<UINT>(std::strlen(buf)), buf);
+}
+
+std::array<float_t, 4> ToArray(const Vec4& v) {
+    return { v.x, v.y, v.z, v.w };
 }
 
 //------------------------------------------------------------------------------
@@ -78,7 +96,7 @@ std::shared_ptr<ID3D11Buffer> AssetSystem::createBuffer_(const BufferPayload& p)
     if (FAILED(hr)) throw std::runtime_error("CreateBuffer failed");
 
     ID3D11Buffer* raw = buf.Detach();
-    return std::shared_ptr<ID3D11Buffer>(raw, [](ID3D11Buffer* b) { if (b) b->Release(); });
+    return std::shared_ptr<ID3D11Buffer>(raw, [](ID3D11Buffer* b) { ; });
 }
 
 //------------------------------------------------------------------------------
@@ -483,9 +501,9 @@ AssetSystem::createCBufferFromRaw_(const void* bytes, UINT sizeBytes)
     D3D11_BUFFER_DESC bd{};
     bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     bd.ByteWidth = byteWidth;                    // must be multiple of 16
-    bd.Usage = D3D11_USAGE_IMMUTABLE;            // fallback is static
+    bd.Usage = D3D11_USAGE_DEFAULT;            // fallback is static
     bd.CPUAccessFlags = 0;
-
+ 
     D3D11_SUBRESOURCE_DATA srd{};
     srd.pSysMem = bytes;
 
@@ -521,11 +539,22 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
         }
 
         STechnique Tfx = bin::parse<STechnique>(techniqueId.data, techniqueId.size, bin::Endian::Little);
+        printf("Starting Eval for MAT %08X \n", id);
+        //auto lines = Disassemble(Tfx.PixelShader.TFX_Bytecode, Tfx.PixelShader.TFX_Constants);
+        //std::vector<Vec4> cb0(64, Vec4::ZERO());   // output constant buffer
+        //std::array<Vec4, 16> temps{};               // 16 temp slots
+
+        //// 4) Externs provider
+        //ExternStorage externs;
+
+        //// 5) Run
+        //EvaluateExpressionEoF(ops, externs, cb0, &Tfx.PixelShader.TFX_Constants, temps);
+
 
         // --------- Shaders (your existing) ----------
         const uint32_t vsId = Tfx.VertexShader.ShaderTag.reference;
         const uint32_t psId = Tfx.PixelShader.ShaderTag.reference;
-
+       
         auto ensureShaderPayload = [this](uint32_t sid)->bool {
             if (R_->HasShader(sid)) return true;
             auto sTag = TagHash(sid);
@@ -667,7 +696,7 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
         else {
             if (Tfx.PixelShader.SamplerFallback.size() != 0) {
                 try {
-                    auto cb = createCBufferFromRaw_(Tfx.PixelShader.SamplerFallback.data(), Tfx.PixelShader.SamplerFallback.size()*0x10);
+                    auto cb = createCBufferFromRaw_(Tfx.PixelShader.SamplerFallback.data(), Tfx.PixelShader.SamplerFallback.size() * 0x10);
                     if (cb) {
                         // Reuse your existing vectors so your draw code stays unchanged
                         tech->CBuffers.push_back(cb);
@@ -722,6 +751,8 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
                 tech->psCBSlots.push_back(psCBSlot);
             }
         } 
+        tech->vertexdata = Tfx.VertexShader;
+        tech->pixeldata = Tfx.PixelShader;
 
         return tech;
         });

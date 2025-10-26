@@ -1,0 +1,22 @@
+{
+    "version": 1,
+    "revision": 0,
+    "rules": [
+        {
+            "primary-output": "x64\\Debug\\tfxcore.obj",
+            "outputs": [
+                "x64\\Debug\\tfxcore.h_E4CBAD725BA77DD.ifc.dt.module.json",
+                "x64\\Debug\\tfxcore.h_E4CBAD725BA77DD.ifc.dt.d.json",
+                "x64\\Debug\\tfxcore.h.ifc"
+            ],
+            "provides": [
+                {
+                    "logical-name": "C:\\Users\\SAM-PC\\source\\repos\\Entropy\\Entropy\\src\\TigerEngine\\Technique\\Tfx\\tfxcore.h",
+                    "source-path": "c:\\users\\sam-pc\\source\\repos\\entropy\\entropy\\src\\tigerengine\\technique\\tfx\\tfxcore.h",
+                    "lookup-method": "absolute"
+                }
+            ],
+            "requires": []
+        }
+    ]
+}

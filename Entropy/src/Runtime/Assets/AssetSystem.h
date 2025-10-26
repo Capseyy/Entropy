@@ -17,6 +17,8 @@
 #include "TigerEngine/Technique/texture.h"
 #include "Renderer/Loaders/TextureLoader.h"
 #include "Sampler.h"
+#include "TigerEngine/Technique/tfx/tfx.h"
+#include "TigerEngine/Technique/tfx/tfx_eval.h"
 
 struct BufferSRVMeta {
     enum class Kind { Structured, Raw, Typed } kind = Kind::Structured;

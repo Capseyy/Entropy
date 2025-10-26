@@ -69,7 +69,7 @@ bool Graphics::InitializeRenderGlobals()
 	auto& renderGlobalTechnique = GlobalData::getGlobalTechniques();
 	for (auto& global : renderGlobalTechnique)
 	{
-		this->globalTechniques.emplace(global.first, this->assets->EnqueueTechnique(global.second));
+		//this->globalTechniques.emplace(global.first, this->assets->EnqueueTechnique(global.second));
 	}
 	return true;
 }
@@ -153,42 +153,10 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 
 		// Make sure b1 is actually bound (once is fine; safe to rebind)
 		{ ID3D11Buffer* b = g_cb1.Get(); ctx->VSSetConstantBuffers(1, 1, &b); }
-
-		if (!tech->Textures.empty()) {
-			//printf("Mapping Textures");
-			const size_t n = std::min(tech->Textures.size(), tech->psTextureSlots.size());
-			for (size_t i = 0; i < n; ++i) {
-				UINT slot = tech->psTextureSlots[i];
-				ID3D11ShaderResourceView* s = tech->Textures[i] ? tech->Textures[i]->Get() : nullptr;
-				ctx->PSSetShaderResources(slot, 1, &s);
-			}
-		}
-		if (!tech->Textures3D.empty()) {
-			//printf("Mapping 3D Textures");
-			const size_t n = std::min(tech->Textures3D.size(), tech->psTextureSlots3D.size());
-			for (size_t i = 0; i < n; ++i) {
-				UINT slot = tech->psTextureSlots3D[i];
-				ID3D11ShaderResourceView* s = tech->Textures3D[i] ? tech->Textures3D[i]->Get() : nullptr;
-				ctx->PSSetShaderResources(slot, 1, &s);
-			}
-		}
-
-		if (!tech->CBuffers.empty()) {
-			for (size_t i = 0; i < tech->CBuffers.size(); ++i) {
-				ID3D11Buffer* b = tech->CBuffers[i]->buffer.Get();
-				ctx->PSSetConstantBuffers(i, 1, &b);
-			}
-		}
-
-		for (size_t i = 0; i < tech->Samplers.size(); ++i) {
-			ID3D11SamplerState* s = tech->Samplers[i]->sampler.Get();
-			ctx->PSSetSamplers(i + 1, 1, &s);
-		}
-
 		ID3D11ShaderResourceView* s = bg.color.get();
-		
+		//ctx->VSSetShaderResources(1, 1, &s);
 		ctx->VSSetShaderResources(0, 1, &s);
-
+		tech->Bind(pDevice, pContext);
 		UploadScopeViewCB12_All(ctx, view, float(windowWidth), float(windowHeight));
 		float bf[4] = {};
 		pContext->OMSetBlendState(bsOpaque.Get(), bf, 0xFFFFFFFF);
@@ -232,15 +200,19 @@ void Graphics::CreateWhite1x1SRV()
 void Graphics::BlitSRVToBackbuffer(ID3D11ShaderResourceView* srv)
 {
 	// 1) Pick a built-in blit/copy technique you already have
-	std::shared_ptr<EntropyAssets::Technique> tech = nullptr;
+	EntropyAssets::Technique* tech = nullptr;
 	if (auto it = globalTechniques.find("copy_texture_bilinear"); it != globalTechniques.end())
-		tech = it->second.get();
+		tech = it->second.get().get();
 	else if (auto it2 = globalTechniques.find("copy_texture"); it2 != globalTechniques.end())
-		tech = it2->second.get();
+		tech = it2->second.get().get();
 	else if (auto it3 = globalTechniques.find("debug_overlay_blit_texture"); it3 != globalTechniques.end())
-		tech = it3->second.get();
+		tech = it3->second.get().get();
+
 	if (!tech || tech->VS.empty() || tech->PS.empty()) {
-		printf("Failed to bind vs/ps");
+		// Fallback (see #2 below)
+		//printf("FAILED BUCKBUFFER");
+		//BlitWithSpriteBatch(srv);;
+		return;
 	}
 	// 2) Backbuffer + viewport + opaque state
 	ID3D11RenderTargetView* bb = pRenderTargetView.Get();
@@ -381,8 +353,12 @@ void Graphics::RenderFrame()
 	pContext->RSSetState(rasterizerState.Get());
 	pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	pipelineStage = PipelineStage::GBuffer;
-	for (auto& rs : staticsToDraw) DrawStaticMesh(rs, viewState);
-
+	for (auto& rs : staticsToDraw) {
+		if (rs.mesh->id != 0x80E88254) {
+			//continue;
+		}
+		DrawStaticMesh(rs, viewState);
+	}
 	// Finalize GBuffer for reading
 	gbufA.UnbindMRTs(pContext.Get());
 	pContext->CopyResource(gbufA.rt1_read.tex.Get(), gbufA.rt1.tex.Get());     // normals copy
@@ -394,7 +370,12 @@ void Graphics::RenderFrame()
 	pContext->ClearRenderTargetView(gbufA.light_diffuse.rtv.Get(), red);
 	RunGlobalLightingPass();
 	EndLightingPass();
-
+	DirectX::XMFLOAT3 L;
+	if (gbufA.ReadLightDiffusePixel(pContext.Get(), windowWidth / 2, windowHeight / 2, L)) {
+		char b[128];
+		sprintf_s(b, "Ld(center) = %.3f, %.3f, %.3f\n", L.x, L.y, L.z);
+		//printf(b);
+	}
 	// after EndLightingPass()
 	pContext->OMSetRenderTargets(1, pRenderTargetView.GetAddressOf(), nullptr);
 	const float black[4] = { 0,0,0,1 };
@@ -704,7 +685,7 @@ bool Graphics::InitializeScene()
 	}
 	InitializeInputLayouts();
 	staticMap = std::make_unique<StaticMap>(*this);
-	staticMap->Initialize(0x8102A565);  // root map hash (or whatever yours is)
+	staticMap->Initialize(0x80AD0290);  // root map hash (or whatever yours is)
 	staticsToDraw = staticMap->GetRenderList();
 	return true;
 }
