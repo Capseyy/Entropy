@@ -41,7 +41,7 @@ namespace EntropyAssets {           // <<< add
     struct HullShader { ComPtr<ID3D11HullShader>   hs; };
     struct DomainShader { ComPtr<ID3D11DomainShader> ds; };
     struct SamplerRes { ComPtr<ID3D11SamplerState> sampler; };
-    struct CBufferRes { ComPtr<ID3D11Buffer> buffer; UINT size = 0; };
+    struct CBufferRes { ComPtr<ID3D11Buffer> buffer; UINT size = 0; bool tfx_buffer = false; };
 
     struct Technique {
         uint32_t id = 0;
@@ -69,10 +69,13 @@ namespace EntropyAssets {           // <<< add
         std::vector<std::shared_ptr<CBufferRes>>     CBuffers;
         std::vector<UINT>                            psCBSlots;        // <— add
 
+        std::shared_ptr<CBufferRes>                  CBuffers_fallback = nullptr;
+        UINT                                         psCBSlots_fallback;
+
         STechniqueShader vertexdata;
         STechniqueShader pixeldata;
         
-        bool Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice, Microsoft::WRL::ComPtr<ID3D11DeviceContext> pContext);
+        bool Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice, Microsoft::WRL::ComPtr<ID3D11DeviceContext> pContext, ExternStorage externs);
     };
 
 } // namespace EntropyAssets       // <<< add

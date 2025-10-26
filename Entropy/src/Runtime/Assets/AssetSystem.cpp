@@ -501,8 +501,8 @@ AssetSystem::createCBufferFromRaw_(const void* bytes, UINT sizeBytes)
     D3D11_BUFFER_DESC bd{};
     bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     bd.ByteWidth = byteWidth;                    // must be multiple of 16
-    bd.Usage = D3D11_USAGE_DEFAULT;            // fallback is static
-    bd.CPUAccessFlags = 0;
+    bd.Usage = D3D11_USAGE_DYNAMIC;            // fallback is static
+    bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
  
     D3D11_SUBRESOURCE_DATA srd{};
     srd.pSysMem = bytes;
@@ -699,8 +699,8 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
                     auto cb = createCBufferFromRaw_(Tfx.PixelShader.SamplerFallback.data(), Tfx.PixelShader.SamplerFallback.size() * 0x10);
                     if (cb) {
                         // Reuse your existing vectors so your draw code stays unchanged
-                        tech->CBuffers.push_back(cb);
-                        tech->psCBSlots.push_back(0);
+                        tech->CBuffers_fallback = cb;
+                        tech->psCBSlots_fallback = 0;
                     }
                 }
                 catch (const std::exception& e) {

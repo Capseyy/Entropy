@@ -23,6 +23,7 @@
 #include <dxgi.h>    
 #include <dxgiformat.h> 
 #include "Renderer/Graphics/Render/gbuffer.h"
+#include "GameTimer.h"
 
 
 enum class PipelineStage { Forward, GBuffer, Lighting };
@@ -62,6 +63,10 @@ private:
 	VertexShader vertexshader;
 
 	UINT offset = 0;
+
+	GameTimer gTimer;
+
+	ExternStorage externs;
 
 	Model model;
 

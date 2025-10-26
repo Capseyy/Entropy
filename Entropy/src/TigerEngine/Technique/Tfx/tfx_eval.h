@@ -5,9 +5,7 @@
 #include <algorithm>
 #include <string>
 
-// ?????????????????????????????????????????????????????????????????????????????
-// Private helpers (single definition; no collisions with std::abs, etc.)
-// ?????????????????????????????????????????????????????????????????????????????
+
 #ifndef TFX_EVAL_HELPERS_DEFINED
 #define TFX_EVAL_HELPERS_DEFINED
 namespace tfx_eval_detail {
@@ -78,12 +76,12 @@ namespace tfx_eval_detail {
     }
 
 } // namespace tfx_eval_detail
-#endif // TFX_EVAL_HELPERS_DEFINED
+#endif 
 
-// If you define OpName elsewhere, keep that one. We just need a decl here.
+
 inline const char* OpName(TfxBytecode);
 
-// Payload pretty-printer used by tracing (no duplicates elsewhere).
+
 static inline std::string DescribePayload(const TfxData& i) {
     char b[64]; b[0] = 0;
     switch (i.op) {
@@ -157,8 +155,8 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
     std::vector<Vec4>& cb,
     const std::vector<Vec4>& constants,
     std::array<Vec4, 16>& temp,
-    void* /*user_tex_hook*/ = nullptr,
-    void* /*user_samp_hook*/ = nullptr,
+    void*  = nullptr,
+    void*  = nullptr,
     bool trace = false)
 {
     using namespace tfx_eval_detail;
@@ -296,7 +294,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             break;
         }
 
-                                       // resource/sampler ops are no-ops here (binding happens elsewhere)
+                                       
         case TfxBytecode::PushSampler:
         case TfxBytecode::SetShaderSampler:
         case TfxBytecode::SetShaderTexture:

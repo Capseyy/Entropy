@@ -156,7 +156,7 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 		ID3D11ShaderResourceView* s = bg.color.get();
 		//ctx->VSSetShaderResources(1, 1, &s);
 		ctx->VSSetShaderResources(0, 1, &s);
-		tech->Bind(pDevice, pContext);
+		tech->Bind(pDevice, pContext, externs );
 		UploadScopeViewCB12_All(ctx, view, float(windowWidth), float(windowHeight));
 		float bf[4] = {};
 		pContext->OMSetBlendState(bsOpaque.Get(), bf, 0xFFFFFFFF);
@@ -340,8 +340,15 @@ void Graphics::EndLightingPass()
 void Graphics::RenderFrame()
 {
 	mainQueue->Drain();
-
+	gTimer.tick();
 	// View/Proj
+	FrameExtern frame{};
+	frame.game_time = float(gTimer.total_game_time());  // what your bytecode usually wants
+	frame.render_time = float(gTimer.total_real_time());  // optional: wall clock since start
+	frame.delta_game_time = float(gTimer.delta_game_time());  // optional: per-frame dt (scaled)
+	frame.exposure_time = 1.0f / 60.0f;  
+	externs.set(TfxExtern::Frame, frame);// or whatever your pipeline uses
+
 	View viewState{};
 	XMStoreFloat4x4(&viewState.world_to_camera, camera.GetViewMatrix());
 	XMStoreFloat4x4(&viewState.camera_to_projective, camera.GetProjectionMatrix());
@@ -449,7 +456,7 @@ void Graphics::RenderFrame()
 	ImGui::Render();
 	ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 
-	pSwapChain->Present(1, 0);
+	pSwapChain->Present(0, 0);
 }
 
 bool Graphics::Initialize(HWND hWnd, int width, int height)
@@ -685,7 +692,8 @@ bool Graphics::InitializeScene()
 	}
 	InitializeInputLayouts();
 	staticMap = std::make_unique<StaticMap>(*this);
-	staticMap->Initialize(0x80AD0290);  // root map hash (or whatever yours is)
+	staticMap->Initialize(0x8102A565);  // root map hash (or whatever yours is)
 	staticsToDraw = staticMap->GetRenderList();
+	gTimer.reset();
 	return true;
 }

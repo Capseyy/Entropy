@@ -13,7 +13,7 @@ bool StaticMap::Initialize(uint32_t mapRootHash)
 	auto static_instancer = bin::parse<SStaticMeshInstances>(StaticInstanceTable.data, StaticInstanceTable.size, bin::Endian::Little);
 	printf("Static Instance Table has %zu static tags\n", static_instancer.static_tags.size());
 	for (auto& static_instance : static_instancer.instance_groups) {
-		if (static_instancer.static_tags[static_instance.static_intex].hash != 0x80E86F82)
+		if (static_instancer.static_tags[static_instance.static_intex].hash != 0x80BD8957)
 		{
 			//continue;
 		}

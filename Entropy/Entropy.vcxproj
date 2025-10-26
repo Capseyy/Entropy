@@ -271,6 +271,7 @@
     <ClCompile Include="src\TigerEngine\Technique\Tfx\tfx_decompiler.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\Renderer\Graphics\GameTimer.h" />
     <ClInclude Include="src\Renderer\Graphics\Render\gbuffer.h" />
     <ClInclude Include="src\Renderer\Graphics\Scope\instance.h" />
     <ClInclude Include="src\Renderer\Loaders\RenderStatic.h" />
