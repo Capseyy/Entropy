@@ -4,10 +4,11 @@
 #pragma comment(lib, "d3dcompiler.lib")
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
 
+
 static void DrawFullscreenTriangle(ID3D11DeviceContext* ctx) {
-	ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 	ctx->IASetInputLayout(nullptr);   // shader must be VS that generates a triangle or uses no inputs
-	ctx->Draw(3, 0);
+	ctx->Draw(4, 0);
 }
 
 static DirectX::XMMATRIX MakeReversedZProjLH(float fovY, float aspect, float zNear)
@@ -266,52 +267,119 @@ void Graphics::RenderFrame()
 	viewState.derive_matrices_vs({ {float(windowWidth), float(windowHeight)} });
 	UploadScopeViewCB12_All(pContext.Get(), viewState, float(windowWidth), float(windowHeight));
 
-	// ====================== G-BUFFER PASS ======================
+	// =========================
+	// generate_gbuffer
+	// =========================
 	{
-		// Unbind any SRVs that may alias GBuffer
+		ScopedGpuEvent e(anno_.Get(), L"generate_gbuffer");
+
+		// Make sure nothing aliases MRTs
 		ID3D11ShaderResourceView* nullSRV[16] = {};
 		pContext->PSSetShaderResources(0, 16, nullSRV);
 
-		// Bind MRTs + DSV
+		// Bind GBuffer (RT0/RT1/RT2 + DSV) and clear them (also sets viewport)
 		gbufA.BindGBufferForWriting(pContext.Get());
 
-		// *** Reversed-Z: clear depth to 0.0f ***
-		pContext->ClearDepthStencilView(gbufA.depth.dsv.Get(),
-			D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 0.0f, 0);
-
-		// Opaque (no blending), independent write masks ok
-		float bf[4] = {};
+		float bf[4] = { 1.0f,1.0f,1.0f,1.0f };;
 		pContext->OMSetBlendState(bsGBufferOpaqueIndependent.Get(), bf, 0xFFFFFFFF);
-
-		// Reversed-Z write state (GREATER)
 		pContext->OMSetDepthStencilState(gbufA.depth.dsWrite.Get(), 0);
 
-		// Culling + topology
-		pContext->RSSetState(rasterizerState.Get()); // cull back
+		pContext->RSSetState(rasterizerState.Get());
 		pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
 		pipelineStage = PipelineStage::GBuffer;
+
+		for (auto& rs : staticsToDraw) {
+			DrawStaticMesh(rs, viewState);
+		}
 	}
 
-	// draw geometry...
-	for (auto& rs : staticsToDraw) {
-		DrawStaticMesh(rs, viewState);
+	// =========================
+	// copy (RT1 -> RT1_Clone) and depth -> depthCopy
+	// =========================
+	{
+		ScopedGpuEvent e(anno_.Get(), L"copy (RT1->RT1_Clone)");
+		pContext->CopyResource(gbufA.rt1_read.tex.Get(), gbufA.rt1.tex.Get());
+	}
+	{
+		ScopedGpuEvent e(anno_.Get(), L"copy (Depth->DepthCopySRV)");
+		// Copy to the GPU-readable copy so we can sample depth in lighting
+		if (gbufA.depth.texCopy && gbufA.depth.tex)
+			pContext->CopyResource(gbufA.depth.texCopy.Get(), gbufA.depth.tex.Get());
 	}
 
+	// Unbind MRTs to avoid hazards before lighting
 	gbufA.UnbindMRTs(pContext.Get());
-	pContext->CopyResource(gbufA.rt1_read.tex.Get(), gbufA.rt1.tex.Get());
+
+	// =========================
+	// decals (optional)
+	// =========================
+	// ...bind rt0/rt1/rt2 again and render decals if you have them...
+
+	// =========================
+	// lighting_pass
+	// =========================
+	{
+		ScopedGpuEvent e(anno_.Get(), L"lighting_pass");
+
+		// Bind lighting outputs (3 RTs like Alkahest)
+		ID3D11RenderTargetView* lightRTs[3] = {
+			gbufA.light_diffuse.rtv.Get(),
+			gbufA.light_specular.rtv.Get(),
+			gbufA.shading_result.rtv.Get()
+		};
+		pContext->OMSetRenderTargets(3, lightRTs, nullptr);
+
+		// Clear as in the capture: diffuse ~ 0.001, others 0
+		const float cDiffuse[4] = { 0.001f, 0.001f, 0.001f, 0.0f };
+		const float cBlack[4] = { 0.0f,   0.0f,   0.0f,   0.0f };
+		pContext->ClearRenderTargetView(gbufA.light_diffuse.rtv.Get(), cDiffuse);
+		pContext->ClearRenderTargetView(gbufA.light_specular.rtv.Get(), cDiffuse);
+		pContext->ClearRenderTargetView(gbufA.shading_result.rtv.Get(), cBlack);
+		pContext->RSSetState(rasterizerStateNoCull.Get());
+		float bf[4] = { 1.0f,1.0f, 1.0f, 1.0f};
+		pContext->OMSetBlendState(bsOpaque.Get(), bf, 0xFFFFFFFF);
+
+		// Depth testing is not needed for a full-screen pass; we sample depth via SRV.
+		pContext->OMSetDepthStencilState(nullptr, 0);
+
+		// Bind G-buffer SRVs for the pixel shader:
+		ID3D11ShaderResourceView* gbufSRVs[3] = {
+			gbufA.rt2.srv.Get(),             // Albedo (sRGB->linear in shader)
+			gbufA.rt1.srv.Get(),             // Normal/Roughness            // Material / params
+			gbufA.depth.texCopySRV.Get()     // Linear depth SRV (reversed-Z)
+		};
+		pContext->PSSetShaderResources(0, 3, gbufSRVs);
+
+		// Bind samplers you need (point/linear clamp)
+		ID3D11SamplerState* sams[2] = { samplerPointClamp.Get(), samplerLinearClamp.Get() };
+		pContext->PSSetSamplers(0, 2, sams);
+
+		// Bind lighting technique/shaders (replace with yours)
+		if (auto it = globalTechniques.find("global_lighting"); it != globalTechniques.end()) {
+			it->second.get()->Bind(pDevice, pContext, externs, states);
+			printf("written global lighting");
+		}
+		
+		pContext->OMSetDepthStencilState(depthStencilStateLighting.Get(), 0);
+		// Draw full-screen to accumulate lighting
+		DrawFullscreenTriangle(pContext.Get());
+
+		// Unbind SRVs to avoid “resource is still bound” hazards later
+		ID3D11ShaderResourceView* nulls[8] = {};
+		pContext->PSSetShaderResources(0, 8, nulls);
+	}
+
+	// =========================
+	// Present / debug overlay
+	// =========================
 	pContext->OMSetRenderTargets(1, pRenderTargetView.GetAddressOf(), nullptr);
 	D3D11_VIEWPORT vp{};
-	vp.Width = float(windowWidth);
-	vp.Height = float(windowHeight);
+	vp.Width = float(windowWidth); vp.Height = float(windowHeight);
 	vp.MinDepth = 0.0f; vp.MaxDepth = 1.0f;
 	pContext->RSSetViewports(1, &vp);
 
 	const float black[4] = { 0,0,0,1 };
 	pContext->ClearRenderTargetView(pRenderTargetView.Get(), black);
-
-	ID3D11ShaderResourceView* nulls[16] = {};
-	pContext->PSSetShaderResources(0, 16, nulls);
 
 	if (!fpsTimer.isrunning) { fpsTimer.Start(); }
 	static int fpsCounter = 0; static std::string fpsString = "FPS: 0";
@@ -329,16 +397,15 @@ void Graphics::RenderFrame()
 
 	spriteBatch->Begin();
 	if (drawrt1)         spriteBatch->Draw(gbufA.rt1_read.srv.Get(), DirectX::XMFLOAT2(0, 0));
-	if (drawrt0)         spriteBatch->Draw(gbufA.rt0.srv.Get(), DirectX::XMFLOAT2(-1, -1));
+	if (drawrt0)         spriteBatch->Draw(gbufA.rt0.srv.Get(), DirectX::XMFLOAT2(0, 0));
 	if (drawrt2)         spriteBatch->Draw(gbufA.rt2.srv.Get(), DirectX::XMFLOAT2(0, 0));
 	if (drawLight_diffuse)   spriteBatch->Draw(gbufA.light_diffuse.srv.Get(), DirectX::XMFLOAT2(0, 0));
 	if (drawLight_specular)  spriteBatch->Draw(gbufA.light_specular.srv.Get(), DirectX::XMFLOAT2(0, 0));
-	if (drawDepth)           spriteBatch->Draw(gbufA.depth.srv.Get(), DirectX::XMFLOAT2(0, 0));
+	//if (drawDepth)           spriteBatch->Draw(gbufA.depth.srv.Get(), DirectX::XMFLOAT2(0, 0));
 	spriteFont->DrawString(spriteBatch.get(), StringConverter::StringToWide(fpsString).c_str(), DirectX::XMFLOAT2(0, 0), DirectX::Colors::Wheat);
 	spriteFont->DrawString(spriteBatch.get(), StringConverter::StringToWide(CameraPrint).c_str(), DirectX::XMFLOAT2(0, 50), DirectX::Colors::Wheat);
 	spriteFont->DrawString(spriteBatch.get(), StringConverter::StringToWide(CameraPrintRot).c_str(), DirectX::XMFLOAT2(0, 100), DirectX::Colors::Wheat);
 	spriteBatch->End();
-
 	ImGui_ImplDX11_NewFrame();
 	ImGui_ImplWin32_NewFrame();
 	ImGui::NewFrame();
@@ -474,6 +541,14 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		hr = pDevice->CreateDepthStencilState(&dsRZ, depthStencilState.GetAddressOf());
 		COM_ERROR_IF_FAILED(hr, "Failed to create reversed-Z depth stencil state.");
 
+		CD3D11_DEPTH_STENCIL_DESC dsRZ1(D3D11_DEFAULT);
+		dsRZ1.DepthEnable = FALSE;
+		dsRZ1.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
+		dsRZ1.DepthFunc = D3D11_COMPARISON_NEVER; // <— NOT GREATER_EQUAL
+		hr = pDevice->CreateDepthStencilState(&dsRZ1, depthStencilStateLighting.GetAddressOf());
+		COM_ERROR_IF_FAILED(hr, "Failed to create reversed-Z depth stencil state.");
+
+
 		// Bind once for the default backbuffer path (your GBuffer has its own dsWrite)
 		pContext->OMSetDepthStencilState(depthStencilState.Get(), 0);
 
@@ -539,6 +614,14 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		}
 		hr = pDevice->CreateBlendState(&bd, bsGBufferOpaqueIndependent.GetAddressOf());
 		COM_ERROR_IF_FAILED(hr, "Failed to create bsGBufferOpaqueIndependent");
+
+		CD3D11_RASTERIZER_DESC rzGBuf(D3D11_DEFAULT);
+		rzGBuf.CullMode = D3D11_CULL_BACK;
+		rzGBuf.FrontCounterClockwise = TRUE;   // or FALSE if your winding is CW
+		rzGBuf.DepthBias = +1;                 // <-- tiny bias in integer units
+		rzGBuf.SlopeScaledDepthBias = 0.0f;
+		rzGBuf.DepthBiasClamp = 0.0f;
+		pDevice->CreateRasterizerState(&rzGBuf, rasterizerStateGBuffer.GetAddressOf());
 
 		D3D11_BLEND_DESC d{}; d.RenderTarget[0].BlendEnable = TRUE;
 		d.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;  d.RenderTarget[0].DestBlend = D3D11_BLEND_ONE;

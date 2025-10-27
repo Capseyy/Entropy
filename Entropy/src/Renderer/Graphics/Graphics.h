@@ -74,9 +74,14 @@ private:
 
 	CD3D11_VIEWPORT viewport;
 
+	ComPtr<ID3D11DepthStencilState> dsWriteG;     // NEW (GREATER)
+	ComPtr<ID3D11DepthStencilState> dsReadOnlyG;  // NEW (GREATER, write=ZERO)
+
 	Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthStencilView;
 	Microsoft::WRL::ComPtr<ID3D11Texture2D> depthStencilBuffer;
 	Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthStencilState;
+
+	Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthStencilStateLighting;
 
 	Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerState;
 	Microsoft::WRL::ComPtr<ID3D11BlendState> blendState;
@@ -93,6 +98,7 @@ private:
 	ComPtr<ID3D11SamplerState> samplerLinearClamp;
 
 	Microsoft::WRL::ComPtr<ID3D11BlendState> bsGBufferOpaqueIndependent;
+	Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerStateGBuffer;
 
 	RenderStates states;
 
