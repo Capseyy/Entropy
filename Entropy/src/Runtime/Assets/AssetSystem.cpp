@@ -708,6 +708,22 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
                 }
             }
         }
+
+        
+            
+        if (Tfx.PixelShader.SamplerFallback.size() != 0) {
+            try {
+                auto cb = createCBufferFromRaw_(Tfx.VertexShader.SamplerFallback.data(), Tfx.VertexShader.SamplerFallback.size() * 0x10);
+                if (cb) {
+                    // Reuse your existing vectors so your draw code stays unchanged
+                    tech->CBuffers_fallback_VS = cb;
+                    tech->vsCBSlots_fallback = 0;
+                }
+            }
+            catch (const std::exception& e) {
+                printf("[Tech] %08X fallback PS cbuffer failed: %s\n", id, e.what());
+            }
+        }
         
 
         // --------- Collect everything ----------
@@ -754,7 +770,7 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
         tech->vertexdata = Tfx.VertexShader;
         tech->pixeldata = Tfx.PixelShader;
         tech->StateSelection = Tfx.StateSelection;
-
+        tech->usedScopes = Tfx.UsedScopes;
         return tech;
         });
 }

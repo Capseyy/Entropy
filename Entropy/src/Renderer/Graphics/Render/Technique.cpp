@@ -2,6 +2,29 @@
 #undef min
 #undef max
 #include "TigerEngine/Technique/Tfx/tfx_program.h"
+#undef TRANSPARENT
+
+
+namespace TfxScope{
+    using Bits = uint64_t;
+    enum : Bits {
+        FRAME = 1ull << 0, VIEW = 1ull << 1, RIGID_MODEL = 1ull << 2, EDITOR_MESH = 1ull << 3,
+        EDITOR_TERRAIN = 1ull << 4, CUI_VIEW = 1ull << 5, CUI_OBJECT = 1ull << 6, SKINNING = 1ull << 7,
+        SPEEDTREE = 1ull << 8, CHUNK_MODEL = 1ull << 9, DECAL = 1ull << 10, INSTANCES = 1ull << 11,
+        SPEEDTREE_LOD_DRAWCALL_DATA = 1ull << 12, TRANSPARENT = 1ull << 13, TRANSPARENT_ADVANCED = 1ull << 14,
+        SDSM_BIAS_AND_SCALE_TEXTURES = 1ull << 15, TERRAIN = 1ull << 16, POSTPROCESS = 1ull << 17,
+        CUI_BITMAP = 1ull << 18, CUI_STANDARD = 1ull << 19, UI_FONT = 1ull << 20, CUI_HUD = 1ull << 21,
+        PARTICLE_TRANSFORMS = 1ull << 22, PARTICLE_LOCATION_METADATA = 1ull << 23, CUBEMAP_VOLUME = 1ull << 24,
+        GEAR_PLATED_TEXTURES = 1ull << 25, GEAR_DYE_0 = 1ull << 26, GEAR_DYE_1 = 1ull << 27, GEAR_DYE_2 = 1ull << 28,
+        GEAR_DYE_DECAL = 1ull << 29, GENERIC_ARRAY = 1ull << 30, GEAR_DYE_SKIN = 1ull << 31, GEAR_DYE_LIPS = 1ull << 32,
+        GEAR_DYE_HAIR = 1ull << 33, GEAR_DYE_FACIAL_LAYER_0_MASK = 1ull << 34, GEAR_DYE_FACIAL_LAYER_0_MATERIAL = 1ull << 35,
+        GEAR_DYE_FACIAL_LAYER_1_MASK = 1ull << 36, GEAR_DYE_FACIAL_LAYER_1_MATERIAL = 1ull << 37,
+        PLAYER_CENTERED_CASCADED_GRID = 1ull << 38, GEAR_DYE_012 = 1ull << 39, COLOR_GRADING_UBERSHADER = 1ull << 40
+    };
+    inline Bits from_bits_truncate(Bits v) { return v & ((Bits(1) << 41) - 1); }
+    inline bool has(Bits s, Bits b) { return (s & b) != 0; }
+}
+
 
 struct DecodedSelection {
     std::optional<uint8_t> blend;
@@ -24,10 +47,12 @@ static inline DecodedSelection DecodeStateSelection(uint32_t sel) {
 }
 
 bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice,
-    Microsoft::WRL::ComPtr<ID3D11DeviceContext> pContext, ExternStorage externs, RenderStates states)
+    Microsoft::WRL::ComPtr<ID3D11DeviceContext> pContext, ExternStorage externs, RenderStates states, std::vector<std::pair<std::string, SScope>> scopes)
 {
     uint32_t StateSelection = this->StateSelection;
 
+    uint64_t UsedScopes = this->usedScopes;
+    auto used = TfxScope::from_bits_truncate(this->usedScopes);
 
     const auto sel = DecodeStateSelection(this->StateSelection);
 
@@ -75,10 +100,7 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
     // implement getFloat/getVec4/getMat4 in extern.cpp
     auto& cb0 = this->pixeldata.SamplerFallback; // std::vector<Vec4> used as cb0 backing
     prog.Evaluate(externs, cb0);         // writes float4s to cb0[..] as dictated by bytecode
-    if (this->id == 0x80C0D09E) {
-        //printf("%s \n", prog.DecompilePretty().c_str());
-    }
-    // ---- 2) Upload cb0 into a D3D11 constant buffer (slot 0 by convention) ----
+    
     if (this->CBuffers.empty() && this->CBuffers_fallback != nullptr)  {
         ID3D11Buffer* buf = this->CBuffers_fallback->buffer.Get();
 
@@ -174,6 +196,20 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
             pContext->PSSetShaderResources(slot, 1, &srv);
         }
     }
+
+    TfxProgram prog_vs = TfxProgram::FromBytecode(this->vertexdata.TFX_Bytecode,
+        this->vertexdata.TFX_Constants);
+    auto& cb0_vs = this->vertexdata.SamplerFallback;
+
+    //if (TfxScope::has(used, TfxScope::FRAME)) {
+    //    pContext->VSSetConstantBuffers(1, 1, &b);
+    //    pContext->PSSetConstantBuffers(1, 1, &b);
+    //}
+    //if (TfxScope::has(used, TfxScope::VIEW)) {
+    //    ID3D11Buffer* b = g_scopeView_b12.Get();       // view/proj CB
+    //    pContext->VSSetConstantBuffers(12, 1, &b);
+    //    pContext->PSSetConstantBuffers(12, 1, &b);
+    //}
 
     return true;
 }

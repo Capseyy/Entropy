@@ -7,6 +7,7 @@
 #include "TigerEngine/Technique/tfx/tfx.h"
 #include "TigerEngine/Technique/technique.h"
 #include "Renderer/Graphics/RenderStates.h"
+#include "TigerEngine/ClientStartup/RenderGlobals.h"
 
 namespace EntropyAssets {           // <<< add
 
@@ -71,12 +72,32 @@ namespace EntropyAssets {           // <<< add
         std::shared_ptr<CBufferRes>                  CBuffers_fallback = nullptr;
         UINT                                         psCBSlots_fallback;
 
+        //VS
+        std::vector<std::shared_ptr<Texture2DRes>>   Textures_VS;
+        std::vector<UINT>                            vsTextureSlots;
+
+        std::vector<std::shared_ptr<Texture3DRes>>   Textures3D_VS;
+        std::vector<UINT>                            vsTextureSlots3D;
+
+        // NEW: PS samplers
+        std::vector<std::shared_ptr<SamplerRes>>     Samplers_VS;
+        std::vector<UINT>                            vsSamplerSlots;   // <— add
+
+        // NEW: PS cbuffer (you can have more than one if your format allows)
+        std::vector<std::shared_ptr<CBufferRes>>     CBuffers_VS;
+        std::vector<UINT>                            vsCBSlots;        // <— add
+
+        std::shared_ptr<CBufferRes>                  CBuffers_fallback_VS = nullptr;
+        UINT                                         vsCBSlots_fallback;
+
+        uint64_t usedScopes;
+
         STechniqueShader vertexdata;
         STechniqueShader pixeldata;
 
         uint32_t StateSelection;
         
-        bool Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice, Microsoft::WRL::ComPtr<ID3D11DeviceContext> pContext, ExternStorage externs, RenderStates states);
+        bool Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice, Microsoft::WRL::ComPtr<ID3D11DeviceContext> pContext, ExternStorage externs, RenderStates states, std::vector<std::pair<std::string, SScope>> scopes);
     };
 
 } // namespace EntropyAssets       // <<< add

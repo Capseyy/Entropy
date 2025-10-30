@@ -4,6 +4,58 @@
 #pragma comment(lib, "d3dcompiler.lib")
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
 
+Microsoft::WRL::ComPtr<ID3D11Buffer> cb0_override;
+
+// helper – create the 1216-byte PS CB0 (usage: dynamic so we can Map/Unmap like in the capture)
+static void EnsureCB0(ID3D11Device* dev, Microsoft::WRL::ComPtr<ID3D11Buffer>& buf)
+{
+	if (buf) return;
+	D3D11_BUFFER_DESC bd{};
+	bd.ByteWidth = 76 * 16;                  // 76 float4 = 1216 bytes
+	bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+	bd.Usage = D3D11_USAGE_DYNAMIC;
+	bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+	dev->CreateBuffer(&bd, nullptr, &buf);
+}
+
+// exact CB0 contents from your capture (cb0_v0..cb0_v75)
+static const float kCB0Data[76][4] = { {0,0,0,0},
+ {0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},
+ {0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},
+ {0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},
+ {0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},
+ {0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},
+ {0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{1,1,1,1},
+ {0,0,0,0},{1,1,1,1},{0,0,0,0},{0,0,0,0},{0.001f,0,0,0},{0,0,0,0},{1,-1,1,0},{0.25f,0.25f,0.25f,0.25f},
+ {1,0,0,0},{0.25f,0.25f,0.25f,0.25f},{-0.5f,0.75f,0,0},{0,0,0,0},{0,0,0,0},{1,1,1,1},
+ {0,0,0,0},{0,0,0,0},{1,0,0,0},{0.25f,0.25f,0.25f,0.25f},{1,-1,1,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},
+ {1,-1,0,0},{1,1,1,1},{0,0,0,0},{1,1,1,1},{0,100,0,0}
+};
+
+
+
+void Graphics::CreateWhite1x1SRV()
+{
+	UINT color = 0xFFFFFFFF; // RGBA8 UNORM white
+	D3D11_TEXTURE2D_DESC td = {};
+	td.Width = 1; td.Height = 1; td.MipLevels = 1; td.ArraySize = 1;
+	td.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+	td.SampleDesc = { 1,0 };
+	td.Usage = D3D11_USAGE_DEFAULT;
+	td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+
+	D3D11_SUBRESOURCE_DATA init = { &color, 4, 0 };
+
+	Microsoft::WRL::ComPtr<ID3D11Texture2D> tex;
+	pDevice->CreateTexture2D(&td, &init, tex.GetAddressOf());
+
+	D3D11_SHADER_RESOURCE_VIEW_DESC svd = {};
+	svd.Format = td.Format;
+	svd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+	svd.Texture2D.MipLevels = 1;
+
+	pDevice->CreateShaderResourceView(tex.Get(), &svd, white1x1SRV.GetAddressOf());
+}
 
 static void DrawFullscreenTriangle(ID3D11DeviceContext* ctx) {
 	ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
@@ -114,7 +166,7 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 	// View constant buffer(s)
 	ID3D11Buffer* b1 = g_cb1.Get();            // if you also use cb1 for per-object, leave it bound
 	ctx->VSSetConstantBuffers(1, 1, &b1);
-	//UploadScopeViewCB12_All(ctx, view, (float)windowWidth, (float)windowHeight);
+	
 	ID3D11Buffer* b12 = g_scopeView_b12.Get();
 	XMFLOAT3 mesh_offset;
 	mesh_offset.x = rs.meshData.mesh_offset[0];
@@ -166,8 +218,8 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 		ctx->VSSetShaderResources(0, 1, &s);
 		pContext->OMSetDepthStencilState(gbufA.depth.dsWrite.Get(), 0);
 
-		tech->Bind(pDevice, pContext, externs, states);
-		
+		tech->Bind(pDevice, pContext, externs, states, scopes);
+
 		// --- Re-assert OM targets and states for the GBuffer pass ---
 		if (pipelineStage == PipelineStage::GBuffer) {
 			// Bind exactly the MRTs you have:
@@ -178,7 +230,7 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 			};
 			ctx->OMSetRenderTargets(3, rts, gbufA.depth.dsv.Get());
 
-			float bf[4] = {1.0f,1.0f, 1.0f, 1.0f};
+			float bf[4] = { 1.0f,1.0f, 1.0f, 1.0f };
 			ctx->OMSetBlendState(bsGBufferOpaqueIndependent.Get(), bf, 0xFFFFFFFF);
 			ctx->OMSetDepthStencilState(gbufA.depth.dsWrite.Get(), 0); // GREATER, writes ON
 		}
@@ -191,7 +243,7 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 	}
 	//swprintf(label, 128, L"Static geometry decal %08X", rs.mesh->id);
 	//mark.a(label);
-	for (const auto& special : rs.specials) {                   
+	for (const auto& special : rs.specials) {
 		continue;
 		// If technique is shared_ptr:
 		auto tech = special->technique;               // copy is fine; bumps refcount
@@ -231,9 +283,9 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 		ID3D11ShaderResourceView* s = bg->color.get();
 		//ctx->VSSetShaderResources(1, 1, &s);
 		ctx->VSSetShaderResources(0, 1, &s);
-		tech->Bind(pDevice, pContext, externs, states);
+		tech->Bind(pDevice, pContext, externs, states, scopes);
 		UploadScopeViewCB12_All(ctx, view, float(windowWidth), float(windowHeight));
-		float bf[4] = {1.0f,1.0f,1.0f,1.0f};
+		float bf[4] = { 1.0f,1.0f,1.0f,1.0f };
 		pContext->OMSetBlendState(bsOpaque.Get(), bf, 0xFFFFFFFF);
 		// --- Draw
 		const UINT instanceCount = (UINT)rs.world.size();
@@ -244,6 +296,29 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 			0);
 	}
 
+}
+struct CB13Data { DirectX::XMFLOAT4 v0, v1, v2, v3, v4; };
+
+void Graphics::CreateCB13()
+{
+	D3D11_BUFFER_DESC bd{};
+	bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+	bd.ByteWidth = sizeof(CB13Data);
+	bd.Usage = D3D11_USAGE_DYNAMIC;
+	bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+
+	// Initial values from your screenshot
+	CB13Data init{
+		{ 69.9002f, 69.9002f, 0.04437f,   1.0f },       // cb13_v0
+		{  1.0f,    16.0f,    1.0f,       1.0f },       // cb13_v1
+		{130.46442f,124.48499f,1141.70886f,239.59105f },// cb13_v2
+		{  0.50f,    0.50f,    0.50f,     0.0f },       // cb13_v3  (last component unknown -> 0)
+		{  1.0f,     1.0f,     0.0f,      1.0f }        // cb13_v4
+	};
+
+	D3D11_SUBRESOURCE_DATA srd{ &init, 0, 0 };
+	COM_ERROR_IF_FAILED(pDevice->CreateBuffer(&bd, &srd, cb13_.GetAddressOf()),
+		"Create CB13 failed");
 }
 
 void Graphics::RenderFrame()
@@ -336,7 +411,7 @@ void Graphics::RenderFrame()
 		pContext->ClearRenderTargetView(gbufA.light_specular.rtv.Get(), cDiffuse);
 		pContext->ClearRenderTargetView(gbufA.shading_result.rtv.Get(), cBlack);
 		pContext->RSSetState(rasterizerStateNoCull.Get());
-		float bf[4] = { 1.0f,1.0f, 1.0f, 1.0f};
+		float bf[4] = { 1.0f,1.0f, 1.0f, 1.0f };
 		pContext->OMSetBlendState(bsOpaque.Get(), bf, 0xFFFFFFFF);
 
 		// Depth testing is not needed for a full-screen pass; we sample depth via SRV.
@@ -356,15 +431,15 @@ void Graphics::RenderFrame()
 
 		// Bind lighting technique/shaders (replace with yours)
 		if (auto it = globalTechniques.find("global_lighting"); it != globalTechniques.end()) {
-			it->second.get()->Bind(pDevice, pContext, externs, states);
+			it->second.get()->Bind(pDevice, pContext, externs, states,scopes);
 			printf("written global lighting");
 		}
-		
+
 		pContext->OMSetDepthStencilState(depthStencilStateLighting.Get(), 0);
 		// Draw full-screen to accumulate lighting
 		DrawFullscreenTriangle(pContext.Get());
 
-		// Unbind SRVs to avoid “resource is still bound” hazards later
+		// Unbind SRVs to avoid ?resource is still bound? hazards later
 		ID3D11ShaderResourceView* nulls[8] = {};
 		pContext->PSSetShaderResources(0, 8, nulls);
 	}
@@ -537,14 +612,14 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		CD3D11_DEPTH_STENCIL_DESC dsRZ(D3D11_DEFAULT);
 		dsRZ.DepthEnable = TRUE;
 		dsRZ.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
-		dsRZ.DepthFunc = D3D11_COMPARISON_GREATER_EQUAL; // <— NOT GREATER_EQUAL
+		dsRZ.DepthFunc = D3D11_COMPARISON_GREATER_EQUAL; // <? NOT GREATER_EQUAL
 		hr = pDevice->CreateDepthStencilState(&dsRZ, depthStencilState.GetAddressOf());
 		COM_ERROR_IF_FAILED(hr, "Failed to create reversed-Z depth stencil state.");
 
 		CD3D11_DEPTH_STENCIL_DESC dsRZ1(D3D11_DEFAULT);
 		dsRZ1.DepthEnable = FALSE;
 		dsRZ1.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
-		dsRZ1.DepthFunc = D3D11_COMPARISON_NEVER; // <— NOT GREATER_EQUAL
+		dsRZ1.DepthFunc = D3D11_COMPARISON_NEVER; // <? NOT GREATER_EQUAL
 		hr = pDevice->CreateDepthStencilState(&dsRZ1, depthStencilStateLighting.GetAddressOf());
 		COM_ERROR_IF_FAILED(hr, "Failed to create reversed-Z depth stencil state.");
 
@@ -589,7 +664,7 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		rt.RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
 
 		// When IndependentBlendEnable == FALSE, only [0] is used,
-		// but it’s harmless (and future-proof) to fill them all:
+		// but it?s harmless (and future-proof) to fill them all:
 		for (int i = 0; i < 8; ++i) desc.RenderTarget[i] = rt;
 
 		pDevice->CreateBlendState(&desc, &bsOpaque);
@@ -641,8 +716,9 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		// linear-clamp (for color GBuffer)
 		{
 			CD3D11_SAMPLER_DESC sd(D3D11_DEFAULT);
-			sd.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+			sd.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
 			sd.AddressU = sd.AddressV = sd.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+			sd.MipLODBias = -0.5f;
 			pDevice->CreateSamplerState(&sd, samplerLinearClamp.GetAddressOf());
 		}
 	}
@@ -652,18 +728,18 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		ErrorLogger::Log(exception);
 		return false;
 	}
-	
+
 	pool = std::make_unique<ThreadPool>();
 	mainQueue = std::make_unique<MainThreadQueue>();
 	registry = std::make_unique<RuntimeAssetRegistry>();
 	assets = std::make_unique<AssetSystem>(pDevice.Get(), *pool, *mainQueue, registry.get());
 	// Create the camera constant buffer
-	
+
 	CreateScopeViewCB12(pDevice.Get());
 	CreateCB1(pDevice.Get());
 
 	RenderStates::Create(pDevice.Get(), states);
-	
+
 	return true;
 }
 
@@ -687,19 +763,33 @@ bool Graphics::InitializeShaders()
 	return true;
 }
 
+void Graphics::InitializeScopes()
+{
+	auto& scopes = GlobalData::getScopes();
+	for (auto& scope : scopes)
+	{
+		std::pair<std::string, SScope> value;
+		value.first = scope.first;
+		auto ScopeTag = bin::parse<SScope>(scope.second.data, scope.second.size, bin::Endian::Little);
+		value.second = ScopeTag;
+		this->scopes.push_back(value);
+	}
+}
 
 bool Graphics::InitializeScene()
-{	
+{
 	try {
 		camera.SetPosition(3.0f, 0.0f, 0.0f);
 		camera.SetProjectionValues(90.0f, static_cast<float>(windowWidth) / static_cast<float>(windowHeight), 0.01f, 10000.0f);
 	}
-	catch (COMException& exception) 
+	catch (COMException& exception)
 	{
 		ErrorLogger::Log(exception);
 		return false;
 	}
 	InitializeInputLayouts();
+	CreateCB13();
+	CreateWhite1x1SRV();
 	staticMap = std::make_unique<StaticMap>(*this);
 	staticMap->Initialize(0x80AD0BBD);  // root map hash (or whatever yours is)
 	staticsToDraw = staticMap->GetRenderList();

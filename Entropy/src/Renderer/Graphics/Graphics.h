@@ -53,7 +53,7 @@ private:
 	bool InitializeRenderGlobals();
 	void InitializeInputLayouts();
 	void InitAnnotation();
-	std::array<Microsoft::WRL::ComPtr<ID3D11InputLayout>,15> tiger_input_layouts;
+	std::array<Microsoft::WRL::ComPtr<ID3D11InputLayout>, 15> tiger_input_layouts;
 
 	Microsoft::WRL::ComPtr<ID3D11Device>           pDevice;
 	Microsoft::WRL::ComPtr<ID3D11DeviceContext>    pContext;
@@ -73,6 +73,8 @@ private:
 	Model model;
 
 	CD3D11_VIEWPORT viewport;
+
+	std::vector<std::pair<std::string, SScope>> scopes;
 
 	ComPtr<ID3D11DepthStencilState> dsWriteG;     // NEW (GREATER)
 	ComPtr<ID3D11DepthStencilState> dsReadOnlyG;  // NEW (GREATER, write=ZERO)
@@ -128,6 +130,9 @@ private:
 	void BlitSRVToBackbuffer(ID3D11ShaderResourceView* srv);
 	void DrawLightingPass();
 	void SeedExternsForLighting();
+	void CreateCB13();
+	void InitializeScopes();
+
 
 	std::unordered_map<std::string, std::shared_future<std::shared_ptr<EntropyAssets::Technique>>> globalTechniques;
 
@@ -137,6 +142,7 @@ private:
 	Microsoft::WRL::ComPtr<ID3D11Buffer>       deferredCamCB; // InvProj + CameraPos
 	Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerStateNoCull;
 	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> white1x1SRV;
+	Microsoft::WRL::ComPtr<ID3D11Buffer> cb13_;
 
 	GBuffer gbufA;
 };

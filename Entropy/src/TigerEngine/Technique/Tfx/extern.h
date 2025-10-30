@@ -6,7 +6,100 @@
 #include <cstdint>
 #include <type_traits>
 #include "tfx_runtime.h"
+#include <DirectXMath.h>
 #include <d3d11.h>
+#undef min
+#undef max
+#include "Renderer/Graphics/Scope/view.h"
+
+inline XMMATRIX XM(const Mat4& m) { return XMLoadFloat4x4(reinterpret_cast<const XMFLOAT4X4*>(&m)); }
+inline Mat4     M4(FXMMATRIX m) { Mat4 out; XMStoreFloat4x4(reinterpret_cast<XMFLOAT4X4*>(&out), m); return out; }
+
+// --- tiny helpers for XMFLOAT4X4 ---
+inline XMMATRIX      ToXM(const XMFLOAT4X4& m) { return XMLoadFloat4x4(&m); }
+inline XMFLOAT4X4    FromXM(FXMMATRIX m) { XMFLOAT4X4 r; XMStoreFloat4x4(&r, m); return r; }
+
+inline XMFLOAT4X4 MIdentity() { return FromXM(XMMatrixIdentity()); }
+inline XMFLOAT4X4 MMul(const XMFLOAT4X4& a, const XMFLOAT4X4& b)
+{
+    return FromXM(XMMatrixMultiply(ToXM(a), ToXM(b)));
+}
+
+inline XMFLOAT4X4 MInverse(const XMFLOAT4X4& m)
+{
+    XMVECTOR det; return FromXM(XMMatrixInverse(&det, ToXM(m)));
+}
+
+// translation (row-major: last ROW)
+inline XMFLOAT4 WAxis(const XMFLOAT4X4& m) { return { m._41,m._42,m._43,m._44 }; }
+inline XMFLOAT4 VecZ() { return { 0,0,1,0 }; }
+
+inline XMFLOAT4X4 RemoveTranslation(const XMFLOAT4X4& m)
+{
+    XMFLOAT4X4 r = m; r._41 = r._42 = r._43 = 0.f; r._44 = 1.f; return r;
+}
+
+// pixel-center -> clip/projective (D3D top-left origin)
+inline XMFLOAT4X4 TargetPixelToProjective(float W, float H)
+{
+    const float sx = 2.f / W, sy = -2.f / H;
+    const float ox = sx * 0.5f - 1.f;
+    const float oy = 1.f - sy * 0.5f;
+
+    XMFLOAT4X4 m = MIdentity();
+    m._11 = sx; m._22 = sy;
+    m._41 = ox; m._42 = oy; // translation
+    return m;
+}
+
+// Inverse
+inline Mat4 inverse(const Mat4& m) {
+    XMVECTOR det{};
+    return M4(XMMatrixInverse(&det, XM(m)));
+}
+
+// Multiply
+inline Mat4 mul(const Mat4& a, const Mat4& b) { return M4(XMMatrixMultiply(XM(a), XM(b))); }
+
+// Camera position / W-axis.
+// ROW-MAJOR (DirectX-style): translation is in the LAST ROW (_41,_42,_43,_44)
+inline Vec4 w_axis_rowmajor(const Mat4& m) {
+    const float* p = reinterpret_cast<const float*>(&m);
+    return Vec4(p[12], p[13], p[14], p[15]); // _41,_42,_43,_44
+}
+// COLUMN-MAJOR alternative (uncomment if your Mat4 is column-major):
+// inline Vec4 w_axis_colmajor(const Mat4& m) {
+//     const float* p = reinterpret_cast<const float*>(&m);
+//     return Vec4(p[3], p[7], p[11], p[15]); // last COLUMN
+// }
+
+inline Vec4 vec4_Z() { return Vec4(0.f, 0.f, 1.f, 0.f); }
+
+// Remove translation from a matrix (keep 3x3 rotation; w becomes [0,0,0,1])
+inline Mat4 remove_translation_rowmajor(Mat4 m) {
+    float* p = reinterpret_cast<float*>(&m);
+    p[12] = p[13] = p[14] = 0.f; // zero _41,_42,_43
+    p[15] = 1.f;                 // _44
+    return m;
+}
+
+// Build matrix that maps pixel centers -> clip/projective space.
+// x_ndc = ( (x+0.5)/W )*2 - 1 ; y_ndc = 1 - ( (y+0.5)/H )*2  (D3D top-left origin)
+inline Mat4 target_pixel_to_projective(float W, float H) {
+    const float sx = 2.0f / W;
+    const float sy = -2.0f / H;
+    const float ox = sx * 0.5f - 1.0f;
+    const float oy = 1.0f - sy * 0.5f;
+
+    Mat4 m = Mat4::identity();
+    float* p = reinterpret_cast<float*>(&m);
+    // row-major 4x4:
+    p[0] = sx;  p[1] = 0;   p[2] = 0;  p[3] = 0;
+    p[4] = 0;   p[5] = sy;  p[6] = 0;  p[7] = 0;
+    p[8] = 0;   p[9] = 0;   p[10] = 1;  p[11] = 0;
+    p[12] = ox;  p[13] = oy;  p[14] = 0;  p[15] = 1;
+    return m;
+}
 
 // -----------------------------------------------------------------------------
 // Extern enums (matches your Rust set)
@@ -138,18 +231,22 @@ struct FrameExtern {
 };
 
 struct ViewExtern {
-    float resolution_width = 0.0f;  // 0x00
-    float resolution_height = 0.0f;  // 0x04
-    float _pad08[2] = {};    // 0x08
-    Mat4  world_to_camera = Mat4::identity();      // 0x40
-    Mat4  camera_to_projective = Mat4::identity();    // 0x80
-    Mat4  camera_to_world = Mat4::identity();      // 0xC0
-    Mat4  projective_to_camera = Mat4::identity();    // 0x100
-    Mat4  world_to_projective = Mat4::identity();    // 0x140
-    Mat4  projective_to_world = Mat4::identity();    // 0x180
-    Mat4  target_pixel_to_world = Mat4::identity();   // 0x1C0
-    Mat4  target_pixel_to_camera = Mat4::identity();  // 0x200
-    Mat4  tptow_no_proj_w = Mat4::identity();   // 0x280
+    float resolution_width = 0, resolution_height = 0;
+
+    Mat4 world_to_camera;
+    Mat4 camera_to_projective;
+
+    Mat4 camera_to_world;
+    Mat4 world_to_projective;
+    Mat4 projective_to_world;
+    Mat4 projective_to_camera;
+
+    Mat4 target_pixel_to_camera;
+    Mat4 target_pixel_to_world;
+    Mat4 tptow_no_proj_w;
+
+    Vec4 position;
+    Vec4 unk30;
 };
 
 struct GlobalLightingExtern {
@@ -316,15 +413,28 @@ struct ExternStorage {
         set(TfxExtern::Frame, f);
     }
 
-    void SetViewProjectiveToCamera(const Mat4& ptoc, float width, float height) {
-        ViewExtern v{};
-        if (auto it = blobs.find(TfxExtern::View);
-            it != blobs.end() && it->second.bytes.size() >= sizeof(ViewExtern)) {
-            std::memcpy(&v, it->second.bytes.data(), sizeof(ViewExtern));
-        }
-        v.resolution_width = width;
-        v.resolution_height = height;
-        v.projective_to_camera = ptoc;
+    void SetViewProjectiveToCamera(View& v, D3D11_VIEWPORT &vp) {
+        v.resolution_width = vp.Width;
+        v.resolution_height = vp.Height;
+
+        v.camera_to_world = MInverse(v.world_to_camera);
+        v.world_to_projective = MMul(v.camera_to_projective, v.world_to_camera);
+        v.projective_to_world = MInverse(v.world_to_projective);
+        v.projective_to_camera = MInverse(v.camera_to_projective);
+
+        const XMFLOAT4X4 tptop = TargetPixelToProjective(vp.Width, vp.Height);
+        v.target_pixel_to_camera = MMul(v.projective_to_camera, tptop);
+        v.target_pixel_to_world = MMul(v.camera_to_world, v.target_pixel_to_camera);
+
+        v.position = WAxis(v.camera_to_world);
+        const XMFLOAT4 wproj = WAxis(v.world_to_projective);
+        const XMFLOAT4 z = VecZ();
+        v.unk30 = { z.x - wproj.x, z.y - wproj.y, z.z - wproj.z, z.w - wproj.w };
+
+        const XMFLOAT4X4 ctow_noT = RemoveTranslation(v.camera_to_world);
+        const XMFLOAT4X4 ptow_noT = MMul(ctow_noT, v.projective_to_camera);
+        v.tptow_no_proj_w = MMul(ptow_noT, tptop);
+    
         set(TfxExtern::View, v);
     }
 
@@ -365,5 +475,149 @@ struct ExternStorage {
         fx.noise_time = noise_time;
         if (intensity) fx.noise_intensity_scale = *intensity;
         set(TfxExtern::Fxaa, fx);
+    }
+};
+
+// extern_cb_manager.h
+#pragma once
+#include <unordered_map>
+#include <vector>
+#include <cstdint>
+#include <algorithm>
+#include <wrl/client.h>
+#include <d3d11.h>
+
+using Microsoft::WRL::ComPtr;
+
+struct ExternCBManager
+{
+    struct Cb
+    {
+        ComPtr<ID3D11Buffer> gpu;     // D3D11 constant buffer
+        std::vector<uint8_t> cpu;     // CPU mirror (what you memcpy into)
+        bool dirty = false;
+    };
+
+    // One CB per extern "scope"
+    std::unordered_map<TfxExtern, Cb> cbs;
+
+    static inline uint32_t Align16(uint32_t v) { return (v + 15u) & ~15u; }
+
+    // Create/resize a CB for 'id' from the bytes currently in storage (zeros if missing).
+    // Safe to call repeatedly; it will reuse buffers of the same size.
+    void EnsureFromStorage(ID3D11Device* dev, const ExternStorage& st, TfxExtern id)
+    {
+        const auto it = st.blobs.find(id);
+        const size_t srcSize = (it == st.blobs.end()) ? 0u : it->second.bytes.size();
+        const uint32_t byteWidth = std::max<uint32_t>(16u, Align16((uint32_t)srcSize)); // D3D11 CB must be multiple of 16 (and nonzero)
+        Cb& cb = cbs[id];
+
+        const bool needCreate = !cb.gpu || (cb.cpu.size() != byteWidth);
+        if (needCreate)
+        {
+            // (Re)create GPU buffer
+            D3D11_BUFFER_DESC bd{};
+            bd.ByteWidth = byteWidth;
+            bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+            bd.Usage = D3D11_USAGE_DYNAMIC;
+            bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+
+            // Initialize CPU mirror and (optionally) GPU with initial data
+            cb.cpu.assign(byteWidth, 0u);
+            if (srcSize)
+                std::memcpy(cb.cpu.data(), it->second.bytes.data(), std::min<size_t>(srcSize, byteWidth));
+
+            D3D11_SUBRESOURCE_DATA init{};
+            init.pSysMem = cb.cpu.data();
+            HRESULT hr = dev->CreateBuffer(&bd, &init, cb.gpu.ReleaseAndGetAddressOf());
+            (void)hr; // handle/log if you prefer
+            cb.dirty = false;
+        }
+        else
+        {
+            // Just refresh CPU mirror from storage if we already had a buffer
+            if (srcSize)
+            {
+                std::memcpy(cb.cpu.data(), it->second.bytes.data(), std::min<size_t>(srcSize, cb.cpu.size()));
+                if (cb.gpu) cb.dirty = true;
+            }
+        }
+    }
+
+    // Build/refresh **all** CBs that exist in storage
+    void EnsureAllFromStorage(ID3D11Device* dev, const ExternStorage& st)
+    {
+        for (const auto& kv : st.blobs)
+            EnsureFromStorage(dev, st, kv.first);
+    }
+
+    // memcpy into a scope's CPU bytes, clamped to the CB size.
+    // Mark dirty so the next Upload* will push it to the GPU.
+    void MemcpyScope(TfxExtern id, size_t dstOffset, const void* src, size_t numBytes)
+    {
+        auto it = cbs.find(id);
+        if (it == cbs.end() || !src || numBytes == 0) return;
+
+        Cb& cb = it->second;
+        if (dstOffset >= cb.cpu.size()) return;
+
+        const size_t n = std::min(numBytes, cb.cpu.size() - dstOffset);
+        std::memcpy(cb.cpu.data() + dstOffset, src, n);
+        cb.dirty = true;
+    }
+
+    // Replace an entire scope from raw data (also flags dirty)
+    void SetScopeBytes(TfxExtern id, const void* src, size_t numBytes)
+    {
+        auto it = cbs.find(id);
+        if (it == cbs.end()) return;
+
+        Cb& cb = it->second;
+        const size_t n = std::min(numBytes, cb.cpu.size());
+        if (n && src) std::memcpy(cb.cpu.data(), src, n);
+        if (n < cb.cpu.size()) std::memset(cb.cpu.data() + n, 0, cb.cpu.size() - n);
+        cb.dirty = true;
+    }
+
+    // Upload one scope if dirty (Map WRITE_DISCARD then memcpy full range)
+    void Upload(ID3D11DeviceContext* ctx, TfxExtern id)
+    {
+        auto it = cbs.find(id);
+        if (it == cbs.end()) return;
+        Cb& cb = it->second;
+        if (!cb.gpu || !cb.dirty) return;
+
+        D3D11_MAPPED_SUBRESOURCE ms{};
+        if (SUCCEEDED(ctx->Map(cb.gpu.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &ms)))
+        {
+            std::memcpy(ms.pData, cb.cpu.data(), cb.cpu.size());
+            ctx->Unmap(cb.gpu.Get(), 0);
+            cb.dirty = false;
+        }
+    }
+
+    // Upload every dirty scope
+    void UploadAll(ID3D11DeviceContext* ctx)
+    {
+        for (auto& kv : cbs) Upload(ctx, kv.first);
+    }
+
+    // Get raw buffer for binding
+    ID3D11Buffer* GetBuffer(TfxExtern id) const
+    {
+        auto it = cbs.find(id);
+        return (it == cbs.end()) ? nullptr : it->second.gpu.Get();
+    }
+
+    // Convenience: bind to a stage/slot
+    void BindPS(ID3D11DeviceContext* ctx, UINT slot, TfxExtern id) const
+    {
+        ID3D11Buffer* b = GetBuffer(id);
+        ctx->PSSetConstantBuffers(slot, 1, &b);
+    }
+    void BindVS(ID3D11DeviceContext* ctx, UINT slot, TfxExtern id) const
+    {
+        ID3D11Buffer* b = GetBuffer(id);
+        ctx->VSSetConstantBuffers(slot, 1, &b);
     }
 };

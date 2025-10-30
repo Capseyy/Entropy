@@ -1,5 +1,6 @@
 #include "RenderGlobals.h"
 
+
 bool contains(const std::string& s, std::string_view needle) {
 	return s.find(needle) != std::string::npos;
 }
@@ -33,6 +34,14 @@ bool GenerateRenderGlobals()
 			{
 				GlobalData::getGlobalTechniques().emplace(tech.name.name, tech.tech);
 				printf("%s %08X \n", tech.name.name.c_str(), tech.tech.hash);
+			}
+			for (auto& tech : render_globals.scopes)
+			{
+				std::pair<std::string, TagHash> values;
+				values.first = tech.name.name.c_str();
+				values.second = tech.scope;
+				GlobalData::getScopes().emplace_back(values);
+				printf("Scope %s %08X \n", tech.name.name.c_str(), tech.scope.hash);
 			}
 		}
 

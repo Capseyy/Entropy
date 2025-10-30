@@ -108,8 +108,6 @@ struct alignas(16) View
         const XMMATRIX V = load(world_to_camera);
         const XMMATRIX P = load(camera_to_projective);
 
-        // In your Rust: world_to_projective = P * V  (column-math).
-        // If your HLSL uses row-math (mul(float4, M)), prefer VP = V * P instead.
         constexpr bool kRowMath = true;
         const XMMATRIX VP = kRowMath ? XMMatrixMultiply(V, P) : XMMatrixMultiply(P, V);
 

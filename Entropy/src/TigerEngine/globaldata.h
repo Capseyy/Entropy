@@ -2,6 +2,7 @@
 #include <cstdint>
 #include "TigerEngine/tag.h"
 
+
 struct namedTagEntry
 {
     TagHash tag;
@@ -30,6 +31,11 @@ public:
     static std::unordered_map<std::string, TagHash>& getGlobalTechniques() {
         static std::unordered_map<std::string, TagHash> globalTechs;
         return globalTechs;
+    }
+
+    static std::vector<std::pair<std::string, TagHash>>& getScopes() {
+        static std::vector<std::pair<std::string, TagHash>> scopes;
+        return scopes;
     }
 };
 

@@ -545,12 +545,12 @@ int getEntryID(uint32_t hash) {
 void SearchBungieFiles(uint32_t value)
 {
     auto start = std::chrono::high_resolution_clock::now();
-    auto hashes = GetAllTagsOfType(40,7);
-    //auto hashes16 = GetAllTagsOfType(16);
-    //for (auto hash : hashes16)
-    //{
-     //   hashes.push_back(hash);
-    //}
+    auto hashes = GetAllTagsOfType(8,0);
+    auto hashes16 = GetAllTagsOfType(16,0);
+    for (auto hash : hashes16)
+    {
+        hashes.push_back(hash);
+    }
     std::printf("Collected %zu Hashes for Type %d\n", hashes.size(), 8);
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = end - start;
