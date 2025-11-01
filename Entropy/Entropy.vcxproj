@@ -229,6 +229,7 @@
     <ClCompile Include="src\Renderer\Graphics\Render\gbuffer.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Render\Technique.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Scope\instance.cpp" />
+    <ClCompile Include="src\Renderer\Loaders\scope.cpp" />
     <ClCompile Include="src\Runtime\Assets\AssetSystem.cpp" />
     <ClCompile Include="src\Runtime\Assets\RuntimeAssetRegistry.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Scope\view.cpp" />
@@ -275,9 +276,13 @@
     <ClInclude Include="..\..\..\..\Downloads\depth_stencil_states.h" />
     <ClInclude Include="src\Renderer\Graphics\GameTimer.h" />
     <ClInclude Include="src\Renderer\Graphics\Render\gbuffer.h" />
+    <ClInclude Include="src\Renderer\Graphics\Scope\AtmosphereExternUI.h" />
+    <ClInclude Include="src\Renderer\Graphics\Scope\FrameGlobalLightingExternUI.h" />
+    <ClInclude Include="src\Renderer\Graphics\Scope\global_channel_ui.h" />
     <ClInclude Include="src\Renderer\Graphics\Scope\instance.h" />
     <ClInclude Include="src\Renderer\Graphics\RenderStates.h" />
     <ClInclude Include="src\Renderer\Loaders\RenderStatic.h" />
+    <ClInclude Include="src\Renderer\Loaders\Scope.h" />
     <ClInclude Include="src\Renderer\Loaders\TextureLoader.h" />
     <ClInclude Include="src\Runtime\Assets\AssetCache.h" />
     <ClInclude Include="src\Runtime\Assets\AssetHandle.h" />
@@ -338,6 +343,7 @@
     <ClInclude Include="src\Runtime\Assets\StaticMesh.h" />
     <ClInclude Include="src\Renderer\Loaders\StaticRenderer.h" />
     <ClInclude Include="src\Renderer\Loaders\StaticMap.h" />
+    <ClInclude Include="src\TigerEngine\Technique\Tfx\global_channels.h" />
     <ClInclude Include="src\TigerEngine\Technique\Tfx\tfx.h" />
     <ClInclude Include="src\TigerEngine\Technique\Tfx\tfx_decompiler.h" />
     <ClInclude Include="src\TigerEngine\Technique\Tfx\tfx_eval.h" />

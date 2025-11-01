@@ -86,12 +86,6 @@ RenderStatic StaticRenderer::Build()
         }
         groupRefs.push_back(gr);
     }
-    int max_detail_special = 0xff;
-    for (auto& group : s.special_meshes) {
-        if (group.TfxRenderStage < max_detail_special) {
-            max_detail_special = group.TfxRenderStage;
-        }
-    }
     UINT highestDetail_special = 99;
     for (const auto& party : s.special_meshes) {
         if (party.LodCatagory < highestDetail_special) {
@@ -102,9 +96,6 @@ RenderStatic StaticRenderer::Build()
     std::vector<StaticSpecial> specials;
     for (auto& bg : s.special_meshes)
     {
-        if (max_detail_special != bg.TfxRenderStage) {
-            continue;
-        }
         if (highestDetail_special != bg.LodCatagory) {
             continue;
         }
@@ -180,7 +171,7 @@ RenderStatic StaticRenderer::Build()
 
     int matIndex = 0;
     for (const auto& mg : m.mesh_groups) {
-        if (mg.TfxRenderStage != max_detail) {
+        if (mg.TfxRenderStage != 0) {
             ++matIndex; 
             continue;
         }

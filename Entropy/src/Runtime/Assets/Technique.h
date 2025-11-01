@@ -8,6 +8,7 @@
 #include "TigerEngine/Technique/technique.h"
 #include "Renderer/Graphics/RenderStates.h"
 #include "TigerEngine/ClientStartup/RenderGlobals.h"
+#include "Renderer/Loaders/Scope.h"
 
 namespace EntropyAssets {           // <<< add
 
@@ -97,7 +98,7 @@ namespace EntropyAssets {           // <<< add
 
         uint32_t StateSelection;
         
-        bool Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice, Microsoft::WRL::ComPtr<ID3D11DeviceContext> pContext, ExternStorage externs, RenderStates states, std::vector<std::pair<std::string, SScope>> scopes);
+        bool Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice, Microsoft::WRL::ComPtr<ID3D11DeviceContext> pContext, ExternStorage& externs, RenderStates& states, std::vector<std::pair<std::string, TigerScope>>& scopes);
     };
 
 } // namespace EntropyAssets       // <<< add

@@ -217,10 +217,18 @@ BuildTexturePayloadFromTag(TagHash textureTag)
     const DXGI_FORMAT texFmt = TypelessToTypedSRV(fileFmt);   // your helper
 
     // Input bytes
-    const auto* src = static_cast<const uint8_t*>(header.large_buffer.data);
-    const size_t srcLen = header.large_buffer.size;
-    if (!src || srcLen == 0)
-        return std::nullopt;
+    size_t srcLen;
+    unsigned char* src;
+    if (header.large_buffer.hash != 0xFFFFFFFF) {
+        src = static_cast<uint8_t*>(header.large_buffer.data);
+        srcLen = header.large_buffer.size;
+    }
+    else {
+        TagHash texRef = TagHash(textureTag.reference);
+        src = static_cast<uint8_t*>(texRef.data);
+        srcLen = texRef.size;
+    }
+    
 
     // 3D or 2D?
     const UINT depth0 = std::max<UINT>(1, header.depth);  // if header.depth is missing, set to 1 earlier

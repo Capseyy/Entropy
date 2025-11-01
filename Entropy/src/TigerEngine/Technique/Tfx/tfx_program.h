@@ -18,6 +18,10 @@ public:
     // Evaluate into cb0 (vector<float4>)
     void Evaluate(const ExternStorage& externs, std::vector<Vec4>& cb) const {
         std::array<Vec4, 16> temp{};
+        EvaluateExpressionEoF(ops, externs, cb, constants, temp, nullptr, nullptr, false);
+    }
+    void Evaluate_Trace(const ExternStorage& externs, std::vector<Vec4>& cb) const {
+        std::array<Vec4, 16> temp{};
         EvaluateExpressionEoF(ops, externs, cb, constants, temp, nullptr, nullptr);
     }
 

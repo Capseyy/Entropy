@@ -6,6 +6,7 @@
 #include <string>
 #include "extern.h"
 
+
 #ifndef TFX_EVAL_HELPERS_DEFINED
 #define TFX_EVAL_HELPERS_DEFINED
 namespace tfx_eval_detail {
@@ -157,7 +158,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
     std::array<Vec4, 16>& temp,
     void*  /*user_tex_hook*/ = nullptr,
     void*  /*user_samp_hook*/ = nullptr,
-    bool trace = false)
+    bool trace = true)
 {
     using namespace tfx_eval_detail;
 
@@ -252,31 +253,48 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
         }
         case TfxBytecode::PushExternInputVec4: {
             auto d = std::get<PushExternInputVec4Data>(i.data);
-            push(externs.getVec4(d.ext, size_t(d.offset))); break;
+            // FIX: offset is in vec4s -> bytes = offset * 16
+            push(externs.getVec4(d.ext, size_t(d.offset) * 16));
+            break;
         }
+
         case TfxBytecode::PushExternInputMat4: {
             auto d = std::get<PushExternInputMat4Data>(i.data);
             Mat4 m = externs.getMat4(d.ext, size_t(d.offset) * 16);
+
+            // cache for TransformVec4 and expose rows in temps (some bytecode reads them)
             cachedM = m;
-            temp[0] = m.x_axis; temp[1] = m.y_axis; temp[2] = m.z_axis; temp[3] = m.w_axis;
-            push(Vec4::zero()); // placeholder for TransformVec4
+            temp[0] = m.x_axis;
+            temp[1] = m.y_axis;
+            temp[2] = m.z_axis;
+            temp[3] = m.w_axis;
+
+            // If the next instruction is PopOutputMat4, push rows now so it can pop them.
+            // PopOutputMat4 pops in order r3,r2,r1,r0, so we must push r0,r1,r2,r3 (LIFO).
+            if (ip + 1 < ops.size() && ops[ip + 1].op == TfxBytecode::PopOutputMat4) {
+                push(m.x_axis);
+                push(m.y_axis);
+                push(m.z_axis);
+                push(m.w_axis);
+            }
+            // Otherwise, do NOT push anything—TransformVec4 will use cachedM.
             break;
         }
+
         case TfxBytecode::TransformVec4: {
-            (void)pop1(ip, "Xform marker");
             auto v = pop1(ip, "Xform vec");
-            push(mul_vec4_mat(v, cachedM)); break;
+            push(mul_vec4_mat(v, cachedM));
+            break;
         }
 
                                        // ----------- channels (NEW: actually fetch) -----------
-        //case TfxBytecode::PushGlobalChannelVector: {
-        //    // Expect channels packed as 256 Vec4s in the RAW blob:
-        //    // offset = index * 16 bytes. If absent -> zero.
-        //    auto d = std::get<PushGlobalChannelVectorData>(i.data);
-        //    Vec4 ch = externs.getVec4(TfxExtern::Raw, size_t(d.unk1) * 16);
-        //    push(ch);
-        //    break;
-        //}
+        case TfxBytecode::PushGlobalChannelVector: {
+            const auto d = std::get<PushGlobalChannelVectorData>(i.data);
+            // index is in vec4 units ? bytes = index * 16
+            Vec4 v = externs.getVec4(TfxExtern::Generic, size_t(d.unk1) * 16);
+            push(v);
+            break;
+        }
         case TfxBytecode::PushObjectChannelVector: {
             // Object channels not wired; push zero for now.
             // If you have an object-channel table, read it here via externs.getVec4(...)

@@ -13,9 +13,7 @@ static void ThrowIfFailed(HRESULT hr, const char* msg) {
 }
 
 static inline void SetDbgName(ID3D11DeviceChild* o, const char* n) {
-#if _DEBUG
     if (o && n) o->SetPrivateData(WKPDID_D3DDebugObjectName, (UINT)strlen(n), n);
-#endif
 }
 
 // --- small convenience: same format for typeless/RTV/SRV

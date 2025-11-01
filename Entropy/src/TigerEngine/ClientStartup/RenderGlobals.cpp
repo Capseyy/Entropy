@@ -30,6 +30,20 @@ bool GenerateRenderGlobals()
 	{
 		if (entry.tag.reference == 0x808067A8) {
 			auto render_globals = bin::parse<Unk_808067A8>(entry.tag.data, entry.tag.size, bin::Endian::Little);
+			auto LookupTexTag = bin::parse<Unk_808066AE>(render_globals.lookupTextures.data, render_globals.lookupTextures.size, bin::Endian::Little);
+			std::pair<std::string, TagHash> pair;
+			pair.first = "specular_tint_lookup_texture";
+			pair.second = LookupTexTag.specular_tint_lookup_texture;
+			GlobalData::getGlobalTextures().push_back(pair);
+			pair.first = "specular_lobe_lookup_texture";
+			pair.second = LookupTexTag.specular_lobe_lookup_texture;
+			GlobalData::getGlobalTextures().push_back(pair);
+			pair.first = "specular_lobe_3d_lookup_texture";
+			pair.second = LookupTexTag.specular_lobe_3d_lookup_texture;
+			GlobalData::getGlobalTextures().push_back(pair);
+			pair.first = "iridescence_lookup_texture";
+			pair.second = LookupTexTag.iridescence_lookup_texture;
+			GlobalData::getGlobalTextures().push_back(pair);
 			for (auto& tech : render_globals.techniques)
 			{
 				GlobalData::getGlobalTechniques().emplace(tech.name.name, tech.tech);

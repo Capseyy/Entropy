@@ -47,7 +47,7 @@ static inline DecodedSelection DecodeStateSelection(uint32_t sel) {
 }
 
 bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice,
-    Microsoft::WRL::ComPtr<ID3D11DeviceContext> pContext, ExternStorage externs, RenderStates states, std::vector<std::pair<std::string, SScope>> scopes)
+    Microsoft::WRL::ComPtr<ID3D11DeviceContext> pContext, ExternStorage& externs, RenderStates& states, std::vector<std::pair<std::string, TigerScope>>& scopes)
 {
     uint32_t StateSelection = this->StateSelection;
 
@@ -99,7 +99,11 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
         this->pixeldata.TFX_Constants);
     // implement getFloat/getVec4/getMat4 in extern.cpp
     auto& cb0 = this->pixeldata.SamplerFallback; // std::vector<Vec4> used as cb0 backing
-    prog.Evaluate(externs, cb0);         // writes float4s to cb0[..] as dictated by bytecode
+    prog.Evaluate(externs, cb0);
+    
+    
+    
+            // writes float4s to cb0[..] as dictated by bytecode
     
     if (this->CBuffers.empty() && this->CBuffers_fallback != nullptr)  {
         ID3D11Buffer* buf = this->CBuffers_fallback->buffer.Get();
@@ -197,19 +201,45 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
         }
     }
 
-    TfxProgram prog_vs = TfxProgram::FromBytecode(this->vertexdata.TFX_Bytecode,
-        this->vertexdata.TFX_Constants);
-    auto& cb0_vs = this->vertexdata.SamplerFallback;
+    if (this->vertexdata.TFX_Bytecode.size() != 0) {
+        TfxProgram prog_vs = TfxProgram::FromBytecode(this->vertexdata.TFX_Bytecode,
+            this->vertexdata.TFX_Constants);
+        auto& cb0_vs = this->vertexdata.SamplerFallback;
+        prog_vs.Evaluate(externs, cb0_vs);
+        if (this->CBuffers_VS.empty() && this->CBuffers_fallback_VS != nullptr) {
+            ID3D11Buffer* buf = this->CBuffers_fallback_VS->buffer.Get();
 
-    //if (TfxScope::has(used, TfxScope::FRAME)) {
-    //    pContext->VSSetConstantBuffers(1, 1, &b);
-    //    pContext->PSSetConstantBuffers(1, 1, &b);
-    //}
-    //if (TfxScope::has(used, TfxScope::VIEW)) {
-    //    ID3D11Buffer* b = g_scopeView_b12.Get();       // view/proj CB
-    //    pContext->VSSetConstantBuffers(12, 1, &b);
-    //    pContext->PSSetConstantBuffers(12, 1, &b);
-    //}
+            D3D11_BUFFER_DESC desc{};
+            buf->GetDesc(&desc);
+
+            const size_t bytes_needed = cb0_vs.size() * sizeof(Vec4);
+            const size_t bytes_copy = std::min<size_t>(bytes_needed, desc.ByteWidth);
+
+            if (desc.Usage == D3D11_USAGE_DYNAMIC) {
+                D3D11_MAPPED_SUBRESOURCE map{};
+                if (SUCCEEDED(pContext->Map(buf, 0, D3D11_MAP_WRITE_DISCARD, 0, &map))) {
+                    std::memcpy(map.pData, cb0_vs.data(), bytes_copy);
+                    pContext->Unmap(buf, 0);
+                }
+            }
+            else {
+                pContext->UpdateSubresource(buf, 0, nullptr, cb0_vs.data(), 0, 0);
+            }
+            pContext->VSSetConstantBuffers(UINT(this->vsCBSlots_fallback), 1, &buf);
+        }
+    }
+    
+
+    if (TfxScope::has(used, TfxScope::FRAME)) {
+        scopes[0].second.Bind(pContext);
+    }
+    if (TfxScope::has(used, TfxScope::VIEW)) {
+        scopes[1].second.Bind(pContext);
+
+    }
+    if (TfxScope::has(used, TfxScope::CHUNK_MODEL)) {
+        scopes[9].second.Bind(pContext);
+    }
 
     return true;
 }

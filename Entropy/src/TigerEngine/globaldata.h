@@ -37,6 +37,10 @@ public:
         static std::vector<std::pair<std::string, TagHash>> scopes;
         return scopes;
     }
+    static std::vector<std::pair<std::string, TagHash>>& getGlobalTextures() {
+        static std::vector<std::pair<std::string, TagHash>> globaltex;
+        return globaltex;
+    }
 };
 
 #pragma once

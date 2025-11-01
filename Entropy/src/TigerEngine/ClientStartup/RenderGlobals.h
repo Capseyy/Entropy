@@ -19,6 +19,7 @@ struct SScopeStage
 	std::array<uint32_t, 4> Unk48; //TODO
 	int32_t constant_buffer_slot;
 	TagHash contstant_buffer;
+	std::array<uint32_t, 6> Unk70;
 };
 
 
@@ -58,6 +59,7 @@ struct Unk_808067A8
 	uint32_t _unkc;
 	std::vector<Unk_808067AD> scopes;
 	std::vector< Unk_808067AC> techniques;
+	TagHash lookupTextures;
 };
 
 struct Unk_8080870F
@@ -72,6 +74,15 @@ struct Unk_8080978C
 {
 	uint64_t filesize;
 	std::vector<Unk_8080870F> entries;
+};
+
+struct Unk_808066AE
+{
+	uint64_t filesize;
+	TagHash specular_tint_lookup_texture;
+	TagHash specular_lobe_lookup_texture;
+	TagHash specular_lobe_3d_lookup_texture;
+	TagHash iridescence_lookup_texture;
 };
 
 bool GenerateRenderGlobals();

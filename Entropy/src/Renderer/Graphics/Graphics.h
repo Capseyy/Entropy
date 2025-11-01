@@ -26,7 +26,8 @@
 #include "GameTimer.h"
 #include "TigerEngine/Technique/rasterizer_states.h"
 #include "RenderStates.h"
-
+#include "Renderer/Loaders/Scope.h"
+#include "TigerEngine/Technique/Tfx/global_channels.h"
 
 enum class PipelineStage { Forward, GBuffer, Lighting };
 
@@ -53,6 +54,8 @@ private:
 	bool InitializeRenderGlobals();
 	void InitializeInputLayouts();
 	void InitAnnotation();
+	void DrawStaticSpecial(const RenderStatic& rs, const View& view);
+
 	std::array<Microsoft::WRL::ComPtr<ID3D11InputLayout>, 15> tiger_input_layouts;
 
 	Microsoft::WRL::ComPtr<ID3D11Device>           pDevice;
@@ -74,7 +77,7 @@ private:
 
 	CD3D11_VIEWPORT viewport;
 
-	std::vector<std::pair<std::string, SScope>> scopes;
+	std::vector<std::pair<std::string, TigerScope>> scopes;
 
 	ComPtr<ID3D11DepthStencilState> dsWriteG;     // NEW (GREATER)
 	ComPtr<ID3D11DepthStencilState> dsReadOnlyG;  // NEW (GREATER, write=ZERO)
@@ -82,8 +85,10 @@ private:
 	Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthStencilView;
 	Microsoft::WRL::ComPtr<ID3D11Texture2D> depthStencilBuffer;
 	Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthStencilState;
-
+	Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthStencilDecal;
 	Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthStencilStateLighting;
+
+	Microsoft::WRL::ComPtr <ID3D11DepthStencilState> dsDisabled;
 
 	Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerState;
 	Microsoft::WRL::ComPtr<ID3D11BlendState> blendState;
@@ -98,17 +103,26 @@ private:
 
 	ComPtr<ID3D11SamplerState> samplerPointClamp;
 	ComPtr<ID3D11SamplerState> samplerLinearClamp;
+	ComPtr<ID3D11BlendState> bsMultiply;
+
+	ComPtr<ID3D11SamplerState> shading1;
+	ComPtr<ID3D11SamplerState> shading2;
+	ComPtr<ID3D11SamplerState> lighting1;
+	ComPtr<ID3D11SamplerState> lighting2;
+
 
 	Microsoft::WRL::ComPtr<ID3D11BlendState> bsGBufferOpaqueIndependent;
 	Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerStateGBuffer;
 
 	RenderStates states;
 
+	Microsoft::WRL::ComPtr<ID3D11VertexShader> dbgFullscreenVS;
+	Microsoft::WRL::ComPtr<ID3D11PixelShader>  dbgDeferredPS;
+	Microsoft::WRL::ComPtr<ID3D11PixelShader>  dbgCopyPS;
+	Microsoft::WRL::ComPtr<ID3D11PixelShader>  psSolid;
 
 	Microsoft::WRL::ComPtr<ID3D11BlendState> bsAdditive; // optional, for later draws
 
-	void BeginLightingPass();
-	void EndLightingPass();
 	int windowWidth = 0;
 	int windowHeight = 0;
 
@@ -121,18 +135,14 @@ private:
 	std::vector<RenderStatic> staticsToDraw;
 
 	void DrawStaticMesh(const RenderStatic& rs, const View& view);
-	void RunDeferredLighting();
-	void FullScreenSolidColor();
-	void DebugCopyRT0ToBackbuffer();
 	void CreateWhite1x1SRV();
-	void CreateBackbufferRTV();
-	void RunGlobalLightingPass();
-	void BlitSRVToBackbuffer(ID3D11ShaderResourceView* srv);
-	void DrawLightingPass();
-	void SeedExternsForLighting();
 	void CreateCB13();
 	void InitializeScopes();
+	void LoadGlobalTextures();
 
+	std::array< GlobalChannel,256> channels = GetGlobalChannelDefaults();
+
+	std::unordered_map<std::string, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>> global_textures;
 
 	std::unordered_map<std::string, std::shared_future<std::shared_ptr<EntropyAssets::Technique>>> globalTechniques;
 

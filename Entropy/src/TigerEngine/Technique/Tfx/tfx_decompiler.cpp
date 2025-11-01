@@ -192,7 +192,7 @@ DecompilationResult TfxBytecodeDecompiler::decompile(
             pushS("saturate(lerp(" + f4(a) + ", " + f4(b) + ", " + t + "))");
             break;
         }
-
+        
                                                // ---------- externs (optional; keep commented if you don’t have a path helper) ----------
                                                //case TfxBytecode::PushExternInputFloat: {
                                                //     const auto d = std::get<PushExternInputFloatData>(i.data);
@@ -237,6 +237,21 @@ DecompilationResult TfxBytecodeDecompiler::decompile(
             const auto d = std::get<PopOutputData>(i.data);
             auto v = popS();
             out.cb_expressions.emplace_back(d.element, v);
+            break;
+        }
+        case TfxBytecode::PopOutputMat4: {
+            const auto d = std::get<PopOutputMat4Data>(i.data);
+            // Stack is LIFO — rows were pushed r0,r1,r2,r3, so we must pop r3..r0.
+            auto r3 = popS();
+            auto r2 = popS();
+            auto r1 = popS();
+            auto r0 = popS();
+
+            // Emit four cb assignments in the correct order
+            out.cb_expressions.emplace_back(d.element + 0, r0);
+            out.cb_expressions.emplace_back(d.element + 1, r1);
+            out.cb_expressions.emplace_back(d.element + 2, r2);
+            out.cb_expressions.emplace_back(d.element + 3, r3);
             break;
         }
 

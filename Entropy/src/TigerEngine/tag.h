@@ -18,6 +18,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include "TigerEngine/Technique/Tfx/tfx_runtime.h"
 
+
 class WideHashData {
 public:
     uint32_t Unk0{ 0 };
