@@ -21,10 +21,10 @@ struct FrameAuxCB
 {
     // scalars (pad to 16B)
     Vec4 times;
-    float exposure_time = 1./60.;         // 0x0C
-    float exposure_illum_relative_glow = 23.386974f;   // 0x00
-    float exposure_scale_for_shading = 0.5674782f;   // 0x04
-    float exposure_illum_relative = 1.4616859f;   // 0x08
+    float exposure_time = 1.0f;         // 0x0C
+    float exposure_illum_relative_glow = 16.0f;   // 0x00
+    float exposure_scale_for_shading = 1.0f;   // 0x04
+    float exposure_illum_relative = 1.0f;   // 0x08
     
 
     // vectors
