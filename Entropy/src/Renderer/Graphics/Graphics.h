@@ -28,6 +28,9 @@
 #include "RenderStates.h"
 #include "Renderer/Loaders/Scope.h"
 #include "TigerEngine/Technique/Tfx/global_channels.h"
+#include <wincodec.h>
+#include "Renderer/Loaders/TextureLoader.h"
+#include "Renderer/Loaders/Map.h"
 
 enum class PipelineStage { Forward, GBuffer, Lighting };
 
@@ -39,8 +42,7 @@ public:
 	void RenderFrame();
 
 	Camera camera;
-
-	std::unique_ptr<StaticMap> staticMap;   // NEW
+	std::unique_ptr<LoadZone> loadzone;
 	std::unique_ptr<ThreadPool>            pool;
 	std::unique_ptr<MainThreadQueue>       mainQueue;
 	std::unique_ptr<RuntimeAssetRegistry>  registry;
@@ -55,6 +57,8 @@ private:
 	void InitializeInputLayouts();
 	void InitAnnotation();
 	void DrawStaticSpecial(const RenderStatic& rs, const View& view);
+	void DrawStaticTransparent(const RenderStatic& rs, const View& view);
+	void DrawEntity(const RenderEntity& rs, const View& view);
 
 	std::array<Microsoft::WRL::ComPtr<ID3D11InputLayout>, 15> tiger_input_layouts;
 
@@ -76,11 +80,18 @@ private:
 	Model model;
 
 	CD3D11_VIEWPORT viewport;
+	ComPtr<ID3D11DepthStencilState> dsLightRO_Greater;
+
+	ComPtr<ID3D11RasterizerState> rsCullFront, rsCullBack;
+
+	Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerCullFront;
 
 	std::vector<std::pair<std::string, TigerScope>> scopes;
 
 	ComPtr<ID3D11DepthStencilState> dsWriteG;     // NEW (GREATER)
 	ComPtr<ID3D11DepthStencilState> dsReadOnlyG;  // NEW (GREATER, write=ZERO)
+
+	Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthStencilLightVolume;
 
 	Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthStencilView;
 	Microsoft::WRL::ComPtr<ID3D11Texture2D> depthStencilBuffer;
@@ -111,10 +122,13 @@ private:
 	ComPtr<ID3D11SamplerState> lighting2;
 
 
+
 	Microsoft::WRL::ComPtr<ID3D11BlendState> bsGBufferOpaqueIndependent;
 	Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerStateGBuffer;
 
 	RenderStates states;
+
+	bool LoadGlobalTextureOptional(const std::string& key,const std::filesystem::path& onDiskPath,int resourceId, bool forceSRGB);
 
 	Microsoft::WRL::ComPtr<ID3D11VertexShader> dbgFullscreenVS;
 	Microsoft::WRL::ComPtr<ID3D11PixelShader>  dbgDeferredPS;
@@ -132,14 +146,26 @@ private:
 
 	Timer fpsTimer;
 
+	Microsoft::WRL::ComPtr<ID3D11Buffer> lightCubeVB;
+	Microsoft::WRL::ComPtr<ID3D11Buffer> lightCubeIB;
+	UINT lightCubeIndexCount = 0;
+
 	std::vector<RenderStatic> staticsToDraw;
+	std::vector<RenderLight> lightsToDraw;
+	std::vector<RenderEntity> entitiesToDraw;
+
+	Microsoft::WRL::ComPtr<ID3D11BlendState> bsAdditive2RT;
 
 	void DrawStaticMesh(const RenderStatic& rs, const View& view);
-	void CreateWhite1x1SRV();
+	void Create1x1SRV(UINT color, ComPtr<ID3D11ShaderResourceView>&);
 	void CreateCB13();
 	void InitializeScopes();
 	void LoadGlobalTextures();
+	void DrawLight(const RenderLight& rs, const View& view);
+	void CreateLightVolumeResources();
 
+
+	Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerStateBiased;
 	std::array< GlobalChannel,256> channels = GetGlobalChannelDefaults();
 
 	std::unordered_map<std::string, Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>> global_textures;
@@ -152,6 +178,8 @@ private:
 	Microsoft::WRL::ComPtr<ID3D11Buffer>       deferredCamCB; // InvProj + CameraPos
 	Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerStateNoCull;
 	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> white1x1SRV;
+	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> grey1x1SRV;
+	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> temp_angle_lookup;
 	Microsoft::WRL::ComPtr<ID3D11Buffer> cb13_;
 
 	GBuffer gbufA;

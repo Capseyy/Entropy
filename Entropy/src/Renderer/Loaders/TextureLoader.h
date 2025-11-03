@@ -11,7 +11,55 @@
 #undef min
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "d3d11.lib")
+#define IDB_ANGlE_LOOKUP 102
 
+HRESULT EnsureWIC();
+
+// File ? SRV (uses WIC: png/jpg/tiff/…)
+HRESULT LoadTextureFromFileWIC(
+    ID3D11Device* dev,
+    ID3D11DeviceContext* ctx,        // can be null; used if we stage/convert
+    const wchar_t* path,
+    bool srgb,
+    ID3D11ShaderResourceView** outSRV);
+
+// Memory ? SRV (for baked/embedded bytes)
+HRESULT LoadTextureFromMemoryWIC(
+    ID3D11Device* dev,
+    const void* bytes, size_t size,
+    bool srgb,
+    ID3D11ShaderResourceView** outSRV);
+
+// Raw RGBA8 ? SRV (utility)
+HRESULT CreateSRVFromRGBA8(
+    ID3D11Device* dev,
+    const uint8_t* rgba, UINT w, UINT h, bool srgb,
+    ID3D11ShaderResourceView** outSRV);
+
+static HRESULT LoadEmbeddedTextureSRV(ID3D11Device* dev, UINT resId, bool srgb,
+    ID3D11ShaderResourceView** outSRV)
+{
+    *outSRV = nullptr;
+    HMODULE hMod = GetModuleHandleW(nullptr);
+
+    // Try RCDATA, then PNG
+    const wchar_t* kinds[] = { RT_RCDATA, L"PNG" };
+    HRSRC hRes = nullptr;
+    for (auto k : kinds) {
+        hRes = FindResourceW(hMod, MAKEINTRESOURCEW(resId), k);
+        if (hRes) break;
+    }
+    if (!hRes) return HRESULT_FROM_WIN32(GetLastError());
+
+    HGLOBAL hMem = LoadResource(hMod, hRes);
+    if (!hMem) return HRESULT_FROM_WIN32(GetLastError());
+
+    DWORD size = SizeofResource(hMod, hRes);
+    const void* ptr = LockResource(hMem);
+    if (!ptr || !size) return E_FAIL;
+
+    return LoadTextureFromMemoryWIC(dev, ptr, size, srgb, outSRV);
+}
 
 
 inline std::pair<size_t, size_t>

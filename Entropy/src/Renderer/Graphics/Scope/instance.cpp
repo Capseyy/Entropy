@@ -56,3 +56,52 @@ void UpdateCB1(
 	ID3D11Buffer* b = g_cb1.Get();
 	ctx->VSSetConstantBuffers(1, 1, &b);
 }
+
+void UpdateCB1_Single(
+	ID3D11DeviceContext* ctx,
+	const DirectX::XMFLOAT3& meshOffset, float meshScale,
+	float uvScaleX, float uvOffX, float uvOffY, std::uint32_t maxColorOrClampBits,
+	glm::quat rot, glm::vec4 pos
+) {
+	using namespace DirectX;
+
+	D3D11_MAPPED_SUBRESOURCE m{};
+	ctx->Map(g_cb1.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &m);
+	auto* cb = reinterpret_cast<CB1Payload*>(m.pData);
+
+	// Header (matches cbl_v0 / cbl_v1)
+	cb->meshOffset_meshScale = XMFLOAT4(meshOffset.x, meshOffset.y, meshOffset.z, meshScale);
+	cb->uvScale_uvOffset = XMFLOAT4(uvScaleX, uvOffX, uvOffY, asfloat_u32(maxColorOrClampBits));
+
+	// Build world matrix: S * R * T
+	const float s = pos.w; // scale from pos.w
+	const XMVECTOR q = XMVectorSet(rot.x, rot.y, rot.z, rot.w);
+	const XMVECTOR t = XMVectorSet(pos.x, pos.y, pos.z, 0.0f);
+
+	XMMATRIX M =
+		XMMatrixScaling(s, s, s) *
+		XMMatrixRotationQuaternion(q) *
+		XMMatrixTranslationFromVector(t);
+
+	// If shader expects column-major (like the other function), transpose.
+	M = XMMatrixTranspose(M);
+
+	// Write instance 0
+	XMStoreFloat4(&cb->instances[0][0], M.r[0]);
+	XMStoreFloat4(&cb->instances[0][1], M.r[1]);
+	XMStoreFloat4(&cb->instances[0][2], M.r[2]);
+	XMStoreFloat4(&cb->instances[0][3], M.r[3]);
+
+	// Zero the rest (same as the multi-instance path)
+	for (UINT i = 1; i < MAX_INST; ++i) {
+		cb->instances[i][0] = XMFLOAT4(1, 0, 0, 0);
+		cb->instances[i][1] = XMFLOAT4(1, 0, 0, 0);
+		cb->instances[i][2] = XMFLOAT4(1, 0, 0, 0);
+		cb->instances[i][3] = XMFLOAT4(1, 0, 0, 0);
+	}
+
+	ctx->Unmap(g_cb1.Get(), 0);
+
+	ID3D11Buffer* b = g_cb1.Get();
+	ctx->VSSetConstantBuffers(1, 1, &b);
+}

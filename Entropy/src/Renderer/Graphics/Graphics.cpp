@@ -7,6 +7,9 @@
 #pragma comment(lib, "d3dcompiler.lib")
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
 
+#pragma once
+#define IDB_ANGlE_LOOKUP 102
+
 static std::array<GlobalChannel, 256> channels = GetGlobalChannelDefaults();
 
 static bool TryGetViewExtern(const ExternStorage& ex, ViewExtern& out)
@@ -60,9 +63,8 @@ static const float kCB0Data[76][4] = { {0,0,0,0},
 
 
 
-void Graphics::CreateWhite1x1SRV()
+void Graphics::Create1x1SRV(UINT color, ComPtr<ID3D11ShaderResourceView>& address)
 {
-	UINT color = 0xFFFFFFFF; // RGBA8 UNORM white
 	D3D11_TEXTURE2D_DESC td = {};
 	td.Width = 1; td.Height = 1; td.MipLevels = 1; td.ArraySize = 1;
 	td.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
@@ -80,8 +82,12 @@ void Graphics::CreateWhite1x1SRV()
 	svd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
 	svd.Texture2D.MipLevels = 1;
 
-	pDevice->CreateShaderResourceView(tex.Get(), &svd, white1x1SRV.GetAddressOf());
+	pDevice->CreateShaderResourceView(tex.Get(), &svd, address.GetAddressOf());
 }
+
+struct CBLightSimpleGeometry { DirectX::XMFLOAT4X4 transform; };
+Microsoft::WRL::ComPtr<ID3D11Buffer> cbLightSimpleGeometry;
+
 
 static void DrawFullscreenTriangle(ID3D11DeviceContext* ctx) {
 	ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
@@ -264,30 +270,6 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 	}
 
 }
-struct CB13Data { DirectX::XMFLOAT4 v0, v1, v2, v3, v4; };
-
-void Graphics::CreateCB13()
-{
-	D3D11_BUFFER_DESC bd{};
-	bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-	bd.ByteWidth = sizeof(CB13Data);
-	bd.Usage = D3D11_USAGE_DYNAMIC;
-	bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-
-	// Initial values from your screenshot
-	CB13Data init{
-		{ 69.9002f, 69.9002f, 0.04437f,   1.0f },       // cb13_v0
-		{  1.0f,    16.0f,    1.0f,       1.0f },       // cb13_v1
-		{130.46442f,124.48499f,1141.70886f,239.59105f },// cb13_v2
-		{  0.50f,    0.50f,    0.50f,     0.0f },       // cb13_v3  (last component unknown -> 0)
-		{  1.0f,     1.0f,     0.0f,      1.0f }        // cb13_v4
-	};
-
-	D3D11_SUBRESOURCE_DATA srd{ &init, 0, 0 };
-	COM_ERROR_IF_FAILED(pDevice->CreateBuffer(&bd, &srd, cb13_.GetAddressOf()),
-		"Create CB13 failed");
-}
-
 
 void Graphics::DrawStaticSpecial(const RenderStatic& rs, const View& view)
 {
@@ -355,6 +337,277 @@ void Graphics::DrawStaticSpecial(const RenderStatic& rs, const View& view)
 	}
 }
 
+void Graphics::DrawStaticTransparent(const RenderStatic& rs, const View& view)
+{
+	ID3D11DeviceContext* ctx = pContext.Get();
+	wchar_t label[128];
+	swprintf(label, 128, L"Static geometry transparent %08X", rs.mesh->id);
+	//const DirectX::XMMATRIX world = rs.world;
+	//printf("Loading Static %08X", rs.mesh->id);
+	GpuMarker mark(ctx, label);
+	const auto& mesh = *rs.mesh;
+
+	// View constant buffer(s)
+	ID3D11Buffer* b1 = g_cb1.Get();            // if you also use cb1 for per-object, leave it bound
+
+	ID3D11Buffer* b12 = g_scopeView_b12.Get();
+	XMFLOAT3 mesh_offset;
+	mesh_offset.x = rs.meshData.mesh_offset[0];
+	mesh_offset.y = rs.meshData.mesh_offset[1];
+	mesh_offset.z = rs.meshData.mesh_offset[2];
+
+	UpdateCB1(ctx,
+		mesh_offset,
+		rs.meshData.mesh_scale,
+		rs.meshData.texture_coordinate_scale,
+		rs.meshData.texture_coordinate_offset[0],
+		rs.meshData.texture_coordinate_offset[1],
+		rs.meshData.max_colour_index,
+		rs.world);
+	swprintf(label, 128, L"Static geometry decal %08X", rs.mesh->id);
+	for (const auto& special : rs.specials) {
+		// If technique is shared_ptr:
+		auto tech = special->technique;
+		if (special->part.TfxRenderStage == 7) {
+			auto& part = special->part;
+			auto tech = special->technique.get();
+			ctx->IASetInputLayout(tiger_input_layouts[part.input_layout_index].Get());
+			if (part.PrimitiveType == 5) {
+				pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+			}
+			else {
+				pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			}
+			//printf("%d\n", part.input_layout_index);
+			ID3D11Buffer* vbs[3];
+			UINT          strides[3];
+			UINT          offsets[3] = { 0,0,0 };
+			UINT          vbCount = 0;
+			
+			
+
+			if (special->group->vertex) { vbs[vbCount] = special->group->vertex.get(); strides[vbCount] = special->group->vertexStride; ++vbCount; }
+			if (special->group->uv) { vbs[vbCount] = special->group->uv.get();     strides[vbCount] = special->group->uvStride;     ++vbCount; }
+			if (special->part.VertexColourBuffer.hash != 0xffffffff) {
+				ID3D11ShaderResourceView* s = special->group->color.get();
+				//ctx->VSSetShaderResources(1, 1, &s);
+				ctx->VSSetShaderResources(0, 1, &s);
+			}
+			ctx->IASetVertexBuffers(0, vbCount, vbs, strides, offsets);
+			ctx->IASetIndexBuffer(special->group->index.get(), special->group->indexFormat, 0);
+			if (tech)
+				tech->Bind(pDevice, pContext, externs, states, scopes);
+			pContext->OMSetDepthStencilState(depthStencilDecal.Get(), 0);
+			pContext->RSSetState(rasterizerStateNoCull.Get());
+			ID3D11ShaderResourceView* srvs[] = {            // t4
+			this->temp_angle_lookup.Get(),             // t5
+			};
+			pContext->PSSetShaderResources(15, 1, srvs);
+			ID3D11Buffer* b = g_cb1.Get();
+			ctx->VSSetConstantBuffers(1, 1, &b);
+			
+			const UINT instanceCount = (UINT)rs.world.size();
+			ctx->DrawIndexedInstanced(part.index_count,
+				instanceCount,               // InstanceCount
+				part.index_start,   // StartIndexLocation
+				0,                           // BaseVertexLocation
+				0);
+
+
+
+		}//decals
+	}
+}
+
+void Graphics::DrawLight(const RenderLight& rl, const View& view)
+{
+    ID3D11DeviceContext* ctx = pContext.Get();
+    wchar_t label[128];
+    swprintf(label, 128, L"Light Render %08X %d", rl.parent, rl.idx);
+    GpuMarker mark(ctx, label);
+	//printf("Light Render %08X %d  at pos x %f %f %f\n", rl.parent, rl.idx, rl.pos.x, rl.pos.y, rl.pos.z);
+    // ------------------- Bind light MRTs + scene depth -------------------
+    ID3D11RenderTargetView* rts[] = {
+        gbufA.light_diffuse.rtv.Get(),
+        gbufA.light_specular.rtv.Get()
+    };
+    ctx->OMSetRenderTargets(2, rts, gbufA.depth.dsv.Get());
+
+    using namespace DirectX;
+
+    // Node transform (local_to_world)
+    const XMVECTOR qn = XMQuaternionNormalize(XMVectorSet(rl.rot.x, rl.rot.y, rl.rot.z, rl.rot.w));
+    const XMMATRIX R  = XMMatrixRotationQuaternion(qn);
+    const XMMATRIX T  = XMMatrixTranslation(rl.pos.x, rl.pos.y, rl.pos.z);
+	const XMMATRIX NodeL2W = R * T;
+	const XMMATRIX LightL2W = XMLoadFloat4x4((const XMFLOAT4X4*)&rl.light_matrix);
+
+	// Rust:   Node * Light   (column-vectors)  =>  apply Light then Node
+	// C++:    Light * Node   (row-vectors)     =>  same effect
+	const XMMATRIX L2W_scaled = LightL2W * NodeL2W;
+
+	// final SG = (world_to_projective * transform_mat_scaled) in Rust
+	// For row-vectors, multiply on the right:
+	const XMMATRIX W2P = XMLoadFloat4x4(&view.world_to_projective);
+	const XMMATRIX SG = L2W_scaled * W2P;
+
+	Mat4 sgM; XMStoreFloat4x4((XMFLOAT4X4*)&sgM, SG);
+	externs.SetSimpleGeometryTransform(sgM);
+
+
+	const XMMATRIX Trel = XMMatrixTranslation(rl.pos.x - view.position.x,
+		rl.pos.y - view.position.y,
+		rl.pos.z - view.position.z);
+	const XMMATRIX L2W_rel_xm = R * Trel;
+
+	// convert XMMATRIX -> Mat4
+	const Mat4 l2wRel = M4(L2W_rel_xm);
+
+	// camT as Mat4 (you can also make it via M4(XMMatrixTranslation(...)))
+	Mat4 camT = Mat4::identity();
+	{
+		float* p = reinterpret_cast<float*>(&camT);
+		p[12] = view.position.x; p[13] = view.position.y; p[14] = view.position.z; p[15] = 1.0f;
+	}
+
+	// set externs
+	externs.SetDeferredLight(camT, l2wRel, rl.unk50);
+
+    // ------------------- SRVs (order matters!) -------------------
+    ID3D11ShaderResourceView* srvs[] = {       // t0 : MATERIAL/PARAMS  (RT2)
+        gbufA.rt1_read.srv.Get(),      // t1 : NORMAL+ROUGHNESS (RT1 clone)
+        gbufA.depth.texCopySRV.Get(),  // t2 : DEPTH            (R32_FLOAT)
+		gbufA.rt2.srv.Get(),
+    };
+    ctx->PSSetShaderResources(0, _countof(srvs), srvs);
+
+    // ------------------- States for light volumes -------------------
+    if (rl.technique)
+        rl.technique->Bind(pDevice, pContext, externs, states, scopes);
+
+    float bf[4] = {1,1,1,1};
+    ctx->OMSetBlendState(bsAdditive2RT.Get(), bf, 0xFFFFFFFF);  // ONE+ONE on both RTs
+    ctx->OMSetDepthStencilState(depthStencilLightVolume.Get(), 0);
+    ctx->RSSetState(rasterizerStateBiased.Get());               // or cull-front/back depending on inside/outside
+
+    // ------------------- Draw the light volume -------------------
+    ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    UINT stride = sizeof(float) * 3, offset = 0;
+    ID3D11Buffer* vb = lightCubeVB.Get();
+    ctx->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
+    ctx->IASetIndexBuffer(lightCubeIB.Get(), DXGI_FORMAT_R16_UINT, 0);
+    ctx->IASetInputLayout(tiger_input_layouts[0].Get());
+    ctx->DrawIndexed(36, 0, 0);
+
+    // Unbind to avoid hazards
+    ID3D11ShaderResourceView* nulls[3] = { nullptr, nullptr, nullptr };
+    ctx->PSSetShaderResources(0, 3, nulls);
+}
+
+void Graphics::DrawEntity(const RenderEntity& rs, const View& /*view*/)
+{
+	ID3D11DeviceContext* ctx = pContext.Get();
+	wchar_t label[128];
+	swprintf(label, 128, L"Dynamic Object %08X ", rs.id);
+	GpuMarker mark(ctx, label);
+	// Build a single world matrix from the entity's pos/rot (glm -> XM)
+	using namespace DirectX;
+	const XMVECTOR q = XMVectorSet(rs.rot.x, rs.rot.y, rs.rot.z, rs.rot.w);
+	const XMVECTOR qn = XMQuaternionNormalize(q);
+	const XMMATRIX R = XMMatrixRotationQuaternion(qn);
+	const XMMATRIX T = XMMatrixTranslation(rs.pos.x, rs.pos.y, rs.pos.z);
+	XMFLOAT4X4 worldXM;
+	XMStoreFloat4x4(&worldXM, R * T);
+
+	// CB1: mesh/model params from SEntityModel (fallbacks are sane if authoring data is odd)
+	XMFLOAT3 mesh_offset{
+		rs.meshData.model_offset.x,
+		rs.meshData.model_offset.y,
+		rs.meshData.model_offset.z
+	};
+	const float mesh_scale = rs.meshData.model_scale.x;                  // uniform; use .x
+	const float texScale = rs.meshData.texcoord_scale.x;               // if non-uniform you can split
+	const float texOffX = rs.meshData.texcoord_offset.x;
+	const float texOffY = rs.meshData.texcoord_offset.y;
+	const uint32_t maxColourIndex = 0;                                   // no field on SEntityModel; keep 0
+
+	{
+		std::vector<XMFLOAT4X4> oneWorld{ worldXM };
+		UpdateCB1_Single(ctx,
+			mesh_offset,
+			mesh_scale,
+			texScale,
+			texOffX, texOffY,
+			maxColourIndex,
+			rs.rot,rs.pos);
+	}
+	// Draw each mesh and its parts
+	for (const auto& meshPtr : rs.meshs)
+	{
+
+		if (!meshPtr) continue;
+		const DynamicMesh& mesh = *meshPtr;
+
+		// Pick input layout for the current pipeline stage (GBuffer)
+		const uint8_t ilIndex = mesh.input_layout_per_render_stage[static_cast<int>(PipelineStage::GBuffer)];
+		if (ilIndex < tiger_input_layouts.size() && tiger_input_layouts[ilIndex])
+			ctx->IASetInputLayout(tiger_input_layouts[ilIndex].Get());
+		else
+			ctx->IASetInputLayout(nullptr);
+
+		// Buffers group
+		const auto& grp = mesh.buffers;
+		if (!grp || !grp->index_buffer) continue;
+
+		// Set VBs (slot0 = vertex0 / slot1 = vertex1)
+		ID3D11Buffer* vbs[4]{};
+		UINT          strides[4]{};
+		UINT          offsets[4]{ 0,0,0,0 };
+		UINT          vbCount = 0;
+
+		if (grp->vertex0_buffer) { vbs[vbCount] = grp->vertex0_buffer.get(); strides[vbCount] = grp->vertex0Stride; ++vbCount; }
+		if (grp->vertex1_buffer) { vbs[vbCount] = grp->vertex1_buffer.get(); strides[vbCount] = grp->vertex1Stride; ++vbCount; }
+		if (grp->buffer2) { vbs[vbCount] = grp->buffer2.get();        strides[vbCount] = grp->buffer2Stride; ++vbCount; }
+		if (grp->buffer3) { vbs[vbCount] = grp->buffer3.get();        strides[vbCount] = grp->buffer3Stride; ++vbCount; }
+
+		ctx->IASetVertexBuffers(0, vbCount, vbs, strides, offsets);
+		ctx->IASetIndexBuffer(grp->index_buffer.get(), grp->indexFormat, 0);
+
+		// Optional vertex colour SRV (matches how you handled statics)
+		if (grp->color) {
+			ID3D11ShaderResourceView* s = grp->color.get();
+			ctx->VSSetShaderResources(0, 1, &s);
+		}
+
+		// Draw each part with its technique
+		for (const auto& partPtr : mesh.parts)
+		{
+			if (!partPtr) continue;
+			const DynamicMeshPart& part = *partPtr;
+			if (part.meshpartinfo.LodCatagory != 0) continue; // only LOD 0 for now
+
+			// Primitive type: 5 == triangle strip in your format
+			if (part.meshpartinfo.PrimitiveType == 5)
+				ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+			else
+				ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+			// Bind technique: prefer the part’s, otherwise try external table by index if you add that mapping
+			if (part.technique)
+				part.technique->Bind(pDevice, pContext, externs, states, scopes);
+
+			// VS CB1 is per-object
+			ID3D11Buffer* b1 = g_cb1.Get();
+			ctx->VSSetConstantBuffers(1, 1, &b1);
+
+			// One instance for entities
+			ctx->DrawIndexed(part.meshpartinfo.index_count,
+				part.meshpartinfo.index_start,
+				0);
+		}
+	}
+}
+
 void Graphics::RenderFrame()
 {
 	mainQueue->Drain();
@@ -393,7 +646,6 @@ void Graphics::RenderFrame()
 				windowWidth ? 1.0f / float(windowWidth) : 0.0f,
 				windowHeight ? 1.0f / float(windowHeight) : 0.0f
 			);
-			externs.SetShadowMaskParams(&smParams, nullptr);
 		}
 		
 
@@ -428,6 +680,11 @@ void Graphics::RenderFrame()
 
 		for (auto& rs : staticsToDraw) {
 			DrawStaticMesh(rs, viewState);
+		}
+
+		for (auto& re : entitiesToDraw)
+		{
+			DrawEntity(re, viewState);
 		}
 	}
 	{
@@ -509,6 +766,12 @@ void Graphics::RenderFrame()
 		pContext->IASetInputLayout(nullptr);
 		pContext->Draw(4, 0);
 
+		//scene lights
+		for (auto& light : lightsToDraw)
+		{
+			DrawLight(light, viewState);
+		}
+
 		ID3D11ShaderResourceView* nulls[8] = {};
 		pContext->PSSetShaderResources(0, 8, nulls);
 	}
@@ -560,6 +823,27 @@ void Graphics::RenderFrame()
 		ID3D11ShaderResourceView* nulls[8] = {};
 		pContext->PSSetShaderResources(0, 8, nulls);
 	}
+	{
+		ID3D11ShaderResourceView* nulls[8] = {};
+		pContext->PSSetShaderResources(0, 8, nulls);
+		//transparency pass
+		//pContext->CopyResource(gbufA.shading_result_read.tex.Get(), gbufA.shading_result.tex.Get());
+		ID3D11RenderTargetView* rt[1] = {
+			gbufA.shading_result.rtv.Get()
+		};
+		pContext->OMSetRenderTargets(1, rt, gbufA.depth.dsv.Get());
+		ScopedGpuEvent e(anno_.Get(), L"transparency_pass");
+		
+
+		for (auto& rs : staticsToDraw) {
+			if (rs.mesh->id != 0x80ac5ebd) {
+				//continue;
+			}
+			DrawStaticTransparent(rs, viewState);
+		}
+
+	}
+
 
 	{
 		ScopedGpuEvent e(anno_.Get(), L"present_to_backbuffer");
@@ -620,7 +904,7 @@ void Graphics::RenderFrame()
 	auto CameraRot = camera.GetRotationFloat3();
 	std::string CameraPrintRot = std::format("Pitch: {:.2f}  Roll: {:.2f}  Yaw: {:.2f}", CameraRot.x, CameraRot.y, CameraRot.z);
 
-	static bool drawrt1 = false, drawrt0 = false, drawrt2 = false, drawLight_diffuse = false, drawLight_specular = false, drawDepth = false, drawShading= false, drawLight_ibl =false;
+	static bool drawrt1 = false, drawrt0 = false, drawrt2 = false, drawLight_diffuse = false, drawLight_specular = false, drawDepth = false, drawShading= false,drawShadingRead =false, drawLight_ibl =false;
 	//pContext->OMSetBlendState(bsOpaque.Get(),black
 	spriteBatch->Begin();
 	if (drawrt1)         spriteBatch->Draw(gbufA.rt1_read.srv.Get(), DirectX::XMFLOAT2(0, 0));
@@ -630,6 +914,7 @@ void Graphics::RenderFrame()
 	if (drawLight_specular)  spriteBatch->Draw(gbufA.light_specular.srv.Get(), DirectX::XMFLOAT2(0, 0));
 	if (drawLight_ibl)  spriteBatch->Draw(gbufA.light_ibl_specular.srv.Get(), DirectX::XMFLOAT2(0, 0));
 	if (drawShading)  spriteBatch->Draw(gbufA.shading_result.srv.Get(), DirectX::XMFLOAT2(0, 0));
+	if (drawShadingRead) spriteBatch->Draw(gbufA.shading_result_read.srv.Get(), DirectX::XMFLOAT2(0, 0));
 	spriteFont->DrawString(spriteBatch.get(), StringConverter::StringToWide(fpsString).c_str(), DirectX::XMFLOAT2(0, 0), DirectX::Colors::Wheat);
 	spriteFont->DrawString(spriteBatch.get(), StringConverter::StringToWide(CameraPrint).c_str(), DirectX::XMFLOAT2(0, 50), DirectX::Colors::Wheat);
 	spriteFont->DrawString(spriteBatch.get(), StringConverter::StringToWide(CameraPrintRot).c_str(), DirectX::XMFLOAT2(0, 100), DirectX::Colors::Wheat);
@@ -650,6 +935,7 @@ void Graphics::RenderFrame()
 	ImGui::Checkbox("Draw Depth", &drawDepth);
 	ImGui::Checkbox("Draw Shading", &drawShading);
 	ImGui::Checkbox("Draw drawLight_ibl", &drawLight_ibl);
+	ImGui::Checkbox("Draw ShadingRead", &drawShadingRead);
 	if (ImGui::CollapsingHeader("ViewExtern"))
 	{
 		ViewExtern v{};
@@ -981,6 +1267,70 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 			pDevice->CreateBlendState(&bd, bsMultiply.GetAddressOf());
 		}
 
+		{
+			CD3D11_RASTERIZER_DESC rs(D3D11_DEFAULT);
+			rs.CullMode = D3D11_CULL_FRONT;     // draw backfaces of the volume
+			rs.FrontCounterClockwise = TRUE;    // keep consistent with your mesh winding
+			pDevice->CreateRasterizerState(&rs, rasterizerCullFront.GetAddressOf());
+		}
+
+		{
+			CD3D11_RASTERIZER_DESC rz(D3D11_DEFAULT);
+			rz.FillMode = D3D11_FILL_SOLID;
+			rz.CullMode = D3D11_CULL_BACK;
+			rz.FrontCounterClockwise = TRUE;      // ? Front CCW
+			rz.DepthBias = 5;                     // Depth Bias
+			rz.DepthBiasClamp = 1.0e10f;          // Depth Bias Clamp
+			rz.SlopeScaledDepthBias = 2.0f;       // Slope-Scaled Bias
+			rz.DepthClipEnable = TRUE;            // ? Depth Clip
+			rz.ScissorEnable = FALSE;             // ? Scissor
+			rz.MultisampleEnable = FALSE;         // ? Multisample
+			rz.AntialiasedLineEnable = FALSE;     // ? Line AA
+
+			HRESULT hr = pDevice->CreateRasterizerState(&rz, rasterizerStateBiased.GetAddressOf());
+			COM_ERROR_IF_FAILED(hr, "Failed to create biased rasterizer state.");
+		}
+
+		{
+			D3D11_BLEND_DESC bd{};
+			bd.AlphaToCoverageEnable = FALSE;
+			bd.IndependentBlendEnable = TRUE;
+
+			// Enable ONE+ONE ADD on both RT0 and RT1
+			for (int i = 0; i < 2; ++i) {
+				D3D11_RENDER_TARGET_BLEND_DESC rt{};
+				rt.BlendEnable = TRUE;
+				rt.SrcBlend = D3D11_BLEND_ONE;
+				rt.DestBlend = D3D11_BLEND_ONE;
+				rt.BlendOp = D3D11_BLEND_OP_ADD;
+				rt.SrcBlendAlpha = D3D11_BLEND_ONE;
+				rt.DestBlendAlpha = D3D11_BLEND_ONE;
+				rt.BlendOpAlpha = D3D11_BLEND_OP_ADD;
+				rt.RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+				bd.RenderTarget[i] = rt;
+			}
+			// Leave the rest (2..7) disabled/zeroed.
+			pDevice->CreateBlendState(&bd, bsAdditive2RT.GetAddressOf());
+		}
+		D3D11_DEPTH_STENCILOP_DESC dsdesc{};
+		dsdesc.StencilFailOp = D3D11_STENCIL_OP_KEEP;
+		dsdesc.StencilDepthFailOp = D3D11_STENCIL_OP_KEEP;
+		dsdesc.StencilPassOp = D3D11_STENCIL_OP_KEEP;
+		dsdesc.StencilFunc = D3D11_COMPARISON_ALWAYS;
+
+
+		{
+			CD3D11_DEPTH_STENCIL_DESC ds(D3D11_DEFAULT);
+			ds.DepthEnable = FALSE;
+			ds.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;        // read-only
+			ds.DepthFunc = D3D11_COMPARISON_ALWAYS;          // reversed-Z
+			ds.StencilReadMask = 0;
+			ds.StencilWriteMask = 0;
+			ds.BackFace = dsdesc;
+			ds.FrontFace = dsdesc;
+			pDevice->CreateDepthStencilState(&ds, depthStencilLightVolume.GetAddressOf());
+		}
+
 		CD3D11_DEPTH_STENCIL_DESC ds_decal(D3D11_DEFAULT);
 		ds_decal.DepthEnable = TRUE;
 		ds_decal.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
@@ -988,6 +1338,7 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		hr = pDevice->CreateDepthStencilState(&ds_decal, depthStencilDecal.GetAddressOf());
 		COM_ERROR_IF_FAILED(hr, "Failed to create reversed-Z depth stencil state.");
 	}
+
 
 	catch (COMException& exception)
 	{
@@ -1046,6 +1397,69 @@ void Graphics::InitializeScopes()
 	}
 }
 
+void Graphics::CreateLightVolumeResources()
+{
+	// --- Unit cube ([-1,+1]^3), POSITION-only float3
+	static const float verts[24][3] = {
+	{ 1,1,-1 },
+	{ 1,1,1 },
+	{ 1,-1,1 },
+	{ 1,-1,-1 },
+	{ -1,-1,-1 },
+	{ -1,-1,1 },
+	{ -1,1,1 },
+	{ -1,1,-1 },
+	{ -1,1,1 },
+	{ 1,1,1 },
+	{ 1,1,-1 },
+	{ -1,1,-1 },
+	{ 1,-1,-1 },
+	{ 1,-1,1 },
+	{ -1,-1,1 },
+	{ -1,-1,-1 },
+	{ 1,-1,1 },
+	{ 1,1,1 },
+	{ -1,1,1 },
+	{ -1,-1,1 },
+	{ -1,-1,-1 },
+	{ -1,1,-1 },
+	{ 1,1,-1 },
+	{ 1,-1,-1 }
+	};
+	static const uint16_t idx[36] = {
+	0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4,
+	8, 9, 10, 10, 11, 8, 12, 13, 14, 14, 15, 12,
+	16, 17, 18, 18, 19, 16, 20, 21, 22, 22, 23, 20
+	};
+	lightCubeIndexCount = (UINT)std::size(idx);
+
+	// VB
+	D3D11_BUFFER_DESC vbd{};
+	vbd.ByteWidth = UINT(sizeof(verts));
+	vbd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+	vbd.Usage = D3D11_USAGE_IMMUTABLE;
+	D3D11_SUBRESOURCE_DATA vinit{ verts, 0, 0 };
+	pDevice->CreateBuffer(&vbd, &vinit, lightCubeVB.GetAddressOf());
+
+	// IB
+	D3D11_BUFFER_DESC ibd{};
+	ibd.ByteWidth = UINT(sizeof(idx));
+	ibd.BindFlags = D3D11_BIND_INDEX_BUFFER;
+	ibd.Usage = D3D11_USAGE_IMMUTABLE;
+	D3D11_SUBRESOURCE_DATA iinit{ idx, 0, 0 };
+	pDevice->CreateBuffer(&ibd, &iinit, lightCubeIB.GetAddressOf());
+
+	// Per-light VS CB (SimpleGeometry.transform)
+	D3D11_BUFFER_DESC cbd{};
+	cbd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+	cbd.ByteWidth = sizeof(CBLightSimpleGeometry);
+	cbd.Usage = D3D11_USAGE_DYNAMIC;
+	cbd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+	CBLightSimpleGeometry zero{};
+	D3D11_SUBRESOURCE_DATA cinit{ &zero, 0, 0 };
+	pDevice->CreateBuffer(&cbd, &cinit, cbLightSimpleGeometry.GetAddressOf());
+}
+
 void Graphics::LoadGlobalTextures() {
 	auto GlobalTex = GlobalData::getGlobalTextures();
 	for (auto tex : GlobalTex) {
@@ -1061,6 +1475,9 @@ void Graphics::LoadGlobalTextures() {
 		hr = pDevice->CreateShaderResourceView(textureLoaded.Get(), &sd, &texSrv);
 		this->global_textures[tex.first] = texSrv;
 	}
+	HRESULT hr = LoadEmbeddedTextureSRV(pDevice.Get(), 102,/*srgb*/false, this->temp_angle_lookup.GetAddressOf());
+	if (FAILED(hr))
+		ErrorLogger::Log(hr, "Failed to load baked texture");
 }
 
 bool Graphics::InitializeScene()
@@ -1075,14 +1492,19 @@ bool Graphics::InitializeScene()
 		return false;
 	}
 	InitializeInputLayouts();
-	CreateCB13();
-	CreateWhite1x1SRV();
+	Create1x1SRV(0xFFFFFFFF, white1x1SRV);
+	Create1x1SRV(0xFF808080, grey1x1SRV);
 	InitializeScopes();
 	LoadGlobalTextures();
-	staticMap = std::make_unique<StaticMap>(*this);
-	staticMap->Initialize(0x80FBAE28);  // root map hash (or whatever yours is)
-	staticsToDraw = staticMap->GetRenderList();
-
+	CreateLightVolumeResources();
+	
+	loadzone = std::make_unique<LoadZone>(*this);
+	loadzone->parentHash = 0x8102B526; //duality
+	loadzone->ProcessMap();
+	this->staticsToDraw = loadzone->statics;
+	this->lightsToDraw = loadzone->lights;
+	this->entitiesToDraw = loadzone->entities;
+	printf("Loading Render Engine\n");
 	gTimer.reset();
 	return true;
 }

@@ -99,9 +99,16 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
         this->pixeldata.TFX_Constants);
     // implement getFloat/getVec4/getMat4 in extern.cpp
     auto& cb0 = this->pixeldata.SamplerFallback; // std::vector<Vec4> used as cb0 backing
+    /*if (this->id == 0x80C0D09E)
+    {
+        prog.Evaluate_Trace(externs, cb0);
+    }
+    else {
+        prog.Evaluate(externs, cb0);
+    }*/
+    
+    
     prog.Evaluate(externs, cb0);
-    
-    
     
             // writes float4s to cb0[..] as dictated by bytecode
     
@@ -201,7 +208,7 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
         }
     }
 
-    if (this->vertexdata.TFX_Bytecode.size() != 0) {
+    if (this->vertexdata.TFX_Bytecode.size() != 0 && this->vertexdata.contstant_buffer.hash == 0xffffffff) {
         TfxProgram prog_vs = TfxProgram::FromBytecode(this->vertexdata.TFX_Bytecode,
             this->vertexdata.TFX_Constants);
         auto& cb0_vs = this->vertexdata.SamplerFallback;
@@ -228,6 +235,13 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
             pContext->VSSetConstantBuffers(UINT(this->vsCBSlots_fallback), 1, &buf);
         }
     }
+    // Bind all technique constant buffers (your existing behavior)
+    if (!this->CBuffers_VS.empty()) {
+        for (size_t i = 0; i < this->CBuffers_VS.size(); ++i) {
+            ID3D11Buffer* b = this->CBuffers_VS[i]->buffer.Get();
+            pContext->VSSetConstantBuffers(UINT(i), 1, &b);
+        }
+    }
     
 
     if (TfxScope::has(used, TfxScope::FRAME)) {
@@ -236,6 +250,12 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
     if (TfxScope::has(used, TfxScope::VIEW)) {
         scopes[1].second.Bind(pContext);
 
+    }
+    if (TfxScope::has(used, TfxScope::TRANSPARENT)) {
+        scopes[13].second.Bind(pContext);
+    }
+    if (TfxScope::has(used, TfxScope::TRANSPARENT_ADVANCED)) {
+        scopes[14].second.Bind(pContext);
     }
     if (TfxScope::has(used, TfxScope::CHUNK_MODEL)) {
         scopes[9].second.Bind(pContext);

@@ -724,7 +724,22 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
                 printf("[Tech] %08X fallback PS cbuffer failed: %s\n", id, e.what());
             }
         }
-        
+        //VS CBUFFER 
+        std::shared_future<std::shared_ptr<EntropyAssets::CBufferRes>> fVSCB;
+        UINT vsCBSlot = 0;
+        const uint32_t cbId_vs = Tfx.VertexShader.contstant_buffer.reference;
+        if (cbId_vs != 0u && cbId_vs != 0xFFFFFFFFu) {
+            vsCBSlot = static_cast<UINT>(
+                Tfx.VertexShader.constant_buffer_slot >= 0 ? Tfx.VertexShader.constant_buffer_slot : 0);
+
+            TagHash cbTag(cbId_vs);
+            if (ensureCBufferPayload(cbId_vs, cbTag)) {
+                fVSCB = EnqueueCBuffer(cbId_vs).future;
+            }
+            else {
+                OutputDebugStringA("[Tech] ensureCBufferPayload failed\n");
+            }
+        }
 
         // --------- Collect everything ----------
         if (fVS.valid()) if (auto vs = fVS.get()) tech->VS.push_back(vs);
@@ -767,6 +782,12 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
                 tech->psCBSlots.push_back(psCBSlot);
             }
         } 
+        if (fVSCB.valid()) {
+            if (auto cbres = fVSCB.get()) {
+                tech->CBuffers_VS.push_back(cbres);
+                tech->vsCBSlots.push_back(vsCBSlot);
+            }
+        }
         tech->vertexdata = Tfx.VertexShader;
         tech->pixeldata = Tfx.PixelShader;
         tech->StateSelection = Tfx.StateSelection;

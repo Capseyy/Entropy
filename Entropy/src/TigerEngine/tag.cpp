@@ -108,7 +108,15 @@ void WideHash::print() {
 unsigned char* WideHash::getData() {
 	const auto& h64 = GlobalData::getH64();
 	auto it = h64.find(wideHashData.Hash64);
-
+	if (wideHashData.Unk0 != 0xffffffff) {
+		TagHash toTagHash = TagHash(wideHashData.Unk0);
+		size = toTagHash.size;
+		reference = toTagHash.reference;
+		success = toTagHash.success;
+		data = toTagHash.data;
+		tagHash32 = toTagHash.hash;
+		return toTagHash.data;
+	}
 	
 	if (it == h64.end()) {
 		printf("H64 lookup failed for % \n", wideHashData.Hash64);

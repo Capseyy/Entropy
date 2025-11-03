@@ -160,5 +160,6 @@ void TigerScope::Bind(ComPtr<ID3D11DeviceContext> pContext)
     if (this->Scope.name.name == "frame") {
         //ID3D11Buffer* cb = externs.GetBuffer(TfxExtern::Frame);
         pContext->PSSetConstantBuffers(this->Scope.stage_pixel.constant_buffer_slot, 1, frameAuxBuffer.GetAddressOf());
+        //pContext->PSSetConstantBuffers(this->Scope.stage_vertex.constant_buffer_slot, 1, frameAuxBuffer.GetAddressOf());
     }
 }

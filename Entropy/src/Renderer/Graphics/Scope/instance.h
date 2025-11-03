@@ -20,6 +20,14 @@ void UpdateCB1(
 	const std::vector<SStaticInstanceTransform>& worlds
 );
 
+void UpdateCB1_Single(
+	ID3D11DeviceContext* ctx,
+	const DirectX::XMFLOAT3& meshOffset, float meshScale,
+	float uvScaleX, float uvOffX, float uvOffY, std::uint32_t maxColorOrClampBits,
+	glm::quat rot, glm::vec4 pos
+);
+
+
 // Max instances you plan to send per draw (<= 63 to stay within 4KB)
 constexpr uint32_t MAX_INST = 1024;
 

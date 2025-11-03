@@ -10,7 +10,7 @@ struct VSOutput {
     float4 position : SV_POSITION;
 };
 
-VSOutput VSMain(float3 in_position : POSITION) {
+VSOutput main(float3 in_position : POSITION) {
     VSOutput output;
 
     output.position = mul(world_to_projective, mul(local_to_world, float4(in_position, 1.0)));

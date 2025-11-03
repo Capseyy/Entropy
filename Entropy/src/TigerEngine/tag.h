@@ -17,7 +17,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include "TigerEngine/Technique/Tfx/tfx_runtime.h"
-
+#include "TigerEngine/Map/occlusion.h"
+#include <glm/gtc/type_ptr.hpp> 
 
 class WideHashData {
 public:
@@ -51,6 +52,8 @@ public:
     void print();
 };
 
+template<std::size_t N>
+struct SkipTo {};
 
 class TagHash {
 public:
@@ -77,6 +80,17 @@ public:
     unsigned char* getDatawithPkg(Package* pkg);
     unsigned char* getDatawithPkg(const Package* pkg);
     std::string GetPackageName();
+};
+
+class ResourcePointer {
+public:
+    uint64_t offset{ 0 };
+    uint32_t type{ 0 };
+    bool     valid{ false };
+
+    template <typename T>
+    T Parse(TagHash& tag);   // defined after namespace bin
+                // shim, defined after namespace bin
 };
 
 struct RelativePointer64 {
@@ -188,8 +202,45 @@ namespace bin {
         r.seek(base + 0x8);
     }
 
+    template<std::size_t N>
+    inline void read_into(Reader& r, SkipTo<N>&) {
+        //r.need(N);
+        r.pos = N;   // advance by N bytes, no alloc, no copy
+    }
+
+    inline void read_into(Reader& r, Aabb& q) {
+        glm::vec4 vec;
+        vec.w = r.read_arith<float_t>();
+        vec.x = r.read_arith<float_t>();
+        vec.y = r.read_arith<float_t>();
+        vec.z = r.read_arith<float_t>();
+        q.min = vec;
+        glm::vec4 vec1;
+        vec1.w = r.read_arith<float_t>();
+        vec1.x = r.read_arith<float_t>();
+        vec1.y = r.read_arith<float_t>();
+        vec1.z = r.read_arith<float_t>();
+        q.max = vec1;
+    }
+
+    inline void read_into(Reader& r, glm::vec4& v) {
+        v.x = r.read_arith<float>();
+        v.y = r.read_arith<float>();
+        v.z = r.read_arith<float>();
+        v.w = r.read_arith<float>();
+    }
+
+    inline void read_into(Reader& r, glm::mat4& m) {
+        for (int col = 0; col < 4; ++col)
+            for (int row = 0; row < 4; ++row)
+                m[col][row] = r.read_arith<float>();
+    }
+
     inline void read_into(Reader& r, glm::vec3& q) {
         q.x = r.read_arith<float>(); q.y = r.read_arith<float>(); q.z = r.read_arith<float>();
+    }
+    inline void read_into(Reader& r, glm::vec2& q) {
+        q.x = r.read_arith<float>(); q.y = r.read_arith<float>();
     }
     inline void read_into(Reader& r, Vec4& q) {
         q.x = r.read_arith<float>(); q.y = r.read_arith<float>(); q.z = r.read_arith<float>(); q.w = r.read_arith<float>();
@@ -211,6 +262,14 @@ namespace bin {
     inline void read_into(Reader& r, RelativePointer64& t) {
         auto startPos = r.pos;
         t.offset = r.read_arith<int64_t>() + startPos;
+    }
+    inline void read_into(Reader& r, ResourcePointer& t) {
+        auto startPos = r.pos;
+        auto offset = r.read_arith<int64_t>();
+        r.seek(startPos + offset - 4);
+        t.type = r.read_arith<int32_t>();
+        t.offset = offset + startPos;
+        r.seek(startPos+8);
     }
     // ---------- std::string: [u32 len][bytes] (no null) ----------
     inline void read_into(Reader& r, std::string& s) {
@@ -252,36 +311,38 @@ namespace bin {
         // Header: [u32 count][u64 relOffsetFromHere]
         const uint32_t count = r.read_arith<uint64_t>();
         const uint64_t offset = r.read_arith<uint64_t>();
-
         // Base = position right after the header (current r.pos)
         const size_t base = r.pos;
-        //std::cout << offset;
-        //std::cout << "\n";
-        // Bounds: base + offset must be within the buffer
-        if (offset > static_cast<uint64_t>(r.data.size()))
-            throw std::out_of_range("vector: offset too large");
+        if (count != 0) {
+            //std::cout << offset;
+            //std::cout << "\n";
+            // Bounds: base + offset must be within the buffer
+            if (offset > static_cast<uint64_t>(r.data.size()))
+                throw std::out_of_range("vector: offset too large");
 
-        const size_t target = base + static_cast<size_t>(offset + 8);
-        if (target > r.data.size())
-            throw std::out_of_range("vector: target beyond buffer");
+            const size_t target = base + static_cast<size_t>(offset + 8);
+            if (target > r.data.size())
+                throw std::out_of_range("vector: target beyond buffer");
 
-        // Jump to the elements
-        r.seek(target);
+            // Jump to the elements
+            r.seek(target);
 
-        // Optional sanity guard for fixed-size elements (like SStringPart = 32 bytes)
-        if constexpr (std::is_trivially_default_constructible_v<T> && std::is_trivially_destructible_v<T>) {
-            const size_t need = static_cast<size_t>(count) * sizeof(T);
-            if (need > r.remaining())
-                throw std::out_of_range("vector: elements exceed remaining bytes");
-        }
+            // Optional sanity guard for fixed-size elements (like SStringPart = 32 bytes)
+            if constexpr (std::is_trivially_default_constructible_v<T> && std::is_trivially_destructible_v<T>) {
+                const size_t need = static_cast<size_t>(count) * sizeof(T);
+                if (need > r.remaining())
+                    throw std::out_of_range("vector: elements exceed remaining bytes");
+            }
 
-        // Read elements
-        vec.clear();
-        vec.reserve(static_cast<size_t>(count));
-        for (size_t i = 0; i < static_cast<size_t>(count); ++i) {
-            T elem{};
-            read_into(r, elem);
-            vec.emplace_back(std::move(elem));
+            // Read elements
+            vec.clear();
+            vec.reserve(static_cast<size_t>(count));
+            for (size_t i = 0; i < static_cast<size_t>(count); ++i) {
+                T elem{};
+                read_into(r, elem);
+                vec.emplace_back(std::move(elem));
+
+            }
 
         }
 
@@ -345,3 +406,20 @@ namespace bin {
     }
 #endif
 
+template <typename T>
+inline T ResourcePointer::Parse(TagHash& tag) {
+    if (!tag.data) {
+        throw std::invalid_argument("ResourcePointer::Parse: TagHash.data is null");
+    }
+    if (offset > static_cast<uint64_t>(tag.size)) {
+        throw std::out_of_range("ResourcePointer::Parse: offset beyond tag buffer");
+    }
+    const unsigned char* ptr = tag.data + static_cast<size_t>(offset);
+    const std::size_t remaining = static_cast<std::size_t>(tag.size - offset);
+    return bin::parse<T>(ptr, remaining);
+}
+
+//template <typename T>
+//inline T ResourcePointer::Parse(TagHash tag) {
+//    return Parse<T>(static_cast<const TagHash&>(tag));
+//}

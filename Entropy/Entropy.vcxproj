@@ -229,7 +229,11 @@
     <ClCompile Include="src\Renderer\Graphics\Render\gbuffer.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Render\Technique.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Scope\instance.cpp" />
+    <ClCompile Include="src\Renderer\Loaders\Entity.cpp" />
+    <ClCompile Include="src\Renderer\Loaders\Map.cpp" />
+    <ClCompile Include="src\Renderer\Loaders\RenderEntity.h" />
     <ClCompile Include="src\Renderer\Loaders\scope.cpp" />
+    <ClCompile Include="src\Renderer\TextureHelpers.cpp" />
     <ClCompile Include="src\Runtime\Assets\AssetSystem.cpp" />
     <ClCompile Include="src\Runtime\Assets\RuntimeAssetRegistry.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Scope\view.cpp" />
@@ -273,7 +277,7 @@
     <ClCompile Include="src\TigerEngine\Technique\Tfx\tfx_decompiler.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\..\..\Downloads\depth_stencil_states.h" />
+    <ClInclude Include="resource.h" />
     <ClInclude Include="src\Renderer\Graphics\GameTimer.h" />
     <ClInclude Include="src\Renderer\Graphics\Render\gbuffer.h" />
     <ClInclude Include="src\Renderer\Graphics\Scope\AtmosphereExternUI.h" />
@@ -281,6 +285,8 @@
     <ClInclude Include="src\Renderer\Graphics\Scope\global_channel_ui.h" />
     <ClInclude Include="src\Renderer\Graphics\Scope\instance.h" />
     <ClInclude Include="src\Renderer\Graphics\RenderStates.h" />
+    <ClInclude Include="src\Renderer\Loaders\Map.h" />
+    <ClInclude Include="src\Renderer\Loaders\RenderLights.h" />
     <ClInclude Include="src\Renderer\Loaders\RenderStatic.h" />
     <ClInclude Include="src\Renderer\Loaders\Scope.h" />
     <ClInclude Include="src\Renderer\Loaders\TextureLoader.h" />
@@ -294,6 +300,7 @@
     <ClInclude Include="src\Renderer\Graphics\Scope\view.h" />
     <ClInclude Include="src\TigerEngine\ClientStartup\RenderGlobals.h" />
     <ClInclude Include="src\TigerEngine\crypto.h" />
+    <ClInclude Include="src\TigerEngine\Entity\entity.h" />
     <ClInclude Include="src\TigerEngine\mapped_file.h" />
     <ClInclude Include="src\Renderer\Tools\COMException.h" />
     <ClInclude Include="src\Renderer\Graphics\Buffers\ConstantBuffer.h" />
@@ -308,6 +315,8 @@
     <ClInclude Include="src\Renderer\Graphics\ImGui\imstb_rectpack.h" />
     <ClInclude Include="src\Renderer\Graphics\ImGui\imstb_textedit.h" />
     <ClInclude Include="src\Renderer\Graphics\ImGui\imstb_truetype.h" />
+    <ClInclude Include="src\TigerEngine\Map\map.h" />
+    <ClInclude Include="src\TigerEngine\Map\occlusion.h" />
     <ClInclude Include="src\TigerEngine\Map\TigerBuffer.h" />
     <ClInclude Include="src\TigerEngine\Technique\blend_state_descs.h" />
     <ClInclude Include="src\TigerEngine\Technique\depth_bias_states.h" />
@@ -335,7 +344,7 @@
     <ClInclude Include="src\TigerEngine\Technique\texture.h" />
     <ClInclude Include="src\Renderer\WindowContainer.h" />
     <ClInclude Include="src\Renderer\Graphics\Shaders\Vertex.h" />
-    <ClInclude Include="src\Renderer\Loaders\technique_loader.h" />
+    <ClInclude Include="src\Renderer\Loaders\TextureLoader.cpp" />
     <ClInclude Include="src\Renderer\Graphics\Buffers\VertexBuffer.h" />
     <ClInclude Include="src\Renderer\Timer.h" />
     <ClInclude Include="src\Runtime\Threading\ThreadPool.h" />
@@ -351,31 +360,32 @@
     <ClInclude Include="src\TigerEngine\Technique\Tfx\tfx_runtime.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="cpp.hint" />
     <None Include="packages.config" />
-    <None Include="view.hlsli" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="pixelshader.hlsl">
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">5.0</ShaderModel>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug2|x64'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug2|x64'">Pixel</ShaderType>
     </FxCompile>
     <FxCompile Include="vertexshader.hlsl">
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">5.0</ShaderModel>
-      <EntryPointName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">VSMain</EntryPointName>
-      <DisableOptimizations Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</DisableOptimizations>
-      <EntryPointName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">VSMain</EntryPointName>
-      <EnableDebuggingInformation Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</EnableDebuggingInformation>
-      <EntryPointName Condition="'$(Configuration)|$(Platform)'=='Debug2|x64'">VSMain</EntryPointName>
-      <EnableDebuggingInformation Condition="'$(Configuration)|$(Platform)'=='Debug2|x64'">false</EnableDebuggingInformation>
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug2|x64'">Vertex</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug2|x64'">5.0</ShaderModel>
-      <EnableDebuggingInformation Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</EnableDebuggingInformation>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug2|x64'">Vertex</ShaderType>
     </FxCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Entropy.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="..\Data\Textures\depth_angle_lookup_temp.png" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

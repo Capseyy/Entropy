@@ -132,80 +132,83 @@ enum class TfxExtern : uint8_t {
     CuiStandard = 21,
     CuiHud = 22,
     CuiScreenspaceBoxes = 23,
-    TextureVisualizer = 24,
-    Generic = 25,
-    Particle = 26,
-    ParticleDebug = 27,
-    GearDyeVisualizationMode = 28,
-    ScreenArea = 29,
-    Mlaa = 30,
-    Msaa = 31,
-    Hdao = 32,
-    DownsampleTextureGeneric = 33,
-    DownsampleDepth = 34,
-    Ssao = 35,
-    VolumetricObscurance = 36,
-    Postprocess = 37,
-    TextureSet = 38,
-    Transparent = 39,
-    Vignette = 40,
-    GlobalLighting = 41,
-    ShadowMask = 42,
-    ObjectEffect = 43,
-    Decal = 44,
-    DecalSetTransform = 45,
-    DynamicDecal = 46,
-    DecoratorWind = 47,
-    TextureCameraLighting = 48,
-    VolumeFog = 49,
-    Fxaa = 50,
-    Smaa = 51,
-    Letterbox = 52,
-    DepthOfField = 53,
-    PostprocessInitialDownsample = 54,
-    CopyDepth = 55,
-    DisplacementMotionBlur = 56,
-    DebugShader = 57,
-    MinmaxDepth = 58,
-    SdsmBiasAndScale = 59,
-    SdsmBiasAndScaleTextures = 60,
-    ComputeShadowMapData = 61,
-    ComputeLocalLightShadowMapData = 62,
-    BilateralUpsample = 63,
-    HealthOverlay = 64,
-    LightProbeDominantLight = 65,
-    LightProbeLightInstance = 66,
-    Water = 67,
-    LensFlare = 68,
-    ScreenShader = 69,
-    Scaler = 70,
-    GammaControl = 71,
-    SpeedtreePlacements = 72,
-    Reticle = 73,
-    Distortion = 74,
-    WaterDebug = 75,
-    ScreenAreaInput = 76,
-    WaterDepthPrepass = 77,
-    OverheadVisibilityMap = 78,
-    ParticleCompute = 79,
-    CubemapFiltering = 80,
-    ParticleFastpath = 81,
-    VolumetricsPass = 82,
-    TemporalReprojection = 83,
-    FxaaCompute = 84,
-    VbCopyCompute = 85,
-    UberDepth = 86,
-    GearDye = 87,
-    Cubemaps = 88,
-    ShadowBlendWithPrevious = 89,
-    DebugShadingOutput = 90,
-    Ssao3d = 91,
-    WaterDisplacement = 92,
-    PatternBlending = 93,
-    UiHdrTransform = 94,
-    PlayerCenteredCascadedGrid = 95,
-    SoftDeform = 96,
+    DrawingShader = 24,
+    TextureVisualizer = 25,
+    Generic = 26,
+    Particle = 27,
+    ParticleDebug = 28,
+    GearDyeVisualizationMode = 29,
+    ScreenArea = 30,
+    Mlaa = 31,
+    Msaa = 32,
+    Hdao = 33,
+    DownsampleTextureGeneric = 34,
+    DownsampleDepth = 35,
+    Ssao = 36,
+    VolumetricObscurance = 37,
+    Postprocess = 38,
+    TextureSet = 39,
+    Transparent = 40,
+    Vignette = 41,
+    GlobalLighting = 42,
+    ShadowMask = 43,
+    ObjectEffect = 44,
+    Decal = 45,
+    DecalSetTransform = 46,
+    DynamicDecal = 47,
+    DecoratorWind = 48,
+    TextureCameraLighting = 49,
+    VolumeFog = 50,
+    Fxaa = 51,
+    Smaa = 52,
+    Letterbox = 53,
+    DepthOfField = 54,
+    PostprocessInitialDownsample = 55,
+    CopyDepth = 56,
+    DisplacementMotionBlur = 57,
+    DebugShader = 58,
+    MinmaxDepth = 59,
+    SdsmBiasAndScale = 60,
+    SdsmBiasAndScaleTextures = 61,
+    ComputeShadowMapData = 62,
+    ComputeLocalLightShadowMapData = 63,
+    BilateralUpsample = 64,
+    HealthOverlay = 65,
+    LightProbeDominantLight = 66,
+    LightProbeLightInstance = 67,
+    Water = 68,
+    LensFlare = 69,
+    ScreenShader = 70,
+    Scaler = 71,
+    GammaControl = 72,
+    SpeedtreePlacements = 73,
+    Reticle = 74,
+    Distortion = 75,
+    WaterDebug = 76,
+    ScreenAreaInput = 77,
+    WaterDepthPrepass = 78,
+    OverheadVisibilityMap = 79,
+    ParticleCompute = 80,
+    CubemapFiltering = 81,
+    ParticleFastpath = 82,
+    VolumetricsPass = 83,
+    TemporalReprojection = 84,
+    FxaaCompute = 85,
+    VbCopyCompute = 86,
+    UberDepth = 87,
+    GearDye = 88,
+    Cubemaps = 89,
+    ShadowBlendWithPrevious = 90,
+    DebugShadingOutput = 91,
+    Ssao3d = 92,
+    WaterDisplacement = 93,
+    PatternBlending = 94,
+    UiHdrTransform = 95,
+    PlayerCenteredCascadedGrid = 96,
+    SoftDeform = 97,
 };
+
+
 
 // --------------------------------- packed PODs ---------------------------------
 #pragma pack(push, 1)
@@ -328,6 +331,7 @@ struct ViewExtern {
     Vec4 position;
     Vec4 unk30;
 };
+
 
 #pragma pack(push, 1)
 struct GlobalLightingExtern {
@@ -494,11 +498,33 @@ struct ShadowMaskExtern {
     ID3D11ShaderResourceView* unk08 = nullptr; // 0x08
     ID3D11ShaderResourceView* unk10 = nullptr; // 0x10
     ID3D11ShaderResourceView* unk18 = nullptr;
-    Vec4  unk20 = Vec4::one();                 // 0x20
+    Vec4  unk20 = Vec4(1.0f, 1.0f, 1.0f, 1.0f);             // 0x20
     float unk30 = 1.0f;                        // 0x30
     float unk34 = 1.0f;                        // 0x34
     float _pad38[2] = {};
 };
+
+inline ShadowMaskExtern MakeShadowMaskAllOnes(ID3D11ShaderResourceView* whiteSRV = nullptr)
+{
+    ShadowMaskExtern sm{};
+    // If you have a 1×1 white texture SRV, pass it here; otherwise these stay null.
+    sm.unk00 = whiteSRV;
+    sm.unk08 = whiteSRV;
+    sm.unk10 = whiteSRV;
+    sm.unk18 = whiteSRV;
+
+    // All numeric knobs to 1.0
+    sm.unk20 = Vec4::one();
+    sm.unk30 = 1.0f;
+    sm.unk34 = 1.0f;
+    return sm;
+}
+
+#pragma pack(push, 1)
+struct SimpleGeometryExtern {
+    Mat4 transform = Mat4::identity(); // 0x00
+};
+#pragma pack(pop)
 
 struct FxaaExtern {
     ID3D11ShaderResourceView* source_texture = nullptr; // 0x00
@@ -515,6 +541,35 @@ struct FxaaExtern {
 inline GlobalLightingExtern MakeGlobalLightingDefaults() {
     return GlobalLightingExtern{}; // in-class defaults already match the Rust defaults
 }
+
+#pragma pack(push, 1)
+struct DeferredLightExtern {
+    // 0x00..0x3F — unknown header in the CB we don't use here
+    uint8_t _pad00[0x40]{};
+
+    // 0x40
+    Mat4  unk40;   // used (Alkahest: translate(view.position))
+
+    // 0x80
+    Mat4  unk80;// used (Alkahest: node local_to_world)
+
+    // 0xC0..0xFF
+    Vec4  unkc0 = Vec4::one();        // defaults to 1,1,1,1
+    Vec4  unkd0 = Vec4::one();
+    Vec4  unke0 = Vec4::one();
+    Vec4  unkf0 = Vec4::one();
+
+    // 0x100
+    Vec4  unk100 = Vec4::one();       // Alkahest: light params (leave 1s by default)
+
+    // 0x110..0x120
+    float unk110 = 1.0f;              // unknown ? 1.0
+    float unk114 = 7500.0f;           // known default
+    float unk118 = 1.0f;              // unknown ? 1.0
+    float unk11c = 1.0f;              // unknown ? 1.0
+    float unk120 = 1.0f;              // unknown ? 1.0
+};
+#pragma pack(pop)
 
 
 // ------------------------------ ONE CLASS FOR ALL SCOPES ------------------------------
@@ -546,6 +601,25 @@ struct ExternStorage
         s.cpu.resize(n);
         if (n && p) std::memcpy(s.cpu.data(), p, n);
         s.dirty = true;
+    }
+
+    inline DeferredLightExtern GetDeferredLight() {
+        DeferredLightExtern d{};
+        auto it = scopes.find(TfxExtern::DeferredLight);
+        if (it != scopes.end() && it->second.cpu.size() >= sizeof(DeferredLightExtern))
+            std::memcpy(&d, it->second.cpu.data(), sizeof(DeferredLightExtern));
+        return d;
+    }
+
+    inline void SetDeferredLight(const Mat4& unk40,
+        const Mat4& unk80,
+        const Vec4& unk100)
+    {
+        DeferredLightExtern d = GetDeferredLight(); // preserve existing fields
+        d.unk40 = unk40;
+        d.unk80 = unk80;
+        d.unk100 = unk100;
+        set(TfxExtern::DeferredLight, d);
     }
 
     // -------- readers (from CPU bytes) --------
@@ -636,6 +710,12 @@ struct ExternStorage
         s.dirty = true;
     }
 
+    void SetSimpleGeometryTransform(const Mat4& transform) {
+        SimpleGeometryExtern sg{};
+        sg.transform = transform;
+        set(TfxExtern::SimpleGeometry, sg);
+    }
+
     // Replace the entire scope bytes (padded with zeros if smaller than CB)
     void SetScopeBytes(TfxExtern id, const void* src, size_t numBytes) {
         Scope& s = scopes[id];
@@ -672,10 +752,12 @@ struct ExternStorage
         ex.set(TfxExtern::Frame, MakeScopeFrameDefaults());
         ex.set(TfxExtern::View, ViewExtern{});
         ex.set(TfxExtern::Deferred, DeferredExtern{});
-        ex.set(TfxExtern::ShadowMask, ShadowMaskExtern{});
+        ex.set(TfxExtern::ShadowMask, MakeShadowMaskAllOnes());
         ex.set(TfxExtern::GlobalLighting, MakeGlobalLightingDefaults());
         ex.set(TfxExtern::Fxaa, FxaaExtern{});
         ex.set(TfxExtern::Atmosphere, AtmosphereExtern{}); // <— new
+        ex.set(TfxExtern::SimpleGeometry, SimpleGeometryExtern{}); // << add this
+        ex.set(TfxExtern::DeferredLight, DeferredLightExtern{});
         return ex;
     }
 
@@ -745,18 +827,6 @@ struct ExternStorage
             std::memcpy(&g, it->second.cpu.data(), sizeof(GlobalLightingExtern));
         }
         return g;
-    }
-
-    void SetShadowMaskParams(const Vec4* v20, const float* f34) {
-        ShadowMaskExtern sm{};
-        if (auto it = scopes.find(TfxExtern::ShadowMask);
-            it != scopes.end() && it->second.cpu.size() >= sizeof(ShadowMaskExtern))
-        {
-            std::memcpy(&sm, it->second.cpu.data(), sizeof(ShadowMaskExtern));
-        }
-        if (v20) sm.unk20 = *v20;
-        if (f34) sm.unk34 = *f34;
-        set(TfxExtern::ShadowMask, sm);
     }
 
     void SetFxaa(float noise_time, const Vec4* intensity = nullptr) {
