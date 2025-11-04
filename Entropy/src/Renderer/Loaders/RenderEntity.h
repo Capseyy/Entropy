@@ -4,6 +4,7 @@
 #include "TigerEngine/Map/map.h"
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp> 
+#include "TigerEngine/Entity/entity.h"
 
 struct DynamicMeshPart {
     uint32_t techniqueId = 0;
@@ -47,5 +48,6 @@ struct RenderEntity {
     glm::vec4 pos;
     std::vector<std::shared_ptr<EntropyAssets::Technique>> external_mats;
     uint32_t id;
+    std::vector<Unk_808072C5> external_material_mapping;
     // add per-part overrides if your format has them
 };

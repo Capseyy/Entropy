@@ -642,7 +642,7 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
                 }
                 psTexF3D.emplace_back(slot, Enqueue3DTexture(texId).future);
             }
-            else {
+            else if (texTag.sub_type == 1) {
                 if (!R_->HasTexture(texId)) {
                     if (auto payload = BuildTexturePayloadFromTag(texTag)) {
                         R_->RegisterTexture(texId, std::move(*payload));

@@ -69,6 +69,7 @@ void LoadZone::load_entity_into_scene(TagHash tag, glm::quat quat, glm::vec4 pos
         // ---- MESHES ----
         re.meshs.clear();
         re.meshs.reserve(model.parts.size());
+		re.external_material_mapping = e.entity_material_map;
         for (auto meshes : model.parts)
         {
             struct GroupRef { uint32_t v1Id{}, idxId{}, v2Id{}, colId{}, v3Id{}, v0Id{}, skinid{}; bool idx32{}; };
@@ -183,8 +184,9 @@ void LoadZone::load_entity_into_scene(TagHash tag, glm::quat quat, glm::vec4 pos
                 dmp->meshpartinfo = p;
 
                 if (p.varient_shader_index == 65535) {
-                    dmp->techniqueId = p.technique.hash;
-                    dmp->technique = gfx.assets->EnqueueTechnique(p.technique).get();
+                    auto tech = gfx.assets->EnqueueTechnique(p.technique);   // shared_ptr<Technique>
+                    dmp->technique = tech.get();
+                    //dmp->technique = gfx.assets->EnqueueTechnique(p.technique).get();
                 }
                 else {
                     dmp->techniqueId = 0;

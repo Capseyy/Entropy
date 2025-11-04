@@ -67,7 +67,7 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
 
     if (sel.rasterizer && *sel.rasterizer < 9 &&
         sel.depthBias && *sel.depthBias < 9) {
-        auto& rs = states.rasterizer_states[*sel.depthBias][*sel.rasterizer];
+        auto& rs = states.rasterizer_states[*sel.rasterizer];
         if (rs) {
             //printf("Mapped raster\n");
             pContext->RSSetState(rs.Get());

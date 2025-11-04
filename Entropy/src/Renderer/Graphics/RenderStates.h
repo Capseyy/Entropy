@@ -115,7 +115,7 @@ struct RenderStates
 {
     std::array<ComPtr<ID3D11BlendState>, 90> blend_states;
     //d::array<ComPtr<ID3D11InputLayout>, 77> input_layouts;
-    std::array<std::array<ComPtr<ID3D11RasterizerState>, 9>, 9> rasterizer_states; // [depthBias][rasterizer]
+    std::vector<ComPtr<ID3D11RasterizerState>> rasterizer_states; // [depthBias][rasterizer]
     std::array<std::pair<ComPtr<ID3D11DepthStencilState>, ComPtr<ID3D11DepthStencilState>>, 89> depth_stencil_states;
 
     static HRESULT Create(ID3D11Device* device, RenderStates& out);

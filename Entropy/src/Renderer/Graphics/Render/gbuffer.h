@@ -6,6 +6,7 @@
 #include <DirectXMath.h>
 #include <DirectXPackedVector.h>
 #include <atomic>
+#include "d3dcompiler.h"
 
 inline HRESULT SetDebugName(ID3D11DeviceChild* obj, const char* name) {
 #if defined(_DEBUG)
@@ -14,6 +15,45 @@ inline HRESULT SetDebugName(ID3D11DeviceChild* obj, const char* name) {
 #else
     (void)obj; (void)name; return S_OK;
 #endif
+}
+
+static HRESULT CompileVSFromMemory(
+    ID3D11Device* device,
+    const char* source,
+    const char* entryPoint,
+    const char* target,
+    ID3D11VertexShader** outVS,
+    ID3DBlob** outBytecode)   // keep bytecode so you can make the input layout
+{
+    UINT flags = 0;
+
+    flags = D3DCOMPILE_OPTIMIZATION_LEVEL3;
+
+    Microsoft::WRL::ComPtr<ID3DBlob> bytecode, errors;
+    HRESULT hr = D3DCompile(
+        source, strlen(source),
+        /*sourceName*/ "SkinnedHackVS.hlsl",
+        /*defines*/ nullptr,
+        /*include*/ nullptr,
+        entryPoint, target, flags, 0,
+        bytecode.GetAddressOf(), errors.GetAddressOf());
+
+    if (FAILED(hr)) {
+        if (errors) OutputDebugStringA((const char*)errors->GetBufferPointer());
+        return hr;
+    }
+
+    hr = device->CreateVertexShader(
+        bytecode->GetBufferPointer(),
+        bytecode->GetBufferSize(),
+        nullptr,
+        outVS);
+    if (FAILED(hr)) return hr;
+
+    if (outBytecode) {
+        *outBytecode = bytecode.Detach();
+    }
+    return S_OK;
 }
 
 struct RenderTarget {

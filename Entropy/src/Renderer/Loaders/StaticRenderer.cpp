@@ -39,7 +39,7 @@ uint32_t StaticRenderer::RegisterBufferBlob(const void* bytes, size_t size, uint
 
 RenderStatic StaticRenderer::Build()
 {
-    printf("StaticRenderer::Build for static hash %08X\n", static_hash_.hash);
+    //printf("StaticRenderer::Build for static hash %08X\n", static_hash_.hash);
 
     // --- Parse model + mesh ---
     auto static_tag = TagHash(static_hash_);
@@ -235,14 +235,14 @@ RenderStatic StaticRenderer::Build()
     std::vector<std::shared_future<std::shared_ptr<EntropyAssets::Technique>>> techF(techIds.size());
     for (size_t i = 0; i < techIds.size(); ++i) {
         const uint32_t tid32 = techIds[i].hash;
-        printf("[Build] part %zu technique %08X\n", i, tid32);
+        //printf("[Build] part %zu technique %08X\n", i, tid32);
         techF[i] = gfx_.assets->EnqueueTechnique(techIds[i]); // returns shared_future<shared_ptr<Technique>>
     }
 
     std::vector<std::shared_future<std::shared_ptr<EntropyAssets::Technique>>> techF_specials(specials.size());
     for (size_t i = 0; i < specials.size(); ++i) {
         auto& tid32 = specials[i].part.technique.hash;
-        printf("[Build] part %zu technique %08X\n", i, tid32);
+        //printf("[Build] part %zu technique %08X\n", i, tid32);
         techF_specials[i] = gfx_.assets->EnqueueTechnique(specials[i].part.technique); // returns shared_future<shared_ptr<Technique>>
     }
     // ---- Assemble mesh ----
@@ -253,7 +253,7 @@ RenderStatic StaticRenderer::Build()
             mesh->groups.push_back(f.get());
         }
         catch (const std::exception& e) {
-            printf("[Build][Group] failed: %s\n", e.what());
+            //printf("[Build][Group] failed: %s\n", e.what());
             mesh->groups.push_back(nullptr);
         }
     }

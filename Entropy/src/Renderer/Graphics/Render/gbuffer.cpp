@@ -64,6 +64,7 @@ bool CreateColorRT(ID3D11Device* dev, UINT w, UINT h,
     return true;
 }
 
+
 bool CreateStaging(ID3D11Device* dev, UINT w, UINT h,
     DXGI_FORMAT fmt, const char* name, CpuStagingBuffer& out)
 {
@@ -267,9 +268,9 @@ void GBuffer::BindGBufferForWriting(ID3D11DeviceContext* ctx) const {
     const float c0[4] = { 0,0,0,1 };
     const float n0[4] = { 1.0f, 0.5f, 1.0f, 1.0f }; // normal=(0,0,1), roughness=1
     const float z0[4] = { 0,0,0,0 };
-    ctx->ClearRenderTargetView(rt0.rtv.Get(), c0);
-    ctx->ClearRenderTargetView(rt1.rtv.Get(), n0);
-    ctx->ClearRenderTargetView(rt2.rtv.Get(), z0);
+    ctx->ClearRenderTargetView(rt0.rtv.Get(), z0);
+    ctx->ClearRenderTargetView(rt1.rtv.Get(), z0);
+    ctx->ClearRenderTargetView(rt2.rtv.Get(), n0);
 
     // Reversed-Z: clear depth to 0.0 (far) and use GREATER_EQUAL in the depth state
     ctx->ClearDepthStencilView(depth.dsv.Get(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 0.0f, 0);

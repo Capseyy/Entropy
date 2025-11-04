@@ -22,7 +22,7 @@
 #include "TigerEngine/globaldata.h"
 #include <dxgi.h>    
 #include <dxgiformat.h> 
-#include "Renderer/Graphics/Render/gbuffer.h"
+//#include "Renderer/Graphics/Render/gbuffer.h"
 #include "GameTimer.h"
 #include "TigerEngine/Technique/rasterizer_states.h"
 #include "RenderStates.h"
@@ -31,8 +31,34 @@
 #include <wincodec.h>
 #include "Renderer/Loaders/TextureLoader.h"
 #include "Renderer/Loaders/Map.h"
+#include "Renderer/Graphics/Render/GBufferRT.h"
 
-enum class PipelineStage { Forward, GBuffer, Lighting };
+enum class TfxRenderStage : uint8_t {
+	GenerateGbuffer = 0,
+	Decals = 1,
+	InvestmentDecals = 2,
+	ShadowGenerate = 3,
+	LightingApply = 4,
+	LightProbeApply = 5,
+	DecalsAdditive = 6,
+	Transparents = 7,
+	Distortion = 8,
+	LightShaftOcclusion = 9,
+	SkinPrepass = 10,
+	LensFlares = 11,
+	DepthPrepass = 12,
+	WaterReflection = 13,
+	PostprocessTransparentStencil = 14,
+	Impulse = 15,
+	Reticle = 16,
+	WaterRipples = 17,
+	MaskSunLight = 18,
+	Volumetrics = 19,
+	Cubemaps = 20,
+	PostprocessScreen = 21,
+	WorldForces = 22,
+	ComputeSkinning = 23,
+};
 
 
 class Graphics
@@ -58,7 +84,7 @@ private:
 	void InitAnnotation();
 	void DrawStaticSpecial(const RenderStatic& rs, const View& view);
 	void DrawStaticTransparent(const RenderStatic& rs, const View& view);
-	void DrawEntity(const RenderEntity& rs, const View& view);
+	void DrawEntity(const RenderEntity& rs, const View& view, TfxRenderStage = TfxRenderStage::GenerateGbuffer);
 
 	std::array<Microsoft::WRL::ComPtr<ID3D11InputLayout>, 15> tiger_input_layouts;
 
@@ -70,6 +96,8 @@ private:
 
 	PixelShader pixelshader;
 	VertexShader vertexshader;
+
+	Microsoft::WRL::ComPtr<ID3D11VertexShader> entity_vs_override;
 
 	UINT offset = 0;
 
@@ -90,6 +118,9 @@ private:
 
 	ComPtr<ID3D11DepthStencilState> dsWriteG;     // NEW (GREATER)
 	ComPtr<ID3D11DepthStencilState> dsReadOnlyG;  // NEW (GREATER, write=ZERO)
+
+	Microsoft::WRL::ComPtr<ID3D11Texture2D> pBackBuffer;
+	Microsoft::WRL::ComPtr<ID3D11RenderTargetView> pRenderTargetViewLinear;
 
 	Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthStencilLightVolume;
 
@@ -142,7 +173,7 @@ private:
 
 	Microsoft::WRL::ComPtr<ID3D11SamplerState> pointSampler;
 
-	PipelineStage pipelineStage = PipelineStage::Forward;
+	TfxRenderStage pipelineStage = TfxRenderStage::GenerateGbuffer;
 
 	Timer fpsTimer;
 
@@ -182,5 +213,5 @@ private:
 	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> temp_angle_lookup;
 	Microsoft::WRL::ComPtr<ID3D11Buffer> cb13_;
 
-	GBuffer gbufA;
+	GBufferRT gbufA;
 };

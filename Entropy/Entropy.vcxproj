@@ -227,6 +227,7 @@
   <ItemGroup>
     <ClCompile Include="src\Renderer\Graphics\RenderStates.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Render\gbuffer.cpp" />
+    <ClCompile Include="src\Renderer\Graphics\Render\GBufferRT.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Render\Technique.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Scope\instance.cpp" />
     <ClCompile Include="src\Renderer\Loaders\Entity.cpp" />
@@ -280,6 +281,7 @@
     <ClInclude Include="resource.h" />
     <ClInclude Include="src\Renderer\Graphics\GameTimer.h" />
     <ClInclude Include="src\Renderer\Graphics\Render\gbuffer.h" />
+    <ClInclude Include="src\Renderer\Graphics\Render\GBufferRT.h" />
     <ClInclude Include="src\Renderer\Graphics\Scope\AtmosphereExternUI.h" />
     <ClInclude Include="src\Renderer\Graphics\Scope\FrameGlobalLightingExternUI.h" />
     <ClInclude Include="src\Renderer\Graphics\Scope\global_channel_ui.h" />
