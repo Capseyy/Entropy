@@ -8,6 +8,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>  // translate
+#include "Renderer/Tools/ErrorLogger.h"
+
 using namespace DirectX;
 
  inline Microsoft::WRL::ComPtr<ID3D11Buffer> g_cb1;
@@ -34,16 +36,13 @@ struct alignas(16) CB1Payload_override
 };
 
 
-// Max instances you plan to send per draw (<= 63 to stay within 4KB)
-constexpr uint32_t MAX_INST = 1024;
-
 struct CB1Payload {
 	// cb1[0]
 	DirectX::XMFLOAT4 meshOffset_meshScale;   // xyz, w
 	// cb1[1]
 	DirectX::XMFLOAT4 uvScale_uvOffset;       // x, y, z, w(as float)
 	// cb1[2..] rows for instances
-	DirectX::XMFLOAT4 instances[MAX_INST][4];
+    std::vector<DirectX::XMFLOAT4> instances[4];
 };
 
 
@@ -81,4 +80,85 @@ static void UpdateCB1_Single(
         std::memcpy(m.pData, &cb, sizeof(cb));
         ctx->Unmap(g_cb1.Get(), 0);
     }
+}
+
+inline DirectX::XMMATRIX MakeWorld(const SStaticInstanceTransform& s) {
+    using namespace DirectX;
+    const XMMATRIX S = XMMatrixScaling(s.scale.x, s.scale.x, s.scale.x);
+
+    // If your quat is (w,x,y,z) -> reorder to (x,y,z,w)
+    const XMVECTOR q = XMVectorSet(s.rotation.w, s.rotation.x, s.rotation.y, s.rotation.z);
+    const XMMATRIX R = XMMatrixRotationQuaternion(q);
+
+    const XMMATRIX T = XMMatrixTranslation(s.translation.x, s.translation.y, s.translation.z);
+
+    // Row-major world (DirectXMath is row-major)
+    return S * R * T;
+}
+
+inline float from_bytes(uint8_t b0, uint8_t b1, uint8_t b2, uint8_t b3)
+{
+    uint32_t u = (uint32_t)b0 | ((uint32_t)b1 << 8) | ((uint32_t)b2 << 16) | ((uint32_t)b3 << 24);
+    float f;
+    std::memcpy(&f, &u, sizeof(f));
+    return f;
+}
+
+static void CreateCB1_FreshDynamic(
+    ID3D11Device* device,
+    ID3D11DeviceContext* ctx,
+    const DirectX::XMFLOAT3& meshOffset, float meshScale,
+    float uvScaleX, float uvOffX, float uvOffY, std::uint32_t maxColorOrClampBits,
+    const std::vector<SStaticInstanceTransform>& worlds, Microsoft::WRL::ComPtr<ID3D11Buffer>& b)
+{
+    using namespace DirectX;
+
+    // 64KB constant buffer cap -> max instances = (65536 - 32) / 64 = 1023
+    const size_t instCap = (65536u - 32u) / 64u;
+    const size_t instCount = std::min(worlds.size(), instCap);
+
+    // EXACT row count: 2 header + 4 per instance
+    const size_t rowCount = 2 + instCount * 4;
+    std::vector<XMFLOAT4> rows(rowCount);   // <-- sized, no push_back/emplace_back later
+
+    // Header
+    rows[0] = XMFLOAT4(meshOffset.x, meshOffset.y, meshOffset.z, meshScale);
+    rows[1] = XMFLOAT4(uvScaleX, uvOffX, uvOffY, asfloat_u32(maxColorOrClampBits));
+
+    // Instances: write by INDEX (no accidental extras)
+    XMFLOAT4 xm4;
+    xm4.w = 1.0f;
+    xm4.x = 1.0f;
+    xm4.y = 1.0f;
+    xm4.z = 9.40395e-38;
+
+
+    for (size_t i = 0; i < instCount; ++i)
+    {
+        const size_t base = 2 + i * 4;
+
+        XMMATRIX M = MakeWorld(worlds[i]);
+        XMMATRIX Mt = XMMatrixTranspose(M); // HLSL column-major readability
+
+        float kMagic = from_bytes(0xF7, 0xFF, 0xFF, 0x01);
+        Mt.r[3] = DirectX::XMVectorSet(1.0f, 1.0f, 1.0f, kMagic);
+        XMStoreFloat4(&rows[base + 0], Mt.r[0]);
+        XMStoreFloat4(&rows[base + 1], Mt.r[1]);
+        XMStoreFloat4(&rows[base + 2], Mt.r[2]);
+        XMStoreFloat4(&rows[base + 3], Mt.r[3]);
+    }
+
+    const UINT byteSize = static_cast<UINT>(rows.size() * sizeof(XMFLOAT4)); // 16 * rowCount
+
+    D3D11_BUFFER_DESC bd{};
+    bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    bd.ByteWidth = byteSize;
+    bd.Usage = D3D11_USAGE_IMMUTABLE; // fresh each call
+    bd.CPUAccessFlags = 0;
+
+    D3D11_SUBRESOURCE_DATA init{};
+    init.pSysMem = rows.data();
+
+    b.Reset();
+    HRESULT hr = device->CreateBuffer(&bd, &init, b.ReleaseAndGetAddressOf());
 }

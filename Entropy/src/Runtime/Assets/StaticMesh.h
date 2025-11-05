@@ -29,7 +29,6 @@ struct BufferGroup {
 // A draw “part” that uses a specific technique
 struct StaticMeshPart {
     uint32_t techniqueId = 0;
-    std::shared_ptr<EntropyAssets::Technique> technique; // filled by AssetSystem
     std::vector<uint32_t> bufferGroupIndices;            // which groups this part uses (optional)
     SStaticMeshPart partInfo;
 };
@@ -38,8 +37,9 @@ struct StaticMeshPart {
 struct StaticMesh {
     uint32_t id = 0;
     std::vector<std::shared_ptr<BufferGroup>> groups;
-    std::vector<StaticMeshPart> parts;
-    uint16_t input_layout_index;
+    std::vector<SStaticMeshPart> parts;
+    std::vector<SStaticMeshGroup> meshGroups;
+    std::vector<std::shared_ptr<EntropyAssets::Technique>> techniques; // filled by AssetSystem
 };
 
 struct StaticSpecial {

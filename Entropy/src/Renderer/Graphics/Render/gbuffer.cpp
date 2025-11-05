@@ -316,3 +316,33 @@ bool GBuffer::ReadDepthPixel(ID3D11DeviceContext* ctx, UINT x, UINT y, float& ou
     ctx->Unmap(depth_staging.tex.Get(), 0);
     return true;
 }
+
+
+// In a common .cpp near your other helpers
+static inline void PP_SetFS(ID3D11DeviceContext* ctx) {
+    ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+    ctx->IASetInputLayout(nullptr);
+}
+static inline void PP_DrawFS(ID3D11DeviceContext* ctx) {
+    ctx->Draw(4, 0);
+}
+static inline void PP_CommonStates(
+    ID3D11DeviceContext* ctx,
+    ID3D11BlendState* bs,
+    ID3D11DepthStencilState* ds,
+    ID3D11RasterizerState* rs)
+{
+    float bf[4] = { 1,1,1,1 };
+    ctx->OMSetBlendState(bs, bf, 0xFFFFFFFF);
+    ctx->OMSetDepthStencilState(ds, 0);
+    ctx->RSSetState(rs);
+}
+static inline void PP_Viewport(ID3D11DeviceContext* ctx, float w, float h) {
+    D3D11_VIEWPORT vp{ 0,0,w,h,0.0f,1.0f };
+    ctx->RSSetViewports(1, &vp);
+}
+static inline void UnbindSRVs(ID3D11DeviceContext* ctx, UINT first, UINT count) {
+    ID3D11ShaderResourceView* nulls[16] = {};
+    ctx->PSSetShaderResources(first, count, nulls);
+    ctx->VSSetShaderResources(first, count, nulls);
+}

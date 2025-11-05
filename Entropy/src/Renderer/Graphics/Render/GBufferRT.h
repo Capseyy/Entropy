@@ -13,6 +13,32 @@
 using Microsoft::WRL::ComPtr;
 
 
+// Graphics.cpp (near your other helpers)
+static inline void PP_SetFS(ID3D11DeviceContext* ctx) {
+    ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+    ctx->IASetInputLayout(nullptr);
+}
+static inline void PP_DrawFS(ID3D11DeviceContext* ctx) { ctx->Draw(4, 0); }
+static inline void PP_Viewport(ID3D11DeviceContext* ctx, float w, float h) {
+    D3D11_VIEWPORT vp{ 0,0,w,h,0.0f,1.0f }; ctx->RSSetViewports(1, &vp);
+}
+static inline void PP_CommonStates(ID3D11DeviceContext* ctx,
+    ID3D11BlendState* bs,
+    ID3D11DepthStencilState* ds,
+    ID3D11RasterizerState* rs)
+{
+    float bf[4] = { 1,1,1,1 };
+    ctx->OMSetBlendState(bs, bf, 0xFFFFFFFF);
+    ctx->OMSetDepthStencilState(ds, 0);
+    ctx->RSSetState(rs);
+}
+static inline void UnbindAllSRVs(ID3D11DeviceContext* ctx) {
+    ID3D11ShaderResourceView* nulls[16] = {};
+    ctx->PSSetShaderResources(0, 16, nulls);
+    ctx->VSSetShaderResources(0, 16, nulls);
+}
+
+
 inline HRESULT SetDebugName(ID3D11DeviceChild* obj, const char* name) {
 #if defined(_DEBUG)
     if (!obj || !name) return S_OK;
@@ -62,55 +88,72 @@ static HRESULT CompileVSFromMemory(
 }
 
 
+// GBufferRT.h  (replace the struct RenderTarget with this upgraded version)
 struct RenderTarget {
     ComPtr<ID3D11Texture2D>          tex;
     ComPtr<ID3D11RenderTargetView>   rtv;
     ComPtr<ID3D11ShaderResourceView> srv;
-    DXGI_FORMAT                       format = DXGI_FORMAT_UNKNOWN;
-    std::string                       name;
 
-    static RenderTarget Create(ID3D11Device* dev, UINT w, UINT h, DXGI_FORMAT fmt, const char* debugName) {
+    DXGI_FORMAT baseFormat = DXGI_FORMAT_UNKNOWN; // texture format (often TYPELESS)
+    DXGI_FORMAT rtvFormat = DXGI_FORMAT_UNKNOWN; // RTV view format
+    DXGI_FORMAT srvFormat = DXGI_FORMAT_UNKNOWN; // SRV view format
+    std::string name;
+
+    static RenderTarget Create(ID3D11Device* dev, UINT w, UINT h,
+        DXGI_FORMAT fmt, const char* debugName)
+    {
+        // simple path: same format for tex/RTV/SRV
+        return CreateWithViews(dev, w, h, fmt, fmt, fmt, debugName);
+    }
+
+    static RenderTarget CreateWithViews(ID3D11Device* dev, UINT w, UINT h,
+        DXGI_FORMAT texTypeless,
+        DXGI_FORMAT rtvFmt,
+        DXGI_FORMAT srvFmt,
+        const char* debugName)
+    {
         RenderTarget rt{};
-        rt.format = fmt;
+        rt.baseFormat = texTypeless;
+        rt.rtvFormat = rtvFmt;
+        rt.srvFormat = srvFmt;
         rt.name = debugName ? debugName : "";
-
-        if (w == 0 || h == 0) { w = 1; h = 1; }
+        if (!w || !h) { w = 1; h = 1; }
 
         D3D11_TEXTURE2D_DESC td{};
         td.Width = w; td.Height = h;
         td.MipLevels = 1; td.ArraySize = 1;
-        td.Format = fmt;
-        td.SampleDesc = { 1, 0 };
+        td.Format = texTypeless;
+        td.SampleDesc = { 1,0 };
         td.Usage = D3D11_USAGE_DEFAULT;
         td.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-
         HRESULT hr = dev->CreateTexture2D(&td, nullptr, rt.tex.GetAddressOf());
-        if (FAILED(hr)) throw std::runtime_error("CreateTexture2D failed for RT");
+        if (FAILED(hr)) throw std::runtime_error("RT CreateTexture2D failed");
 
-        hr = dev->CreateRenderTargetView(rt.tex.Get(), nullptr, rt.rtv.GetAddressOf());
-        if (FAILED(hr)) throw std::runtime_error("CreateRenderTargetView failed");
+        D3D11_RENDER_TARGET_VIEW_DESC rvd{};
+        rvd.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+        rvd.Format = rtvFmt;
+        hr = dev->CreateRenderTargetView(rt.tex.Get(), &rvd, rt.rtv.GetAddressOf());
+        if (FAILED(hr)) throw std::runtime_error("RT CreateRTV failed");
 
-        D3D11_SHADER_RESOURCE_VIEW_DESC sd{};
-        sd.Format = fmt;
-        sd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-        sd.Texture2D.MostDetailedMip = 0;
-        sd.Texture2D.MipLevels = 1;
-        hr = dev->CreateShaderResourceView(rt.tex.Get(), &sd, rt.srv.GetAddressOf());
-        if (FAILED(hr)) throw std::runtime_error("CreateShaderResourceView failed");
+        D3D11_SHADER_RESOURCE_VIEW_DESC svd{};
+        svd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+        svd.Format = srvFmt;
+        svd.Texture2D.MipLevels = 1;
+        hr = dev->CreateShaderResourceView(rt.tex.Get(), &svd, rt.srv.GetAddressOf());
+        if (FAILED(hr)) throw std::runtime_error("RT CreateSRV failed");
 
-        if (rt.tex) rt.tex->SetPrivateData(WKPDID_D3DDebugObjectName, (UINT)rt.name.size(), rt.name.data());
+        SetDebugName(rt.tex.Get(), rt.name.c_str());
         return rt;
     }
 
     void Resize(ID3D11Device* dev, UINT w, UINT h) {
-        *this = Create(dev, w, h, format, name.c_str());
+        *this = CreateWithViews(dev, w, h, baseFormat, rtvFormat, srvFormat, name.c_str());
     }
 
     void Clear(ID3D11DeviceContext* ctx, const float rgba[4]) const {
         ctx->ClearRenderTargetView(rtv.Get(), rgba);
     }
 };
-
 struct DepthState {
     ComPtr<ID3D11Texture2D>          tex;           // R32_TYPELESS
     ComPtr<ID3D11DepthStencilView>   dsv;           // D32_FLOAT
@@ -214,6 +257,24 @@ struct GBufferRT {
 
     DepthState  depth;
 
+    RenderTarget post_ping;  // tex: R8G8B8A8_TYPELESS, RTV: UNORM, SRV: UNORM_SRGB
+    RenderTarget post_pong;  // same as above
+    std::atomic_bool post_is_ping{ true };
+
+
+    // --- Helpers at end of struct ---
+    inline void GetPostRT(RenderTarget*& src, RenderTarget*& dst, bool swapAfterUse)
+    {
+        const bool ping = post_is_ping.load(std::memory_order_relaxed);
+        src = ping ? &post_ping : &post_pong;
+        dst = ping ? &post_pong : &post_ping;
+        if (swapAfterUse) post_is_ping.store(!ping, std::memory_order_relaxed);
+    }
+    inline RenderTarget* GetPostOutput()
+    {
+        return post_is_ping.load(std::memory_order_relaxed) ? &post_ping : &post_pong;
+    }
+
     void Create(ID3D11Device* dev, UINT w, UINT h) {
         if (!w || !h) { w = 1; h = 1; }
 
@@ -236,6 +297,21 @@ struct GBufferRT {
         depth_angle_density_lookup = RenderTarget::Create(dev, 512, 512, DXGI_FORMAT_R16G16B16A16_FLOAT, "depth_angle_density_lookup");
 
         depth = DepthState::Create(dev, w, h, "gbuffer_depth");
+
+        // --- In Create() after existing RT creations ---
+        post_ping = RenderTarget::CreateWithViews(
+            dev, w, h,
+            DXGI_FORMAT_R8G8B8A8_TYPELESS,
+            DXGI_FORMAT_R8G8B8A8_UNORM,         // RTV (linear UNORM)
+            DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,    // SRV (sRGB sample)
+            "postprocess_ping");
+
+        post_pong = RenderTarget::CreateWithViews(
+            dev, w, h,
+            DXGI_FORMAT_R8G8B8A8_TYPELESS,
+            DXGI_FORMAT_R8G8B8A8_UNORM,
+            DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+            "postprocess_pong");
     }
 
     void Resize(ID3D11Device* dev, UINT w, UINT h) {

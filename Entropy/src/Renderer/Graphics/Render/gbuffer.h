@@ -141,8 +141,6 @@ struct GBuffer {
     void Resize(ID3D11Device* dev, UINT W, UINT H);
     void BindGBufferForWriting(ID3D11DeviceContext* ctx) const;
     void UnbindMRTs(ID3D11DeviceContext* ctx) const;
-
-public:
     // Ping–pong helpers
     void GetPostprocessRT(RenderTarget*& src, RenderTarget*& dst, bool swapAfterUse);
     RenderTarget* GetPostprocessOutput();

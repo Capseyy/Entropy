@@ -52,53 +52,113 @@ struct alignas(16) View
         return r;
     }
 
-    // ===== port of Rust derive_matrices =====
+    static inline DirectX::XMVECTOR GetColumn(const DirectX::XMMATRIX& M, int c)
+    {
+        using namespace DirectX;
+        return XMVectorSet(M.r[0].m128_f32[c], M.r[1].m128_f32[c], M.r[2].m128_f32[c], M.r[3].m128_f32[c]);
+    }
+
+    static inline DirectX::XMMATRIX SetColumn(DirectX::XMMATRIX M, int c, DirectX::XMVECTOR v)
+    {
+        using namespace DirectX;
+        M.r[0].m128_f32[c] = XMVectorGetX(v);
+        M.r[1].m128_f32[c] = XMVectorGetY(v);
+        M.r[2].m128_f32[c] = XMVectorGetZ(v);
+        M.r[3].m128_f32[c] = XMVectorGetW(v);
+        return M;
+    }
+
+    // Zero translation (keep rotation+scale; column 3 = [0,0,0,1])
+    static inline DirectX::XMMATRIX DropTranslationRow(const DirectX::XMMATRIX& M)
+    {
+        using namespace DirectX;
+        XMMATRIX R = M;
+        R.r[3] = XMVectorSet(0.f, 0.f, 0.f, 1.f);
+        return R;
+    }
+
+    // Helpers: load/store row-major XMFLOAT4X4 with explicit transpose for HLSL column-major
+    static inline DirectX::XMMATRIX load_rm(const DirectX::XMFLOAT4X4& m) {
+        using namespace DirectX;
+        // XMFLOAT4X4 is row-major layout; to get the true column-math matrix, transpose it on load.
+        return XMMatrixTranspose(XMLoadFloat4x4(&m));
+    }
+    static inline void store_rm(DirectX::XMFLOAT4X4& dst, const DirectX::XMMATRIX& colM) {
+        using namespace DirectX;
+        // Store the transpose so that HLSL column-major sees the intended columns.
+        XMStoreFloat4x4(&dst, XMMatrixTranspose(colM));
+    }
+    static inline DirectX::XMMATRIX drop_translation_col(const DirectX::XMMATRIX& M) {
+        using namespace DirectX;
+        // zero the translation column (column 3), keep affine bottom element
+        XMMATRIX R = M;
+        R.r[0].m128_f32[3] = 0.f;
+        R.r[1].m128_f32[3] = 0.f;
+        R.r[2].m128_f32[3] = 0.f;
+        R.r[3].m128_f32[3] = 1.f;
+        return R;
+    }
+
     void derive_matrices_vs(const Viewport& viewport)
     {
+        using namespace DirectX;
+
         resolution_width = viewport.size.x;
         resolution_height = viewport.size.y;
 
-        const XMMATRIX V = load(world_to_camera);
-        const XMMATRIX P = load(camera_to_projective);
+        // ---- Column-math on CPU ------------------------------------------------
+        // Stored row-major on CPU, so transpose on load to get column matrices:
+        const XMMATRIX V = load_rm(world_to_camera);        // world -> camera
+        const XMMATRIX P = load_rm(camera_to_projective);   // camera -> projective
 
-        // In your Rust: world_to_projective = P * V  (column-math).
-        // If your HLSL uses row-math (mul(float4, M)), prefer VP = V * P instead.
-        constexpr bool kRowMath = true;
-        const XMMATRIX VP = kRowMath ? XMMatrixMultiply(V, P) : XMMatrixMultiply(P, V);
+        // Column pipeline (HLSL default): clip = P * V * worldPos
+        const XMMATRIX CW = XMMatrixInverse(nullptr, V);          // camera -> world
+        const XMMATRIX WP = XMMatrixMultiply(P, V);               // world -> projective
+        const XMMATRIX PC = XMMatrixInverse(nullptr, P);          // projective -> camera
+        const XMMATRIX PW = XMMatrixInverse(nullptr, WP);         // projective -> world
 
-        const XMMATRIX CW = XMMatrixInverse(nullptr, V);   // camera_to_world
-        const XMMATRIX PInv = XMMatrixInverse(nullptr, P); // projective_to_camera
-        const XMMATRIX VPInv = XMMatrixInverse(nullptr, VP);
+        // Write back as row-major buffers (store transpose)
+        store_rm(camera_to_world, CW);   // cb12 c4..c7
+        store_rm(world_to_projective, WP);   // cb12 c0..c3
+        store_rm(projective_to_camera, PC);   // (if you keep it in cb12)
+        store_rm(projective_to_world, PW);   // (if you keep it in cb12)
 
-        store(camera_to_world, CW);
-        store(world_to_projective, VP);
-        store(projective_to_world, VPInv);
-        store(projective_to_camera, PInv);
+        // target_pixel_to_camera  = PC * target_pixel_to_projective
+        // target_pixel_to_world   = CW * target_pixel_to_camera
+        const XMMATRIX TPtP = viewport.target_pixel_to_projective(); // already row-major math inside
+        const XMMATRIX TPtP_col = XMMatrixTranspose(TPtP);            // use as column-math
+        const XMMATRIX TPtC = XMMatrixMultiply(PC, TPtP_col);
+        const XMMATRIX TPtW = XMMatrixMultiply(CW, TPtC);
+        store_rm(target_pixel_to_camera, XMMatrixIdentity()); // if you have a field; otherwise omit
+        store_rm(target_pixel_to_world, TPtW);
 
-        const XMMATRIX TPtP = viewport.target_pixel_to_projective();
-        const XMMATRIX TPtoC = XMMatrixMultiply(PInv, TPtP);  // target_pixel_to_camera
-        const XMMATRIX TPtoW = XMMatrixMultiply(CW, TPtoC); // target_pixel_to_world
-        store(target_pixel_to_camera, TPtoC);
-        store(target_pixel_to_world, TPtoW);
+        // position = camera_to_world.w_axis (column 3 in column-math)
+        {
+            XMFLOAT4X4 cwRM; XMStoreFloat4x4(&cwRM, XMMatrixTranspose(CW)); // back to row-major
+            position = cwRM._41 ? XMFLOAT4(cwRM._41, cwRM._42, cwRM._43, cwRM._44)
+                : XMFLOAT4(CW.r[3].m128_f32[0], CW.r[3].m128_f32[1], CW.r[3].m128_f32[2], CW.r[3].m128_f32[3]);
+        }
 
-        // position = camera_to_world.w_axis  (translation).
-        // row-major: translation is row 3 (r[3].xyz,1).
-        XMFLOAT4 posF;
-        XMStoreFloat4(&posF, CW.r[3]);
-        position = posF;
+        // unk30 = Z - world_to_projective.w_axis (use column 3)
+        {
+            const XMVECTOR vecZ = XMVectorSet(0.f, 0.f, 1.f, 0.f);
+            const XMVECTOR wpW = XMVectorSet(WP.r[0].m128_f32[3], WP.r[1].m128_f32[3],
+                WP.r[2].m128_f32[3], WP.r[3].m128_f32[3]);
+            const XMVECTOR u30 = XMVectorSubtract(vecZ, wpW);
+            XMStoreFloat4(&unk30, u30);
+        }
 
-        // unk30 = Vec4::Z - world_to_projective.w_axis
-        // Rust uses column w_axis; here use the 4th ROW (consistent with row-math).
-        // If you truly need the 4th COLUMN instead, read VP column 3.
-        XMFLOAT4 vpRow3F; XMStoreFloat4(&vpRow3F, VP.r[3]);
-        XMFLOAT4 vecZ = { 0.f, 0.f, 1.f, 0.f };
-        unk30 = XMFLOAT4{ vecZ.x - vpRow3F.x, vecZ.y - vpRow3F.y, vecZ.z - vpRow3F.z, vecZ.w - vpRow3F.w };
+        // ptow_no_proj_w = (ctow with zeroed translation) * ptoc (all column-math)
+        const XMMATRIX CW_noT = drop_translation_col(CW);
+        const XMMATRIX PTOW_noProjW = XMMatrixMultiply(CW_noT, PC);
+        const XMMATRIX TPTOW_noProjW = XMMatrixMultiply(PTOW_noProjW, TPtP_col);
+        store_rm(tptow_no_proj_w, TPTOW_noProjW);
 
-        // ptow_no_proj_w = (ctow with zeroed translation) * ptoc
-        const XMMATRIX ctow_no_pos = drop_translation(CW);
-        const XMMATRIX ptow_no_proj_wM = XMMatrixMultiply(ctow_no_pos, PInv);
-        const XMMATRIX tptow_no_proj_wM = XMMatrixMultiply(ptow_no_proj_wM, TPtP);
-        store(tptow_no_proj_w, tptow_no_proj_wM);
+        // Finally the camera_to_projective block at the end of cb12
+        store_rm(camera_to_projective, P);    // cb12 c11..c14
+
+        // Anything else in cb12 (target, misc) stays as you already compute:
+        // target (c8) and view_miscellaneous (c9) are simple float4s; write them directly.
     }
     void derive_matrices_ps(const Viewport& viewport)
     {
@@ -172,7 +232,7 @@ inline void UploadScopeViewCB12_All(
     ID3D11Buffer* b = g_scopeView_b12.Get();
     ctx->VSSetConstantBuffers(12, 1, &b);
     ctx->PSSetConstantBuffers(12, 1, &b);
-    ctx->GSSetConstantBuffers(12, 1, &b); // if GS uses it
+    //ctx->GSSetConstantBuffers(12, 1, &b); // if GS uses it
 }
 
 // Must match the HLSL constant buffer layout exactly (16-byte alignment)

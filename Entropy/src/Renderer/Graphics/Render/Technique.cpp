@@ -57,33 +57,33 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
     const auto sel = DecodeStateSelection(this->StateSelection);
 
     // Blend ----------------------------------------------------------
-    if (sel.blend && *sel.blend < states.blend_states.size() &&
-        states.blend_states[*sel.blend]) {
-        const float blendFactor[4] = { 1.f, 1.f, 1.f, 1.f };
-        const UINT sampleMask = 0xFFFFFFFFu;
-        //printf("Mapped blend\n");
-        pContext->OMSetBlendState(states.blend_states[*sel.blend].Get(), blendFactor, sampleMask);
-    }
+    //if (sel.blend && *sel.blend < states.blend_states.size() &&
+    //    states.blend_states[*sel.blend]) {
+    //    const float blendFactor[4] = { 1.f, 1.f, 1.f, 1.f };
+    //    const UINT sampleMask = 0xFFFFFFFFu;
+    //    //printf("Mapped blend\n");
+    //    pContext->OMSetBlendState(states.blend_states[*sel.blend].Get(), blendFactor, sampleMask);
+    //}
 
-    if (sel.rasterizer && *sel.rasterizer < 9 &&
-        sel.depthBias && *sel.depthBias < 9) {
-        auto& rs = states.rasterizer_states[*sel.rasterizer];
-        if (rs) {
-            //printf("Mapped raster\n");
-            pContext->RSSetState(rs.Get());
-        }
-    }
-    if (sel.depthStencilCombo && *sel.depthStencilCombo < states.depth_stencil_states.size()) {
-        // Choose primary or "alt" (reverse) depth func variant.
-        // Wire this to whatever logic you use to flip GREATER/LESS, etc.
-        const bool useAltDepth = false;               // TODO: set this from your engine state
-        const UINT stencilRef = 0;                   // TODO: set if your pass needs a non-zero ref
+    //if (sel.rasterizer && *sel.rasterizer < 9 &&
+    //    sel.depthBias && *sel.depthBias < 9) {
+    //    auto& rs = states.rasterizer_states[*sel.rasterizer];
+    //    if (rs) {
+    //        //printf("Mapped raster\n");
+    //        pContext->RSSetState(rs.Get());
+    //    }
+    //}
+    //if (sel.depthStencilCombo && *sel.depthStencilCombo < states.depth_stencil_states.size()) {
+    //    // Choose primary or "alt" (reverse) depth func variant.
+    //    // Wire this to whatever logic you use to flip GREATER/LESS, etc.
+    //    const bool useAltDepth = false;               // TODO: set this from your engine state
+    //    const UINT stencilRef = 0;                   // TODO: set if your pass needs a non-zero ref
 
-        auto& pair = states.depth_stencil_states[*sel.depthStencilCombo];
-        ID3D11DepthStencilState* ds = (useAltDepth ? pair.second : pair.first).Get();
-        printf("Mapped stencil\n");
-        pContext->OMSetDepthStencilState(ds, stencilRef);
-    }
+    //    auto& pair = states.depth_stencil_states[*sel.depthStencilCombo];
+    //    ID3D11DepthStencilState* ds = (useAltDepth ? pair.second : pair.first).Get();
+    //    printf("Mapped stencil\n");
+    //    pContext->OMSetDepthStencilState(ds, stencilRef);
+    //}
 
     if (!this->VS.empty()) {
 
@@ -242,24 +242,51 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
             pContext->VSSetConstantBuffers(UINT(i), 1, &b);
         }
     }
-    
 
-    if (TfxScope::has(used, TfxScope::FRAME)) {
-        scopes[0].second.Bind(pContext);
-    }
-    if (TfxScope::has(used, TfxScope::VIEW)) {
-        scopes[1].second.Bind(pContext);
 
-    }
-    if (TfxScope::has(used, TfxScope::TRANSPARENT)) {
-        scopes[13].second.Bind(pContext);
-    }
-    if (TfxScope::has(used, TfxScope::TRANSPARENT_ADVANCED)) {
-        scopes[14].second.Bind(pContext);
-    }
-    if (TfxScope::has(used, TfxScope::CHUNK_MODEL)) {
-        scopes[9].second.Bind(pContext);
-    }
+    // Bind scopes explicitly by bit, matching enum order (index == bit position)
+    if (TfxScope::has(used, TfxScope::FRAME)) { scopes[0].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::VIEW)) { scopes[1].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::RIGID_MODEL)) { scopes[2].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::EDITOR_MESH)) { scopes[3].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::EDITOR_TERRAIN)) { scopes[4].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::CUI_VIEW)) { scopes[5].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::CUI_OBJECT)) { scopes[6].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::SKINNING)) { scopes[7].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::SPEEDTREE)) { scopes[8].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::CHUNK_MODEL)) { scopes[9].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::DECAL)) { scopes[10].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::INSTANCES)) { scopes[11].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::SPEEDTREE_LOD_DRAWCALL_DATA)) { scopes[12].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::TRANSPARENT)) { scopes[13].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::TRANSPARENT_ADVANCED)) { scopes[14].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::SDSM_BIAS_AND_SCALE_TEXTURES)) { scopes[15].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::TERRAIN)) { scopes[16].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::POSTPROCESS)) { scopes[17].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::CUI_BITMAP)) { scopes[18].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::CUI_STANDARD)) { scopes[19].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::UI_FONT)) { scopes[20].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::CUI_HUD)) { scopes[21].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::PARTICLE_TRANSFORMS)) { scopes[22].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::PARTICLE_LOCATION_METADATA)) { scopes[23].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::CUBEMAP_VOLUME)) { scopes[24].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::GEAR_PLATED_TEXTURES)) { scopes[25].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::GEAR_DYE_0)) { scopes[26].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::GEAR_DYE_1)) { scopes[27].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::GEAR_DYE_2)) { scopes[28].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::GEAR_DYE_DECAL)) { scopes[29].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::GENERIC_ARRAY)) { scopes[30].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::GEAR_DYE_SKIN)) { scopes[31].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::GEAR_DYE_LIPS)) { scopes[32].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::GEAR_DYE_HAIR)) { scopes[33].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::GEAR_DYE_FACIAL_LAYER_0_MASK)) { scopes[34].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::GEAR_DYE_FACIAL_LAYER_0_MATERIAL)) { scopes[35].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::GEAR_DYE_FACIAL_LAYER_1_MASK)) { scopes[36].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::GEAR_DYE_FACIAL_LAYER_1_MATERIAL)) { scopes[37].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::PLAYER_CENTERED_CASCADED_GRID)) { scopes[38].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::GEAR_DYE_012)) { scopes[39].second.Bind(pContext); }
+    if (TfxScope::has(used, TfxScope::COLOR_GRADING_UBERSHADER)) { scopes[40].second.Bind(pContext); }
+
 
     return true;
 }

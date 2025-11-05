@@ -227,7 +227,6 @@
   <ItemGroup>
     <ClCompile Include="src\Renderer\Graphics\RenderStates.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Render\gbuffer.cpp" />
-    <ClCompile Include="src\Renderer\Graphics\Render\GBufferRT.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Render\Technique.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Scope\instance.cpp" />
     <ClCompile Include="src\Renderer\Loaders\Entity.cpp" />

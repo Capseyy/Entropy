@@ -33,6 +33,7 @@
 #include "Renderer/Loaders/Map.h"
 #include "Renderer/Graphics/Render/GBufferRT.h"
 
+
 enum class TfxRenderStage : uint8_t {
 	GenerateGbuffer = 0,
 	Decals = 1,
@@ -85,6 +86,7 @@ private:
 	void DrawStaticSpecial(const RenderStatic& rs, const View& view);
 	void DrawStaticTransparent(const RenderStatic& rs, const View& view);
 	void DrawEntity(const RenderEntity& rs, const View& view, TfxRenderStage = TfxRenderStage::GenerateGbuffer);
+	void RunPostprocessChain();
 
 	std::array<Microsoft::WRL::ComPtr<ID3D11InputLayout>, 15> tiger_input_layouts;
 
@@ -94,10 +96,17 @@ private:
 	Microsoft::WRL::ComPtr<ID3D11RenderTargetView> pRenderTargetView;
 	Microsoft::WRL::ComPtr<ID3D11BlendState> bsOpaque;
 
-	PixelShader pixelshader;
-	VertexShader vertexshader;
+	//PixelShader pixelshader;
+	//VertexShader vertexshader;
 
 	Microsoft::WRL::ComPtr<ID3D11VertexShader> entity_vs_override;
+
+	void DrawPostProcessPass(bool enableFXAA, bool fxaaNoise /*unused here*/);
+	void DrawFS(ID3D11DeviceContext* ctx,
+		ID3D11VertexShader* vs, ID3D11PixelShader* ps,
+		ID3D11RenderTargetView* rtv,
+		ID3D11ShaderResourceView* const* srvs, UINT srvCount,
+		ID3D11SamplerState* const* samps, UINT sampCount);
 
 	UINT offset = 0;
 

@@ -156,35 +156,6 @@ RenderStatic StaticRenderer::Build()
         //this->
     }
 
-    UINT highestDetail = 99;
-    for (const auto& party : m.parts) {
-        if (party.LodCatagory < highestDetail) {
-            highestDetail = party.LodCatagory;
-        }
-    }
-
-    // ---- Collect per-part technique id + buffer group index (aligned vectors) ----
-
-    std::vector<TagHash> techIds;
-    std::vector<size_t>  partGroupIdx;
-    std::vector<uint32_t> partInputLayoutIdx;
-
-    int matIndex = 0;
-    for (const auto& mg : m.mesh_groups) {
-        if (mg.TfxRenderStage != 0) {
-            ++matIndex; 
-            continue;
-        }
-        if (m.parts[mg.part_index].LodCatagory != highestDetail) {
-            ++matIndex;
-            continue;
-        }
-        partGroupIdx.push_back(static_cast<size_t>(mg.part_index));     // which buffer group this part uses
-        techIds.push_back(s.Techniques[matIndex].Unk0);                 // your technique tag
-        partInputLayoutIdx.push_back(mg.input_layout_index);            // remember IL index if you want per-part IL
-        ++matIndex;
-    }
-
     // ---- Enqueue buffer groups (parallel) ----
     std::vector<std::shared_future<std::shared_ptr<BufferGroup>>> groupF;
     groupF.reserve(groupRefs.size());
@@ -231,12 +202,14 @@ RenderStatic StaticRenderer::Build()
             }).share();
         groupF.push_back(fut);
     }
-
-    std::vector<std::shared_future<std::shared_ptr<EntropyAssets::Technique>>> techF(techIds.size());
-    for (size_t i = 0; i < techIds.size(); ++i) {
-        const uint32_t tid32 = techIds[i].hash;
+    auto mesh = std::make_shared<StaticMesh>();
+    mesh->techniques.resize(s.Techniques.size());
+	std::vector<std::shared_future<std::shared_ptr<EntropyAssets::Technique>>> techniqueFutures;
+    for (size_t i = 0; i < s.Techniques.size(); ++i) {
+        const uint32_t tid32 = s.Techniques[i].Unk0.hash;
         //printf("[Build] part %zu technique %08X\n", i, tid32);
-        techF[i] = gfx_.assets->EnqueueTechnique(techIds[i]); // returns shared_future<shared_ptr<Technique>>
+        auto tech = gfx_.assets->EnqueueTechnique(s.Techniques[i].Unk0); // returns shared_future<shared_ptr<Technique>>
+		mesh->techniques[i] = tech.get();
     }
 
     std::vector<std::shared_future<std::shared_ptr<EntropyAssets::Technique>>> techF_specials(specials.size());
@@ -246,7 +219,7 @@ RenderStatic StaticRenderer::Build()
         techF_specials[i] = gfx_.assets->EnqueueTechnique(specials[i].part.technique); // returns shared_future<shared_ptr<Technique>>
     }
     // ---- Assemble mesh ----
-    auto mesh = std::make_shared<StaticMesh>();
+    
     mesh->groups.reserve(groupF.size());
     for (auto& f : groupF) {
         try {
@@ -258,21 +231,9 @@ RenderStatic StaticRenderer::Build()
         }
     }
 
+    mesh->parts = m.parts;
+	mesh->meshGroups = m.mesh_groups;
 
-    mesh->parts.resize(techIds.size());
-    for (size_t i = 0; i < partGroupIdx.size(); ++i) {
-        std::shared_ptr<EntropyAssets::Technique> t;
-        try {
-            if (techF[i].valid()) t = techF[i].get();
-        }
-        catch (const std::exception& e) {
-            printf("[Build][Tech] id=%08X get() failed: %s\n", techIds[i].hash, e.what());
-        }
-        mesh->parts[i].techniqueId = techIds[i].hash;
-        mesh->parts[i].technique = std::move(t);
-        mesh->parts[i].partInfo = m.parts[partGroupIdx[i]];
-        mesh->input_layout_index = partInputLayoutIdx[i];
-    }
     mesh->id = static_hash_.hash;
     // ---- Output renderable ----
     RenderStatic out{};

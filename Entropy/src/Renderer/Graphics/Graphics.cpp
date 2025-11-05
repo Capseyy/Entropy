@@ -215,7 +215,7 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 	const auto& mesh = *rs.mesh;
 
 	// View constant buffer(s)
-	ID3D11Buffer* b1 = g_cb1.Get();            // if you also use cb1 for per-object, leave it bound
+	Microsoft::WRL::ComPtr<ID3D11Buffer> instanceBuf;       // if you also use cb1 for per-object, leave it bound
 	
 	ID3D11Buffer* b12 = g_scopeView_b12.Get();
 	XMFLOAT3 mesh_offset;
@@ -223,26 +223,30 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 	mesh_offset.y = rs.meshData.mesh_offset[1];
 	mesh_offset.z = rs.meshData.mesh_offset[2];
 
-	UpdateCB1(ctx,
+	CreateCB1_FreshDynamic(pDevice.Get(), ctx,
 		mesh_offset,
 		rs.meshData.mesh_scale,
 		rs.meshData.texture_coordinate_scale,
 		rs.meshData.texture_coordinate_offset[0],
 		rs.meshData.texture_coordinate_offset[1],
 		rs.meshData.max_colour_index,
-		rs.world);
-	for (const auto& part : mesh.parts)
-	{
-		auto tech = part.technique.get();
-		ctx->IASetInputLayout(tiger_input_layouts[mesh.input_layout_index].Get());
-
-		// --- Buffers (choose the group this part uses; here we take the first)
-		const size_t gi = part.bufferGroupIndices.empty() ? 0 : part.bufferGroupIndices[0];
-		if (gi >= mesh.groups.size() || !mesh.groups[gi]) {
-			printf("Skip part: bad buffer group index\n");
+		rs.world,
+		instanceBuf);
+	for (int i=0; i < mesh.meshGroups.size(); ++i) {
+		const auto& mg = mesh.meshGroups[i];
+		if (mg.TfxRenderStage != 0) {
 			continue;
 		}
-		const BufferGroup& bg = *mesh.groups[gi];
+		const auto& part = mesh.parts[mg.part_index];
+		if (part.LodCatagory > 1) {
+			// Skip non-highest LOD parts for now
+			continue;
+		}
+		auto tech = mesh.techniques[i].get();
+		ctx->IASetInputLayout(tiger_input_layouts[mg.input_layout_index].Get());
+
+
+		const BufferGroup& bg = *mesh.groups[part.buffer_index];
 		if (!bg.index || !bg.vertex || bg.indexCount == 0) {
 			//printf("Skip part: missing VB/IB or zero indexCount\n");
 			continue;
@@ -269,12 +273,12 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 		if (tech)
 			tech->Bind(pDevice, pContext, externs, states, scopes);
 
-		
-		ctx->VSSetConstantBuffers(1, 1, &b1);
+		ID3D11Buffer* buf = instanceBuf.Get();
+		ctx->VSSetConstantBuffers(1, 1, &buf);
 		const UINT instanceCount = (UINT)rs.world.size();
-		ctx->DrawIndexedInstanced(part.partInfo.index_count,
+		ctx->DrawIndexedInstanced(part.index_count,
 			instanceCount,               // InstanceCount
-			part.partInfo.index_start,   // StartIndexLocation
+			part.index_start,   // StartIndexLocation
 			0,                           // BaseVertexLocation
 			0);
 	}
@@ -292,7 +296,7 @@ void Graphics::DrawStaticSpecial(const RenderStatic& rs, const View& view)
 	const auto& mesh = *rs.mesh;
 
 	// View constant buffer(s)
-	ID3D11Buffer* b1 = g_cb1.Get();            // if you also use cb1 for per-object, leave it bound
+	Microsoft::WRL::ComPtr<ID3D11Buffer> b1;      // if you also use cb1 for per-object, leave it bound
 
 	ID3D11Buffer* b12 = g_scopeView_b12.Get();
 	XMFLOAT3 mesh_offset;
@@ -300,14 +304,15 @@ void Graphics::DrawStaticSpecial(const RenderStatic& rs, const View& view)
 	mesh_offset.y = rs.meshData.mesh_offset[1];
 	mesh_offset.z = rs.meshData.mesh_offset[2];
 
-	UpdateCB1(ctx,
+	CreateCB1_FreshDynamic(pDevice.Get(), ctx,
 		mesh_offset,
 		rs.meshData.mesh_scale,
 		rs.meshData.texture_coordinate_scale,
 		rs.meshData.texture_coordinate_offset[0],
 		rs.meshData.texture_coordinate_offset[1],
 		rs.meshData.max_colour_index,
-		rs.world);
+		rs.world,
+		b1);
 	swprintf(label, 128, L"Static geometry decal %08X", rs.mesh->id);
 	for (const auto& special : rs.specials) {
 		// If technique is shared_ptr:
@@ -315,7 +320,7 @@ void Graphics::DrawStaticSpecial(const RenderStatic& rs, const View& view)
 		if (special->part.TfxRenderStage == 1) {
 			auto& part = special->part;
 			auto tech = special->technique.get();
-			ctx->IASetInputLayout(tiger_input_layouts[mesh.input_layout_index].Get());
+			ctx->IASetInputLayout(tiger_input_layouts[special->input_layout_index].Get());
 			ID3D11Buffer* vbs[3];
 			UINT          strides[3];
 			UINT          offsets[3] = { 0,0,0 };
@@ -332,8 +337,7 @@ void Graphics::DrawStaticSpecial(const RenderStatic& rs, const View& view)
 			};
 			pContext->PSSetShaderResources(2, 1, rt1decal);*/
 			pContext->OMSetDepthStencilState(depthStencilDecal.Get(),0);
-			ID3D11Buffer* b = g_cb1.Get();
-			ctx->VSSetConstantBuffers(1, 1, &b);
+			ctx->VSSetConstantBuffers(1, 1, &b1);
 			const UINT instanceCount = (UINT)rs.world.size();
 			ctx->DrawIndexedInstanced(part.index_count,
 				instanceCount,               // InstanceCount
@@ -366,14 +370,14 @@ void Graphics::DrawStaticTransparent(const RenderStatic& rs, const View& view)
 	mesh_offset.y = rs.meshData.mesh_offset[1];
 	mesh_offset.z = rs.meshData.mesh_offset[2];
 
-	UpdateCB1(ctx,
+	/*CreateCB1_FreshDynamic(pDevice.Get(), ctx,
 		mesh_offset,
 		rs.meshData.mesh_scale,
 		rs.meshData.texture_coordinate_scale,
 		rs.meshData.texture_coordinate_offset[0],
 		rs.meshData.texture_coordinate_offset[1],
 		rs.meshData.max_colour_index,
-		rs.world);
+		rs.world);*/
 	swprintf(label, 128, L"Static geometry decal %08X", rs.mesh->id);
 	for (const auto& special : rs.specials) {
 		// If technique is shared_ptr:
@@ -427,6 +431,77 @@ void Graphics::DrawStaticTransparent(const RenderStatic& rs, const View& view)
 
 
 		}//decals
+	}
+}
+
+// Graphics.cpp
+void Graphics::RunPostprocessChain()
+{
+    ID3D11DeviceContext* ctx = pContext.Get();
+    ScopedGpuEvent G(anno_.Get(), L"postprocess");
+
+    // Pass 0: blit_texture_alphaluminance  (HDR shading_result -> post_ping/pong)
+    {
+        ScopedGpuEvent e(anno_.Get(), L"blit_texture_alphaluminance");
+        RenderTarget* src; RenderTarget* dst;
+        gbufA.GetPostRT(src, dst, /*swapAfterUse=*/true);
+
+        ID3D11RenderTargetView* rtv = dst->rtv.Get();
+        ctx->OMSetRenderTargets(1, &rtv, nullptr);
+        PP_Viewport(ctx, float(windowWidth), float(windowHeight));
+        PP_CommonStates(ctx, bsOpaque.Get(), dsDisabled.Get(), rasterizerStateNoCull.Get());
+
+        if (auto it = globalTechniques.find("blit_texture_alphaluminance");
+            it != globalTechniques.end())
+			it->second.get()->Bind(pDevice, pContext, externs, states, scopes);
+
+        ID3D11ShaderResourceView* srvs[] = { gbufA.shading_result.srv.Get() }; // t0
+        ctx->PSSetShaderResources(0, 1, srvs);
+        ID3D11SamplerState* samp[] = { samplerLinearClamp.Get() };
+        ctx->PSSetSamplers(0, 1, samp);
+
+        PP_SetFS(ctx); PP_DrawFS(ctx);
+        UnbindAllSRVs(ctx);
+    }
+
+    // Pass 1: blit_texture  (post A -> post B)
+    {
+        ScopedGpuEvent e(anno_.Get(), L"debug_overlay_blit_texture");
+        RenderTarget* src; RenderTarget* dst;
+        gbufA.GetPostRT(src, dst, /*swapAfterUse=*/true);
+
+        ID3D11RenderTargetView* rtv = dst->rtv.Get();
+        ctx->OMSetRenderTargets(1, &rtv, nullptr);
+        PP_Viewport(ctx, float(windowWidth), float(windowHeight));
+        PP_CommonStates(ctx, bsOpaque.Get(), dsDisabled.Get(), rasterizerStateNoCull.Get());
+
+        if (auto it = globalTechniques.find("debug_overlay_blit_texture");
+            it != globalTechniques.end())
+			it->second.get()->Bind(pDevice, pContext, externs, states, scopes);
+
+        ID3D11ShaderResourceView* s[] = { src->srv.Get() }; // note: SRGB SRV
+        ctx->PSSetShaderResources(0, 1, s);
+        ID3D11SamplerState* samp[] = { samplerLinearClamp.Get() };
+        ctx->PSSetSamplers(0, 1, samp);
+
+        PP_SetFS(ctx); PP_DrawFS(ctx);
+        UnbindAllSRVs(ctx);
+    }
+	{
+		ScopedGpuEvent e(anno_.Get(), L"final_present");
+		ID3D11RenderTargetView* bbSRGB = pRenderTargetView.Get();
+		ctx->OMSetRenderTargets(1, &bbSRGB, nullptr);
+		PP_Viewport(ctx, float(windowWidth), float(windowHeight));
+		PP_CommonStates(ctx, bsOpaque.Get(), dsDisabled.Get(), rasterizerStateNoCull.Get());
+
+		auto* out = gbufA.GetPostOutput();
+		ID3D11ShaderResourceView* s = out->srv.Get();
+		ctx->PSSetShaderResources(0, 1, &s);
+		ID3D11SamplerState* samp = samplerLinearClamp.Get();
+		ctx->PSSetSamplers(0, 1, &samp);
+
+		PP_SetFS(ctx); PP_DrawFS(ctx);
+		UnbindAllSRVs(ctx);
 	}
 }
 
@@ -658,10 +733,25 @@ void Graphics::RenderFrame()
 	// Build view/projection (reversed-Z projection)
 	View viewState{};
 	XMStoreFloat4x4(&viewState.world_to_camera, camera.GetViewMatrix());
-	const float fovY = DirectX::XMConvertToRadians(120.0f);
+
+	// Projection (LH, infinite far, fovY = 90°, non-reversed)
+	const float fovY = DirectX::XMConvertToRadians(90.0f);  // <= gives m22 = 1.0
 	const float aspect = float(windowWidth) / float(windowHeight);
-	DirectX::XMMATRIX projRZ = MakeReversedZProjLH(fovY, aspect, camera.GetNearZ());
-	XMStoreFloat4x4(&viewState.camera_to_projective, projRZ);
+	const float zn = std::max(0.001f, camera.GetNearZ());
+
+	const float t = tanf(fovY * 0.5f);
+	const float m11 = 1.0f / (t * aspect); // ~0.53477 for 16:9
+	const float m22 = 1.0f / t;            // = 1.0 when fovY = 90°
+
+	// Row-major (DirectXMath) layout:
+	DirectX::XMMATRIX proj = DirectX::XMMatrixSet(
+		m11, 0.0f, 0.0f, 0.0f,   // row 1
+		0.0f, m22, 0.0f, 0.0f,   // row 2
+		0.0f, 0.0f, 0.0f, -1.0f, // row 3
+		0.0f, 0.0f, zn, 0.0f   // row 4
+	);
+
+	XMStoreFloat4x4(&viewState.camera_to_projective, proj);
 	viewState.derive_matrices_vs({ { float(windowWidth), float(windowHeight) } });
 
 	{
@@ -690,33 +780,50 @@ void Graphics::RenderFrame()
 	{
 		ScopedGpuEvent e(anno_.Get(), L"generate_gbuffer");
 
+		// Unbind any SRVs to avoid hazards before writing MRTs
+		{
+			ID3D11ShaderResourceView* null8[8] = {};
+			pContext->VSSetShaderResources(0, 8, null8);
+			pContext->PSSetShaderResources(0, 8, null8);
+		}
+		ID3D11ShaderResourceView* null8[8] = {};
+		pContext->VSSetShaderResources(0, 8, null8);
+		pContext->PSSetShaderResources(0, 8, null8);
 		ID3D11RenderTargetView* rt_gbuf[3]{
 			gbufA.rt0.rtv.Get(),
-				gbufA.rt1.rtv.Get(),
-				gbufA.rt2.rtv.Get()
+			gbufA.rt1.rtv.Get(),
+			gbufA.rt2.rtv.Get()
 		};
-
 		pContext->OMSetRenderTargets(3, rt_gbuf, gbufA.depth.dsv.Get());
-		const float black[4] = { 0,0,0,0 };
-		const float black2[4] = { 1,0.5,1,1 };
+
 		D3D11_VIEWPORT vp{ 0,0, float(windowWidth), float(windowHeight), 0.0f, 1.0f };
 		pContext->RSSetViewports(1, &vp);
-		pContext->ClearRenderTargetView(gbufA.rt0.rtv.Get(), black);
-		pContext->ClearRenderTargetView(gbufA.rt1.rtv.Get(), black);
-		pContext->ClearRenderTargetView(gbufA.rt2.rtv.Get(), black2);
 
-		//gbufA.BindGBufferForWriting(pContext.Get());
+		// --- Clear to robust defaults ---
+		// RT0: Albedo (sRGB) – black is fine
+		const float clearRt0[4] = { 0, 0, 0, 1 };
+		pContext->ClearRenderTargetView(gbufA.rt0.rtv.Get(), clearRt0);
+
+		// RT1: Normals/roughness – neutral normal + max roughness
+		const float clearRt1[4] = { 0.5f, 0.5f, 1.0f, 1.0f };
+		pContext->ClearRenderTargetView(gbufA.rt1.rtv.Get(), clearRt1);
+
+		// RT2: Material params – engine default (no spec etc.)
+		const float clearRt2[4] = { 0.0f, 0.0f, 1.0f, 0.0f };
+		pContext->ClearRenderTargetView(gbufA.rt2.rtv.Get(), clearRt2);
+
+		// Depth (reversed-Z): clear to 0.0f (far)
 		pContext->ClearDepthStencilView(
 			gbufA.depth.dsv.Get(),
 			D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL,
-			0.0f,   // <<<<<< IMPORTANT for reversed-Z
-			0
-		);
+			0.0f, 0);
 
+		// Opaque states for GBuffer (no blending, write depth, no bias)
 		float bf[4] = { 1,1,1,1 };
 		pContext->OMSetBlendState(states.blend_states[0].Get(), bf, 0xFFFFFFFF);
-		pContext->OMSetDepthStencilState(states.depth_stencil_states[2].first.Get(), 0);
-		pContext->RSSetState(states.rasterizer_states[2].Get());
+		pContext->OMSetDepthStencilState(states.depth_stencil_states[2].Get(), 0);
+		pContext->RSSetState(rasterizerStateGBuffer.Get());
+
 		pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		pipelineStage = TfxRenderStage::GenerateGbuffer;
 
@@ -738,17 +845,6 @@ void Graphics::RenderFrame()
 		for (auto& rs : staticsToDraw)
 			DrawStaticSpecial(rs, viewState);
 	}
-
-	//const float clearRt0[4] = { 0, 0, 0, 1 };
-	//pContext->ClearRenderTargetView(gbufA.rt0.rtv.Get(), clearRt0);
-
-	//// RT1: Normal.xy in 0..1, Normal.z=1, Roughness=1
-	//const float clearRt1[4] = { 0.5f, 0.5f, 1.0f, 1.0f };
-	//pContext->ClearRenderTargetView(gbufA.rt1.rtv.Get(), clearRt1);
-
-	//// RT2: Material params – keep them “no spec”
-	//const float clearRt2[4] = { 0.0f, 0.0f, 1.0f, 0.0f };
-	//pContext->ClearRenderTargetView(gbufA.rt2.rtv.Get(), clearRt2);
 	// =========================
 	// lighting_pass
 	// =========================
@@ -873,6 +969,11 @@ void Graphics::RenderFrame()
 		pContext->OMSetBlendState(bsOpaque.Get(), bf, 0xFFFFFFFF);
 	}
 
+	{
+		ScopedGpuEvent e(anno_.Get(), L"postprocess");
+		RunPostprocessChain();
+	}
+
 	// =========================
 	// present_to_backbuffer
 	// =========================
@@ -893,9 +994,9 @@ void Graphics::RenderFrame()
 		const float clear[4] = { 0,0,0,1 };
 		pContext->ClearRenderTargetView(bbSRGB, clear);
 
-		if (auto it = globalTechniques.find("final_combine"); it != globalTechniques.end())
+		if (auto it = globalTechniques.find("final_combine"); it != globalTechniques.end()) {
 			it->second.get()->Bind(pDevice, pContext, externs, states, scopes);
-
+		}
 		float bf[4] = { 1,1,1,1 };
 		pContext->OMSetBlendState(bsOpaque.Get(), bf, 0xFFFFFFFF);
 		pContext->OMSetDepthStencilState(dsDisabled.Get(), 0);
@@ -1175,7 +1276,7 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		CD3D11_RASTERIZER_DESC rzGBuf(D3D11_DEFAULT);
 		rzGBuf.CullMode = D3D11_CULL_BACK;
 		rzGBuf.FrontCounterClockwise = TRUE;   // or FALSE if your winding is CW
-		rzGBuf.DepthBias = +1;                 // <-- tiny bias in integer units
+		rzGBuf.DepthBias = 0;                 // <-- tiny bias in integer units
 		rzGBuf.SlopeScaledDepthBias = 0.0f;
 		rzGBuf.DepthBiasClamp = 0.0f;
 		pDevice->CreateRasterizerState(&rzGBuf, rasterizerStateGBuffer.GetAddressOf());
@@ -1355,20 +1456,20 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 
 bool Graphics::InitializeShaders()
 {
-	D3D11_INPUT_ELEMENT_DESC layout[] =
-	{
-		{ "POSITION", 0, DXGI_FORMAT_R16G16B16A16_SNORM, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 }, // slot 0, offset 0
-		{ "TANGENT",  0, DXGI_FORMAT_R16G16B16A16_SNORM, 0, 8, D3D11_INPUT_PER_VERTEX_DATA, 0 }, // slot 0, offset 8
-		{ "TEXCOORD", 0, DXGI_FORMAT_R16G16_SNORM,       1, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 }, // slot 1, offset 0
-	};
+	//D3D11_INPUT_ELEMENT_DESC layout[] =
+	//{
+	//	{ "POSITION", 0, DXGI_FORMAT_R16G16B16A16_SNORM, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 }, // slot 0, offset 0
+	//	{ "TANGENT",  0, DXGI_FORMAT_R16G16B16A16_SNORM, 0, 8, D3D11_INPUT_PER_VERTEX_DATA, 0 }, // slot 0, offset 8
+	//	{ "TEXCOORD", 0, DXGI_FORMAT_R16G16_SNORM,       1, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 }, // slot 1, offset 0
+	//};
 
-	UINT numElements = ARRAYSIZE(layout);
+	/*UINT numElements = ARRAYSIZE(layout);*/
 
-	if (!this->vertexshader.Initialize(this->pDevice, L"vertexshader.cso", layout, numElements))
+	/*if (!this->vertexshader.Initialize(this->pDevice, L"vertexshader.cso", layout, numElements))
 		return false;
 
 	if (!this->pixelshader.Initialize(this->pDevice, L"pixelshader.cso"))
-		return false;
+		return false;*/
 
 	Microsoft::WRL::ComPtr<ID3DBlob> vsBytecode;
 	HRESULT hr = CompileVSFromMemory(
@@ -1488,7 +1589,7 @@ void Graphics::LoadGlobalTextures() {
 bool Graphics::InitializeScene()
 {
 	try {
-		camera.SetPosition(3.0f, 0.0f, 0.0f);
+		camera.SetPosition(0.0f, 0.0f, 0.0f);
 		camera.SetProjectionValues(90.0f, static_cast<float>(windowWidth) / static_cast<float>(windowHeight), 0.01f, 10000.0f);
 	}
 	catch (COMException& exception)
@@ -1504,7 +1605,7 @@ bool Graphics::InitializeScene()
 	CreateLightVolumeResources();
 	
 	loadzone = std::make_unique<LoadZone>(*this);
-	loadzone->parentHash = 0x80FC95E9; //duality
+	loadzone->parentHash = 0x8111F2CF; //duality
 	loadzone->ProcessMap();
 	this->staticsToDraw = loadzone->statics;
 	this->lightsToDraw = loadzone->lights;
