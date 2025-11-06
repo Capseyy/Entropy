@@ -10,6 +10,8 @@
 #include "Renderer/Loaders/StaticMap.h"
 #include "occlusion.h"
 #include "TigerEngine/Entity/entity.h"
+#include "Runtime/Assets/AssetSystem.h"
+//#include "TigerEngine/Map/TigerBuffer.h"
 
 struct s_bubble_parent {
 	uint64_t filesize;
@@ -36,6 +38,12 @@ struct Unk_80806A63 {//lights
 	uint64_t unk8;
 	TagHash light_collection;
 };
+
+struct Unk_80806A40 {//AO
+	uint64_t unk0;
+	uint64_t unk8;
+	TagHash ambient_occlusion;
+};
 struct s_bubble_definition {
 	uint64_t filesize;
 	std::vector<WideHash> resources;
@@ -59,10 +67,32 @@ struct SMapEntry
 	std::array<uint32_t, 4> unk80;
 };
 
+struct SAmbientOcclusionOffsetMapping {
+	uint64_t identifier;
+	uint32_t offset;
+	uint32_t unkc;
+	std::array<uint32_t, 4> unk10;
+};
+
+struct SAmbientOcclusionBuffer {
+	TagHash buffer;
+	uint32_t unk04;
+	std::vector< SAmbientOcclusionOffsetMapping> offset_mappings;
+};
+
+
 struct SMapDataTable {
 	uint64_t filesize;
 	std::vector<SMapEntry> data_tables;
 };
+
+struct SAmbientOcclusionParent {
+	uint64_t file_size;
+	SAmbientOcclusionBuffer offset_mappings1;
+	SAmbientOcclusionBuffer offset_mappings2;
+	SAmbientOcclusionBuffer offset_mappings3;
+};
+
 
 struct SLight {
 	Vec4 unk0;
@@ -107,3 +137,46 @@ struct SLightCollection {
 	std::vector<Unk_80809F4F> transforms;
 
 };
+
+struct MapStaticAO {
+public:
+	std::shared_ptr<ID3D11ShaderResourceView> ao_buffer;                       // big packed AO vertex blob
+	std::unordered_map<uint64_t, uint32_t> offsets;  // id -> offset (units: vertices or bytes)
+	UINT AO_stride = 0; // bytes per vertex
+
+	// convenience
+	inline bool TryGetOffset(uint64_t id, uint32_t& out) const {
+		auto it = offsets.find(id);
+		if (it == offsets.end()) return false;
+		out = it->second;
+		return true;
+	}
+};
+
+struct AoSlice {
+	uint32_t first;   // elements (bytes for R8_UNORM)
+	uint32_t count;   // elements
+};
+
+
+inline Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>
+MakeSrvSlice(ID3D11Device* dev,
+	ID3D11ShaderResourceView* baseSrv,
+	UINT firstElement,   // start index (elements, not bytes)
+	UINT numElements)    // length  (elements)
+{
+	Microsoft::WRL::ComPtr<ID3D11Resource> res;
+	baseSrv->GetResource(&res);
+
+	D3D11_SHADER_RESOURCE_VIEW_DESC desc{};
+	baseSrv->GetDesc(&desc);
+
+	// keep same format (R8_UNORM per your capture), just change the range
+	desc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+	desc.Buffer.FirstElement = firstElement;
+	desc.Buffer.NumElements = numElements;
+
+	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> slice;
+	HRESULT hr = dev->CreateShaderResourceView(res.Get(), &desc, &slice);
+	return SUCCEEDED(hr) ? slice : nullptr;
+}

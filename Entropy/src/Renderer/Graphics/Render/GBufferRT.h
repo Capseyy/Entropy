@@ -331,3 +331,90 @@ struct GBufferRT {
     }
 };
 
+
+#include <vector>
+#include <algorithm>
+#include <cstdio>
+
+inline void DumpRt1RoughnessStats(
+    ID3D11Device* dev,
+    ID3D11DeviceContext* ctx,
+    ID3D11ShaderResourceView* rt1_srv,
+    float lowThresh = 0.06f)   // tweak: 0.04–0.10
+{
+    if (!rt1_srv) { OutputDebugStringA("Rt1 SRV is null\n"); return; }
+
+    Microsoft::WRL::ComPtr<ID3D11Resource> res;
+    rt1_srv->GetResource(&res);
+    if (!res) { OutputDebugStringA("Rt1 GetResource failed\n"); return; }
+
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> src;
+    if (FAILED(res.As(&src))) { OutputDebugStringA("Rt1 not a 2D texture\n"); return; }
+
+    D3D11_TEXTURE2D_DESC desc{};
+    src->GetDesc(&desc);
+
+    // Make a CPU-readable staging texture with identical mips/format
+    D3D11_TEXTURE2D_DESC sd = desc;
+    sd.BindFlags = 0;
+    sd.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    sd.Usage = D3D11_USAGE_STAGING;
+    sd.MiscFlags &= ~D3D11_RESOURCE_MISC_GENERATE_MIPS;
+
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> staging;
+    if (FAILED(dev->CreateTexture2D(&sd, nullptr, &staging))) {
+        OutputDebugStringA("Create staging for Rt1 failed\n");
+        return;
+    }
+
+    const int mipCount = (int)desc.MipLevels;
+    char line[256];
+
+    for (int mip = 0; mip < mipCount; ++mip)
+    {
+        // Copy mip ‘mip’ to staging
+        ctx->CopySubresourceRegion(staging.Get(), mip, 0, 0, 0, src.Get(), mip, nullptr);
+
+        D3D11_MAPPED_SUBRESOURCE map{};
+        if (FAILED(ctx->Map(staging.Get(), mip, D3D11_MAP_READ, 0, &map))) {
+            sprintf_s(line, "Map failed (mip %d)\n", mip); OutputDebugStringA(line); continue;
+        }
+
+        // Dimensions of this mip
+        const UINT w = std::max(1u, desc.Width >> mip);
+        const UINT h = std::max(1u, desc.Height >> mip);
+
+        // Only supports 32-bit 4-channel (e.g., R8G8B8A8_UNORM); adjust if you use other formats
+        const UINT bpp = 4;
+        const UINT pitch = map.RowPitch;
+
+        double sum = 0.0;
+        float minA = 1.0f, maxA = 0.0f;
+        uint64_t countLow = 0, count = 0;
+
+        for (UINT y = 0; y < h; ++y)
+        {
+            const uint8_t* row = static_cast<const uint8_t*>(map.pData) + y * pitch;
+            for (UINT x = 0; x < w; ++x)
+            {
+                const uint8_t a8 = row[x * bpp + 3];       // alpha
+                const float a = a8 / 255.0f;               // roughness
+                minA = std::min(minA, a);
+                maxA = std::max(maxA, a);
+                sum += a;
+                if (a <= lowThresh) ++countLow;
+                ++count;
+            }
+        }
+        ctx->Unmap(staging.Get(), mip);
+
+        const double avg = (count ? sum / double(count) : 0.0);
+        const double pctLow = (count ? (100.0 * double(countLow) / double(count)) : 0.0);
+
+        sprintf_s(line,
+            "[Rt1 roughness] mip %2d  %4ux%-4u  min=%.3f  max=%.3f  avg=%.3f  <=%.3f : %.1f%%\n",
+            mip, std::max(1u, desc.Width >> mip), std::max(1u, desc.Height >> mip),
+            minA, maxA, (float)avg, lowThresh, pctLow);
+        OutputDebugStringA(line);
+    }
+}

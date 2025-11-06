@@ -23,7 +23,7 @@ struct alignas(16) View
     float      _pad08[2] = {};                   // 0x08 .. 0x0F
 
     // 0x10
-    XMFLOAT4   view_miscellaneous = {};          // 0x10  (x=maxDepthPreProj, y=isFirstPerson, ...)
+    XMFLOAT4   view_miscellaneous = { 0.0f,1.0f,0.0f,0.0f };          // 0x10  (x=maxDepthPreProj, y=isFirstPerson, ...)
     XMFLOAT4   position = {};           // 0x20
     XMFLOAT4   unk30 = {};           // 0x30
 
@@ -230,8 +230,8 @@ inline void UploadScopeViewCB12_All(
     ctx->Unmap(g_scopeView_b12.Get(), 0);
 
     ID3D11Buffer* b = g_scopeView_b12.Get();
-    ctx->VSSetConstantBuffers(12, 1, &b);
-    ctx->PSSetConstantBuffers(12, 1, &b);
+    //ctx->VSSetConstantBuffers(12, 1, &b);
+    //ctx->PSSetConstantBuffers(12, 1, &b);
     //ctx->GSSetConstantBuffers(12, 1, &b); // if GS uses it
 }
 

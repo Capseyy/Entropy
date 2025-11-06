@@ -80,7 +80,7 @@ void LoadZone::load_entity_into_scene(TagHash tag, glm::quat quat, glm::vec4 pos
             if (meshes.index_buffer.hash != 0xffffffff) {
                 auto ibh = bin::parse<IndexBufferHeader>(meshes.index_buffer.data, meshes.index_buffer.size, bin::Endian::Little);
                 auto ibBytes = TagHash(meshes.index_buffer.reference).data;
-                gr.idxId = RegisterBufferBlob(ibBytes, ibh.dataSize, meshes.index_buffer.hash, D3D11_BIND_INDEX_BUFFER);
+                gr.idxId = RegisterBufferBlob(ibBytes, ibh.dataSize, meshes.index_buffer.hash, D3D11_BIND_INDEX_BUFFER, 0);
                 gr.idx32 = (ibh.is32 != 0);
             }
             if (meshes.vertex0_buffer.hash != 0xffffffff) {

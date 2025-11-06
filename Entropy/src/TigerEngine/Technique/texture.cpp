@@ -100,7 +100,7 @@ inline bool IsBCFormat(DXGI_FORMAT f, UINT& blockBytes)
     }
 }
 
-inline bool BytesPerPixel(DXGI_FORMAT f, UINT& bpp)
+inline bool BytesPerPixel4(DXGI_FORMAT f, UINT& bpp)
 {
     switch (f)
     {
@@ -145,7 +145,7 @@ inline bool ComputePitch(DXGI_FORMAT fmt, UINT w, UINT h, UINT& rowPitch, UINT& 
         slicePitch = rowPitch * nbh;
         return true;
     }
-    if (BytesPerPixel(fmt, bpp))
+    if (BytesPerPixel4(fmt, bpp))
     {
         rowPitch = w * bpp;
         slicePitch = rowPitch * h;
@@ -161,95 +161,95 @@ struct TextureResult
 };
 
 
-bool TigerTexture::Initialize(ID3D11Device* device, TagHash textureTag)
-{
-    if (!device || !textureTag.data) return false;
-
-    const DXGI_FORMAT fileFmt = static_cast<DXGI_FORMAT>(header.dxgiFormat);
-    const DXGI_FORMAT texFmt = TypelessToTypedSRV(fileFmt);
-
-    if (!header.width || !header.height) return false;
-
-    // Compute how many mips are actually present in the blob (assuming tight packing)
-    auto bytesForMip = [&](UINT w, UINT h)->UINT {
-        UINT rowPitch = 0, slicePitch = 0;
-        if (!ComputePitch(texFmt, w, h, rowPitch, slicePitch)) return 0u;
-        return slicePitch;
-        };
-
-    const size_t dataSize = header.large_buffer.size;   // <-- make sure you have this
-    size_t consumed = 0;
-    UINT w = header.width, h = header.height;
-    UINT storedMipCount = 0;
-
-    while (storedMipCount < std::max<UINT>(1, header.mipCount)) {
-        UINT sz = bytesForMip(w, h);
-        if (!sz || consumed + sz > dataSize) break;  // not enough bytes for another mip
-        consumed += sz;
-        ++storedMipCount;
-        w = std::max(1u, w >> 1);
-        h = std::max(1u, h >> 1);
-    }
-
-    if (storedMipCount == 0) return false; // corrupt blob
-
-    // Decide what to create:
-    //   - If you want only what you have: create with storedMipCount.
-    //   - If you want full chain: create with full mip count and autogen the rest later.
-    const UINT createMipLevels = storedMipCount; // or = header.mipCount if you’ll autogen
-
-    D3D11_TEXTURE2D_DESC desc{};
-    desc.Width = header.width;
-    desc.Height = header.height;
-    desc.MipLevels = createMipLevels;
-    desc.ArraySize = 1;
-    desc.Format = texFmt;
-    desc.SampleDesc.Count = 1;
-    desc.Usage = D3D11_USAGE_DEFAULT;
-    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-
-    // Build subresources from the bytes we actually have
-    std::vector<D3D11_SUBRESOURCE_DATA> subs;
-    subs.reserve(createMipLevels);
-
-    const uint8_t* ptr = static_cast<const uint8_t*>(header.large_buffer.data);
-    w = header.width; h = header.height;
-    for (UINT mip = 0; mip < createMipLevels; ++mip) {
-        UINT rowPitch = 0, slicePitch = 0;
-        if (!ComputePitch(texFmt, w, h, rowPitch, slicePitch)) return false;
-
-        D3D11_SUBRESOURCE_DATA s{};
-        s.pSysMem = ptr;
-        s.SysMemPitch = rowPitch;
-        s.SysMemSlicePitch = slicePitch;
-        subs.push_back(s);
-
-        ptr += slicePitch;
-        w = std::max(1u, w >> 1);
-        h = std::max(1u, h >> 1);
-    }
-
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
-    HRESULT hr = device->CreateTexture2D(&desc, subs.data(), &texture);
-    COM_ERROR_IF_FAILED(hr, "CreateTexture2D failed");
-
-    D3D11_SHADER_RESOURCE_VIEW_DESC srvd{};
-    srvd.Format = texFmt;
-    srvd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-    srvd.Texture2D.MostDetailedMip = 0;
-    srvd.Texture2D.MipLevels = desc.MipLevels;
-
-    hr = device->CreateShaderResourceView(texture.Get(), &srvd, &textureView);
-    COM_ERROR_IF_FAILED(hr, "CreateShaderResourceView failed");
-
-    // OPTIONAL: if header.mipCount > storedMipCount and you want the full chain:
-    //  - Create the texture with full mip count and flags:
-    //        desc.BindFlags |= D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-    //        desc.MiscFlags |= D3D11_RESOURCE_MISC_GENERATE_MIPS;
-    //  - Upload mip 0 with UpdateSubresource, then call context->GenerateMips(SRV).
-    printf("TigerTexture: %ux%u fmt=%u mips=%u (stored %u) size=%zu\n",
-		header.width, header.height, texFmt, header.mipCount, storedMipCount, dataSize);
-
-    return true;
-}
+//bool TigerTexture::Initialize(ID3D11Device* device, TagHash textureTag)
+//{
+//    if (!device || !textureTag.data) return false;
+//
+//    const DXGI_FORMAT fileFmt = static_cast<DXGI_FORMAT>(header.dxgiFormat);
+//    const DXGI_FORMAT texFmt = TypelessToTypedSRV(fileFmt);
+//
+//    if (!header.width || !header.height) return false;
+//
+//    // Compute how many mips are actually present in the blob (assuming tight packing)
+//    auto bytesForMip = [&](UINT w, UINT h)->UINT {
+//        UINT rowPitch = 0, slicePitch = 0;
+//        if (!ComputePitch(texFmt, w, h, rowPitch, slicePitch)) return 0u;
+//        return slicePitch;
+//        };
+//
+//    const size_t dataSize = header.large_buffer.size;   // <-- make sure you have this
+//    size_t consumed = 0;
+//    UINT w = header.width, h = header.height;
+//    UINT storedMipCount = 0;
+//
+//    while (storedMipCount < std::max<UINT>(1, header.mipCount)) {
+//        UINT sz = bytesForMip(w, h);
+//        if (!sz || consumed + sz > dataSize) break;  // not enough bytes for another mip
+//        consumed += sz;
+//        ++storedMipCount;
+//        w = std::max(1u, w >> 1);
+//        h = std::max(1u, h >> 1);
+//    }
+//
+//    if (storedMipCount == 0) return false; // corrupt blob
+//
+//    // Decide what to create:
+//    //   - If you want only what you have: create with storedMipCount.
+//    //   - If you want full chain: create with full mip count and autogen the rest later.
+//    const UINT createMipLevels = storedMipCount; // or = header.mipCount if you’ll autogen
+//
+//    D3D11_TEXTURE2D_DESC desc{};
+//    desc.Width = header.width;
+//    desc.Height = header.height;
+//    desc.MipLevels = createMipLevels;
+//    desc.ArraySize = 1;
+//    desc.Format = texFmt;
+//    desc.SampleDesc.Count = 1;
+//    desc.Usage = D3D11_USAGE_DEFAULT;
+//    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+//
+//    // Build subresources from the bytes we actually have
+//    std::vector<D3D11_SUBRESOURCE_DATA> subs;
+//    subs.reserve(createMipLevels);
+//
+//    const uint8_t* ptr = static_cast<const uint8_t*>(header.large_buffer.data);
+//    w = header.width; h = header.height;
+//    for (UINT mip = 0; mip < createMipLevels; ++mip) {
+//        UINT rowPitch = 0, slicePitch = 0;
+//        if (!ComputePitch(texFmt, w, h, rowPitch, slicePitch)) return false;
+//
+//        D3D11_SUBRESOURCE_DATA s{};
+//        s.pSysMem = ptr;
+//        s.SysMemPitch = rowPitch;
+//        s.SysMemSlicePitch = slicePitch;
+//        subs.push_back(s);
+//
+//        ptr += slicePitch;
+//        w = std::max(1u, w >> 1);
+//        h = std::max(1u, h >> 1);
+//    }
+//
+//    Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+//    HRESULT hr = device->CreateTexture2D(&desc, subs.data(), &texture);
+//    COM_ERROR_IF_FAILED(hr, "CreateTexture2D failed");
+//
+//    D3D11_SHADER_RESOURCE_VIEW_DESC srvd{};
+//    srvd.Format = texFmt;
+//    srvd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+//    srvd.Texture2D.MostDetailedMip = 0;
+//    srvd.Texture2D.MipLevels = desc.MipLevels;
+//
+//    hr = device->CreateShaderResourceView(texture.Get(), &srvd, &textureView);
+//    COM_ERROR_IF_FAILED(hr, "CreateShaderResourceView failed");
+//
+//    // OPTIONAL: if header.mipCount > storedMipCount and you want the full chain:
+//    //  - Create the texture with full mip count and flags:
+//    //        desc.BindFlags |= D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+//    //        desc.MiscFlags |= D3D11_RESOURCE_MISC_GENERATE_MIPS;
+//    //  - Upload mip 0 with UpdateSubresource, then call context->GenerateMips(SRV).
+//    printf("TigerTexture: %ux%u fmt=%u mips=%u (stored %u) size=%zu\n",
+//		header.width, header.height, texFmt, header.mipCount, storedMipCount, dataSize);
+//
+//    return true;
+//}
 

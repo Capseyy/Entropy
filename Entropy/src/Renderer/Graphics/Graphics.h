@@ -131,6 +131,8 @@ private:
 	Microsoft::WRL::ComPtr<ID3D11Texture2D> pBackBuffer;
 	Microsoft::WRL::ComPtr<ID3D11RenderTargetView> pRenderTargetViewLinear;
 
+	MapStaticAO staticAO1;
+
 	Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthStencilLightVolume;
 
 	Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthStencilView;

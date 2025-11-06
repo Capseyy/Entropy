@@ -110,6 +110,7 @@ struct SStaticMeshInstances {
 	std::array<uint64_t, 5> _unk50;
 	std::vector<TagHash> static_tags;
 	std::vector<SStaticMeshInstanceGroup> instance_groups;
+	uint64_t unk98;
 };
 
 inline std::vector<std::uint8_t>

@@ -13,16 +13,13 @@ bool StaticMap::Initialize(uint32_t mapRootHash)
 	auto static_instancer = bin::parse<SStaticMeshInstances>(StaticInstanceTable.data, StaticInstanceTable.size, bin::Endian::Little);
 	printf("Static Instance Table has %zu static tags\n", static_instancer.static_tags.size());
 	for (auto& static_instance : static_instancer.instance_groups) {
-		if (static_instancer.static_tags[static_instance.static_intex].hash != 0x80BD8957)
-		{
-			//continue;
-		}
 		StaticRenderer renderer(gfx_, static_instancer.static_tags[static_instance.static_intex]);
 		auto renderpart = renderer.Build();
 		for (int i = static_instance.instance_start; i < static_instance.instance_start + static_instance.instance_count; i++) {
 			auto& transform = static_instancer.instance_transforms[i];
 			renderpart.world.push_back(transform);
 		}
+		renderpart.AOID = static_instancer.unk98;
 		statics_.push_back(renderpart);
 	}
 	return true;

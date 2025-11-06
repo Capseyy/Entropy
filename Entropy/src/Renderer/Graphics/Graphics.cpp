@@ -4,6 +4,7 @@
 #include "Scope/AtmosphereExternUI.h"
 #include "Scope/FrameGlobalLightingExternUI.h"
 #include "Scope/global_channel_ui.h"
+
 #pragma comment(lib, "d3dcompiler.lib")
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
 
@@ -214,6 +215,10 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 	GpuMarker mark(ctx, label);
 	const auto& mesh = *rs.mesh;
 
+	static constexpr UINT AO_SLOT = 1; // keep 0 for your main mesh stream
+	UINT mesh_ao_offset = 0;
+	const bool hasAo =
+		this->staticAO1.TryGetOffset(rs.AOID, mesh_ao_offset); // overload w/ out param by ref or pointer
 	// View constant buffer(s)
 	Microsoft::WRL::ComPtr<ID3D11Buffer> instanceBuf;       // if you also use cb1 for per-object, leave it bound
 	
@@ -222,6 +227,8 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 	mesh_offset.x = rs.meshData.mesh_offset[0];
 	mesh_offset.y = rs.meshData.mesh_offset[1];
 	mesh_offset.z = rs.meshData.mesh_offset[2];
+	
+	
 
 	CreateCB1_FreshDynamic(pDevice.Get(), ctx,
 		mesh_offset,
@@ -242,6 +249,9 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 			// Skip non-highest LOD parts for now
 			continue;
 		}
+
+		ID3D11ShaderResourceView* nullsrv[30] = { nullptr };
+		pContext->PSSetShaderResources(0, 30, nullsrv); // unbind all PS SRVs
 		auto tech = mesh.techniques[i].get();
 		ctx->IASetInputLayout(tiger_input_layouts[mg.input_layout_index].Get());
 
@@ -269,13 +279,17 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 		ID3D11ShaderResourceView* s = bg.color.get();
 		//ctx->VSSetShaderResources(1, 1, &s);
 		ctx->VSSetShaderResources(0, 1, &s);
-		pContext->OMSetDepthStencilState(gbufA.depth.dsWrite.Get(), 0);
+		pContext->OMSetDepthStencilState(depthStencilState.Get(), 0);
 		if (tech)
 			tech->Bind(pDevice, pContext, externs, states, scopes);
 
 		ID3D11Buffer* buf = instanceBuf.Get();
 		ctx->VSSetConstantBuffers(1, 1, &buf);
 		const UINT instanceCount = (UINT)rs.world.size();
+		if (hasAo) {
+			ID3D11ShaderResourceView* ao = staticAO1.ao_buffer.get();
+			pContext->VSSetShaderResources(1, 1, &ao);
+		}
 		ctx->DrawIndexedInstanced(part.index_count,
 			instanceCount,               // InstanceCount
 			part.index_start,   // StartIndexLocation
@@ -369,15 +383,16 @@ void Graphics::DrawStaticTransparent(const RenderStatic& rs, const View& view)
 	mesh_offset.x = rs.meshData.mesh_offset[0];
 	mesh_offset.y = rs.meshData.mesh_offset[1];
 	mesh_offset.z = rs.meshData.mesh_offset[2];
+	Microsoft::WRL::ComPtr<ID3D11Buffer> instanceBuf;
 
-	/*CreateCB1_FreshDynamic(pDevice.Get(), ctx,
+	CreateCB1_FreshDynamic(pDevice.Get(), ctx,
 		mesh_offset,
 		rs.meshData.mesh_scale,
 		rs.meshData.texture_coordinate_scale,
 		rs.meshData.texture_coordinate_offset[0],
 		rs.meshData.texture_coordinate_offset[1],
 		rs.meshData.max_colour_index,
-		rs.world);*/
+		rs.world, instanceBuf);
 	swprintf(label, 128, L"Static geometry decal %08X", rs.mesh->id);
 	for (const auto& special : rs.specials) {
 		// If technique is shared_ptr:
@@ -417,7 +432,7 @@ void Graphics::DrawStaticTransparent(const RenderStatic& rs, const View& view)
 			this->temp_angle_lookup.Get(),             // t5
 			};
 			pContext->PSSetShaderResources(15, 1, srvs);
-			ID3D11Buffer* b = g_cb1.Get();
+			ID3D11Buffer* b = instanceBuf.Get();
 			ctx->VSSetConstantBuffers(1, 1, &b);
 			
 			const UINT instanceCount = (UINT)rs.world.size();
@@ -517,7 +532,7 @@ void Graphics::DrawLight(const RenderLight& rl, const View& view)
         gbufA.light_diffuse.rtv.Get(),
         gbufA.light_specular.rtv.Get()
     };
-    ctx->OMSetRenderTargets(2, rts, gbufA.depth.dsv.Get());
+    ctx->OMSetRenderTargets(2, rts, nullptr);
 
     using namespace DirectX;
 
@@ -591,10 +606,6 @@ void Graphics::DrawLight(const RenderLight& rl, const View& view)
     ctx->IASetIndexBuffer(lightCubeIB.Get(), DXGI_FORMAT_R16_UINT, 0);
     ctx->IASetInputLayout(tiger_input_layouts[0].Get());
     ctx->DrawIndexed(36, 0, 0);
-
-    // Unbind to avoid hazards
-    ID3D11ShaderResourceView* nulls[3] = { nullptr, nullptr, nullptr };
-    ctx->PSSetShaderResources(0, 3, nulls);
 }
 
 void Graphics::DrawEntity(const RenderEntity& rs, const View& /*view*/, TfxRenderStage renderStage)
@@ -724,6 +735,9 @@ void Graphics::DrawEntity(const RenderEntity& rs, const View& /*view*/, TfxRende
 
 void Graphics::RenderFrame()
 {
+	static bool drawrt1 = false, drawrt0 = false, drawrt2 = false, drawLight_diffuse = false,
+		drawLight_specular = false, drawDepth = false, drawShading = false,
+		drawShadingRead = false, drawLight_ibl = false;
 	mainQueue->Drain();
 	gTimer.tick();
 	// Per-frame externs
@@ -821,7 +835,7 @@ void Graphics::RenderFrame()
 		// Opaque states for GBuffer (no blending, write depth, no bias)
 		float bf[4] = { 1,1,1,1 };
 		pContext->OMSetBlendState(states.blend_states[0].Get(), bf, 0xFFFFFFFF);
-		pContext->OMSetDepthStencilState(states.depth_stencil_states[2].Get(), 0);
+		pContext->OMSetDepthStencilState(depthStencilState.Get(), 0);
 		pContext->RSSetState(rasterizerStateGBuffer.Get());
 
 		pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -842,8 +856,11 @@ void Graphics::RenderFrame()
 	{   // decals
 		ID3D11ShaderResourceView* nulls[8] = {};
 		pContext->PSSetShaderResources(0, 8, nulls);
-		for (auto& rs : staticsToDraw)
-			DrawStaticSpecial(rs, viewState);
+		//for (auto& rs : staticsToDraw)
+			//DrawStaticSpecial(rs, viewState);
+	}
+	if (drawrt1) {
+		DumpRt1RoughnessStats(pDevice.Get(), pContext.Get(), gbufA.rt1_read.srv.Get(), 0.06f);
 	}
 	// =========================
 	// lighting_pass
@@ -957,8 +974,9 @@ void Graphics::RenderFrame()
 		SetFullViewport(pContext.Get(), float(windowWidth), float(windowHeight));
 
 		float bf[4] = { 1,1,1,1 };
+		pContext->OMSetBlendState(states.blend_states[8].Get(), bf, 0xFFFFFFFF); // alpha blend
 		pContext->OMSetDepthStencilState(depthStencilDecal.Get(), 0); // reversed-Z read-only
-		pContext->RSSetState(rasterizerStateNoCull.Get());
+		pContext->RSSetState(states.rasterizer_states[2].Get());
 		pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 		for (auto& rs : staticsToDraw)   DrawStaticTransparent(rs, viewState);
@@ -966,7 +984,6 @@ void Graphics::RenderFrame()
 
 		pContext->PSSetShaderResources(0, 16, nulls);
 		pContext->VSSetShaderResources(0, 16, nulls);
-		pContext->OMSetBlendState(bsOpaque.Get(), bf, 0xFFFFFFFF);
 	}
 
 	{
@@ -1018,9 +1035,7 @@ void Graphics::RenderFrame()
 	// =========================
 	// DEBUG PREVIEW (linear RTV like Alkahest)
 	// =========================
-	static bool drawrt1 = false, drawrt0 = false, drawrt2 = false, drawLight_diffuse = false,
-		drawLight_specular = false, drawDepth = false, drawShading = false,
-		drawShadingRead = false, drawLight_ibl = false;
+	
 
 	const bool wantDebugPreview =
 		drawrt0 || drawrt1 || drawrt2 || drawLight_diffuse || drawLight_specular ||
@@ -1188,7 +1203,10 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		// ----- Depth-stencil state: reversed-Z, writes ON (NO *_EQUAL) -----
 		CD3D11_DEPTH_STENCIL_DESC dsRZ(D3D11_DEFAULT);
 		dsRZ.DepthEnable = TRUE;
+		dsRZ.StencilEnable = FALSE;
 		dsRZ.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
+		dsRZ.StencilReadMask = 0;
+		dsRZ.StencilWriteMask = 0;
 		dsRZ.DepthFunc = D3D11_COMPARISON_GREATER_EQUAL; // <? NOT GREATER_EQUAL
 		hr = pDevice->CreateDepthStencilState(&dsRZ, depthStencilState.GetAddressOf());
 		COM_ERROR_IF_FAILED(hr, "Failed to create reversed-Z depth stencil state.");
@@ -1417,7 +1435,7 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		CD3D11_DEPTH_STENCIL_DESC ds_decal(D3D11_DEFAULT);
 		ds_decal.DepthEnable = TRUE;
 		ds_decal.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
-		ds_decal.DepthFunc = D3D11_COMPARISON_GREATER_EQUAL; // <? NOT GREATER_EQUAL
+		ds_decal.DepthFunc = D3D11_COMPARISON_GREATER; // <? NOT GREATER_EQUAL
 		hr = pDevice->CreateDepthStencilState(&ds_decal, depthStencilDecal.GetAddressOf());
 		COM_ERROR_IF_FAILED(hr, "Failed to create reversed-Z depth stencil state.");
 
@@ -1443,7 +1461,7 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 	pool = std::make_unique<ThreadPool>();
 	mainQueue = std::make_unique<MainThreadQueue>();
 	registry = std::make_unique<RuntimeAssetRegistry>();
-	assets = std::make_unique<AssetSystem>(pDevice.Get(), *pool, *mainQueue, registry.get());
+	assets = std::make_unique<AssetSystem>(pDevice.Get(),pContext.Get(), *pool, *mainQueue, registry.get());
 	// Create the camera constant buffer
 
 	CreateScopeViewCB12(pDevice.Get());
@@ -1590,7 +1608,7 @@ bool Graphics::InitializeScene()
 {
 	try {
 		camera.SetPosition(0.0f, 0.0f, 0.0f);
-		camera.SetProjectionValues(90.0f, static_cast<float>(windowWidth) / static_cast<float>(windowHeight), 0.01f, 10000.0f);
+		camera.SetProjectionValues(90.0f, static_cast<float>(windowWidth) / static_cast<float>(windowHeight), 0.01f, 1.0f);
 	}
 	catch (COMException& exception)
 	{
@@ -1605,11 +1623,12 @@ bool Graphics::InitializeScene()
 	CreateLightVolumeResources();
 	
 	loadzone = std::make_unique<LoadZone>(*this);
-	loadzone->parentHash = 0x8111F2CF; //duality
+	loadzone->parentHash = 0x8114E4DF; //duality
 	loadzone->ProcessMap();
 	this->staticsToDraw = loadzone->statics;
 	this->lightsToDraw = loadzone->lights;
 	this->entitiesToDraw = loadzone->entities;
+	this->staticAO1 = loadzone->AOMap1;
 	printf("Loading Render Engine\n");
 	gTimer.reset();
 	return true;

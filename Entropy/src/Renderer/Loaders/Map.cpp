@@ -1,6 +1,50 @@
 #include "Map.h"
 #include "Renderer/Graphics/Graphics.h"
+#include "TigerEngine/Map/TigerBuffer.h"
 
+
+MapStaticAO LoadZone::LoadAmbAO(SAmbientOcclusionBuffer tag)
+{
+	MapStaticAO out{};
+	if (tag.buffer.hash == 0xffffffff) {
+		return out; // no AO buffer
+	}
+	if (tag.buffer.hash == 0x0) {
+		return out; // no AO buffer
+	}
+	auto vcbh = bin::parse<VertexBufferHeader>(tag.buffer.data, tag.buffer.size, bin::Endian::Little);
+	auto vc_bytes = TagHash(tag.buffer.reference).data;
+	auto colId = RegisterBufferBlob(vc_bytes, vcbh.dataSize, tag.buffer.hash, D3D11_BIND_VERTEX_BUFFER, vcbh.stride);
+	const auto& buf = gfx.registry->GetBuffer(colId);
+	const UINT stride = buf.stride;
+	const UINT byteWidth = buf.desc.ByteWidth;
+	BufferSRVMeta meta{};
+	if (stride == 1) {
+		meta.typedFormat = DXGI_FORMAT_R8_UNORM;
+	}
+	else {
+		meta.typedFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+	}
+	meta.bytesPerElement = stride;
+	auto res = gfx.assets->EnqueueBufferSRV(colId, meta).future.get();
+
+	ID3D11ShaderResourceView* raw = res->srv.Get();
+	if (raw) raw->AddRef();  // take our own ref
+
+	out.ao_buffer.reset(raw, [](ID3D11ShaderResourceView* p) { if (p) p->Release(); });
+	out.AO_stride = gfx.registry->GetBuffer(colId).stride;
+	// ---- 2) Build the id->offset map ----
+	// Offsets are coming from tag.ao0.mappings[i].offset
+	// IMPORTANT: confirm whether 'offset' is in vertices or bytes in your data!
+	out.offsets.reserve(tag.offset_mappings.size());
+	for (const auto& m : tag.offset_mappings) {
+		// m.identifier : u64 id for the mesh/chunk
+		// m.offset     : u32 offset (vertices or bytes — see note below)
+		out.offsets.emplace(m.identifier, m.offset);
+	}
+
+	return out;
+}
 
 void LoadZone::ProcessMap()
 {
@@ -20,14 +64,15 @@ void LoadZone::ProcessMap()
 		load_datatable_into_scene(datatable);
 	}
 	load_datatable_into_scene(TagHash(0x80D268D7));
-	load_datatable_into_scene(TagHash(0x80D26815));
+	load_datatable_into_scene(TagHash(0x80D26815)); 
+	//load_datatable_into_scene(TagHash(0x80D406B9));
 	printf("Loaded %d datatables\n", data_tables.size());
 }
 
 void LoadZone::load_datatable_into_scene(TagHash table) {
 	printf("Starting parse for %08x \n", table.hash);
-	const auto datatable =  bin::parse<SMapDataTable>(table.data, table.size);
-	
+	const auto datatable = bin::parse<SMapDataTable>(table.data, table.size);
+
 	for (auto entry : datatable.data_tables) {
 		if (entry.resource.type == 0x80806cc9) {
 			printf("Found static placement\n");
@@ -45,7 +90,7 @@ void LoadZone::load_datatable_into_scene(TagHash table) {
 			printf("Found light placement\n");
 			auto const resource = entry.resource.Parse<Unk_80806A63>(table);
 			const auto light_parent = bin::parse<SLightCollection>(resource.light_collection.data, resource.light_collection.size);
-			for (int i = 0; i < light_parent.lights.size();i++)
+			for (int i = 0; i < light_parent.lights.size(); i++)
 			{
 				RenderLight ls;
 				ls.light_matrix = light_parent.lights[i].light_space_transform;
@@ -58,13 +103,34 @@ void LoadZone::load_datatable_into_scene(TagHash table) {
 				ls.parent = resource.light_collection.hash;
 				ls.unk50 = light_parent.lights[i].unk50;
 				this->lights.push_back(ls);
-					
+
 			}
 
 		}
+		else if (entry.resource.type == 0x80806a40) {// Ambient OCclusion placementP
+			printf("Found AO placement\n");
+			auto const resource = entry.resource.Parse<Unk_80806A40>(table);
+			auto ao_parent = bin::parse<SAmbientOcclusionParent>(resource.ambient_occlusion.data, resource.ambient_occlusion.size);
+			auto ao_map1 = LoadAmbAO(ao_parent.offset_mappings1);
+			this->AOMap1 = ao_map1;
+			auto ao_map2 = LoadAmbAO(ao_parent.offset_mappings2);
+			auto ao_map3 = LoadAmbAO(ao_parent.offset_mappings3);
+
+		}
 		//if (entry.entity.tagHash32 == 0x810A3E87)
-		load_entity_into_scene(TagHash(entry.entity.tagHash32),entry.rotation,entry.translation);
-		
+		load_entity_into_scene(TagHash(entry.entity.tagHash32), entry.rotation, entry.translation);
+
 
 	}
 }
+
+
+//else if (entry.resource.type == 0x80806a40) {// Ambient OCclusion placementP
+	//	printf("Found AO placement\n");
+	//	/*auto const resource = entry.resource.Parse<Unk_80806A40>(table);
+	//	const auto ao_parent = bin::parse<SAmbientOcclusionParent>(resource.ambient_occlusion.data, resource.ambient_occlusion.size);
+	//	auto const ao_map1 = MapStaticAO::FromTag(&gfx, ao_parent.offset_mappings1);
+	//	auto const ao_map2 = MapStaticAO::FromTag(&gfx, ao_parent.offset_mappings2);
+	//	auto const ao_map3 = MapStaticAO::FromTag(&gfx, ao_parent.offset_mappings3);*/
+
+	//}

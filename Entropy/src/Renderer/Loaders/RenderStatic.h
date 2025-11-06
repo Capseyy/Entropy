@@ -12,5 +12,6 @@ struct RenderStatic {
     std::vector<SStaticInstanceTransform>  world;    // per-object transform (if you have one)
     Microsoft::WRL::ComPtr<ID3D11Buffer> cb1;
     std::vector<std::shared_ptr<StaticSpecial>> specials;
+	uint64_t AOID = 0;  // AmbientOccusion ID
     // add per-part overrides if your format has them
 };

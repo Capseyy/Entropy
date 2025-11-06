@@ -204,12 +204,12 @@ RenderStatic StaticRenderer::Build()
     }
     auto mesh = std::make_shared<StaticMesh>();
     mesh->techniques.resize(s.Techniques.size());
-	std::vector<std::shared_future<std::shared_ptr<EntropyAssets::Technique>>> techniqueFutures;
+    std::vector<std::shared_future<std::shared_ptr<EntropyAssets::Technique>>> techniqueFutures;
     for (size_t i = 0; i < s.Techniques.size(); ++i) {
         const uint32_t tid32 = s.Techniques[i].Unk0.hash;
         //printf("[Build] part %zu technique %08X\n", i, tid32);
         auto tech = gfx_.assets->EnqueueTechnique(s.Techniques[i].Unk0); // returns shared_future<shared_ptr<Technique>>
-		mesh->techniques[i] = tech.get();
+        mesh->techniques[i] = tech.get();
     }
 
     std::vector<std::shared_future<std::shared_ptr<EntropyAssets::Technique>>> techF_specials(specials.size());
@@ -219,7 +219,7 @@ RenderStatic StaticRenderer::Build()
         techF_specials[i] = gfx_.assets->EnqueueTechnique(specials[i].part.technique); // returns shared_future<shared_ptr<Technique>>
     }
     // ---- Assemble mesh ----
-    
+
     mesh->groups.reserve(groupF.size());
     for (auto& f : groupF) {
         try {
@@ -232,7 +232,7 @@ RenderStatic StaticRenderer::Build()
     }
 
     mesh->parts = m.parts;
-	mesh->meshGroups = m.mesh_groups;
+    mesh->meshGroups = m.mesh_groups;
 
     mesh->id = static_hash_.hash;
     // ---- Output renderable ----
@@ -259,4 +259,3 @@ RenderStatic StaticRenderer::Build()
     }
     return out;
 }
-

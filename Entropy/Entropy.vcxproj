@@ -225,6 +225,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\Renderer\Loaders\NewTexture.cpp" />
     <ClCompile Include="src\Renderer\Graphics\RenderStates.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Render\gbuffer.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Render\Technique.cpp" />
@@ -277,6 +278,7 @@
     <ClCompile Include="src\TigerEngine\Technique\Tfx\tfx_decompiler.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\Renderer\Loaders\NewTexture.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="src\Renderer\Graphics\GameTimer.h" />
     <ClInclude Include="src\Renderer\Graphics\Render\gbuffer.h" />
@@ -306,7 +308,6 @@
     <ClInclude Include="src\Renderer\Tools\COMException.h" />
     <ClInclude Include="src\Renderer\Graphics\Buffers\ConstantBuffer.h" />
     <ClInclude Include="src\Renderer\Graphics\Buffers\ConstantBufferTypes.h" />
-    <ClInclude Include="src\Renderer\Graphics\Buffers\IndexBuffer.h" />
     <ClInclude Include="src\Renderer\Graphics\Camera.h" />
     <ClInclude Include="src\Renderer\Graphics\ImGui\imconfig.h" />
     <ClInclude Include="src\Renderer\Graphics\ImGui\imgui.h" />
@@ -346,7 +347,6 @@
     <ClInclude Include="src\Renderer\WindowContainer.h" />
     <ClInclude Include="src\Renderer\Graphics\Shaders\Vertex.h" />
     <ClInclude Include="src\Renderer\Loaders\TextureLoader.cpp" />
-    <ClInclude Include="src\Renderer\Graphics\Buffers\VertexBuffer.h" />
     <ClInclude Include="src\Renderer\Timer.h" />
     <ClInclude Include="src\Runtime\Threading\ThreadPool.h" />
     <ClInclude Include="src\Runtime\Assets\Technique.h" />

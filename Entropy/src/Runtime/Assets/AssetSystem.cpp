@@ -9,6 +9,15 @@ using Microsoft::WRL::ComPtr;
 #include <iomanip>
 
 
+static inline UINT FullMipCount(UINT w, UINT h)
+{
+    if (w == 0 || h == 0) return 1;
+    UINT m = 1;
+    UINT s = (w > h ? w : h);
+    while (s > 1) { s >>= 1; ++m; }
+    return m;
+}
+
 std::string BytesToHex(const std::vector<uint8_t>& v, char sep = ' ') {
     std::ostringstream oss;
     oss << std::uppercase << std::hex << std::setfill('0');
@@ -59,11 +68,11 @@ namespace {
 //------------------------------------------------------------------------------
 // ctor
 //------------------------------------------------------------------------------
-AssetSystem::AssetSystem(ID3D11Device* device,
+AssetSystem::AssetSystem(ID3D11Device* device, ID3D11DeviceContext* context,
     ThreadPool& pool,
     MainThreadQueue& mainThread,
     RuntimeAssetRegistry* registry)
-    : device_(device), pool_(pool), mainThread_(mainThread), R_(registry)
+    : device_(device), context_(context),pool_(pool), mainThread_(mainThread), R_(registry)
 {
     assert(device_ && "AssetSystem requires a valid ID3D11Device*");
 }
@@ -298,27 +307,84 @@ AssetSystem::createTexture3D_(const Texture3DPayload& p)
     return out;
 }
 
-
 std::shared_ptr<EntropyAssets::Texture2DRes>
 AssetSystem::createTexture_(const Texture2DPayload& p)
 {
     using Microsoft::WRL::ComPtr;
 
-    // Validate & create texture
-    ComPtr<ID3D11Texture2D> tex;
-    HRESULT hr = device_->CreateTexture2D(&p.desc,
-        p.subresources.empty() ? nullptr : p.subresources.data(), &tex);
-    if (FAILED(hr)) throw std::runtime_error("CreateTexture2D failed");
+    const UINT arraySize = std::max<UINT>(1, p.desc.ArraySize);
+    const UINT wantedMips = std::max<UINT>(1, p.desc.MipLevels);
+    const size_t provided = p.subresources.size();
 
-    // SRV format (typed if the texture is typeless)
+    const UINT fullMips = FullMipCount(p.desc.Width, p.desc.Height);
+    const bool providedAllWanted = (provided == size_t(arraySize) * size_t(wantedMips));
+
+    ComPtr<ID3D11Texture2D> tex;
+
+    if (providedAllWanted) {
+        // Upload exactly what caller asked for
+        HRESULT hr = device_->CreateTexture2D(&p.desc,
+            p.subresources.empty() ? nullptr : p.subresources.data(),
+            &tex);
+        if (FAILED(hr)) throw std::runtime_error("CreateTexture2D failed (full chain provided)");
+    }
+    else {
+        // Autogen remaining mips
+        D3D11_TEXTURE2D_DESC d = p.desc;
+
+        // Build a *full* chain (or stick with 'wantedMips' if you prefer header length)
+        d.MipLevels = std::max<UINT>(wantedMips, fullMips);
+        d.BindFlags |= D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+        d.MiscFlags |= D3D11_RESOURCE_MISC_GENERATE_MIPS;
+
+        HRESULT hr = device_->CreateTexture2D(&d, nullptr, &tex);
+        if (FAILED(hr)) throw std::runtime_error("CreateTexture2D failed (autogen)");
+
+        ID3D11DeviceContext* ctx = context_;
+        const UINT mipLevels = d.MipLevels;
+
+        // Upload what we *do* have. If only 1 subresource, treat it as slice0/mip0.
+        if (provided > 0) {
+            const size_t perSlice = (provided >= arraySize) ? (provided / arraySize) : 1;
+            for (UINT slice = 0; slice < arraySize; ++slice) {
+                const size_t idx = std::min<size_t>(slice * perSlice, provided - 1);
+                const auto& s = p.subresources[idx]; // expect mip0
+                const UINT sub = D3D11CalcSubresource(0, slice, mipLevels);
+                ctx->UpdateSubresource(tex.Get(), sub, nullptr, s.pSysMem, s.SysMemPitch, s.SysMemSlicePitch);
+            }
+        }
+
+        // Generate the rest
+        D3D11_SHADER_RESOURCE_VIEW_DESC tmp{};
+        tmp.Format = p.desc.Format; // keep *_SRGB if present
+        if (d.ArraySize > 1) {
+            tmp.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
+            tmp.Texture2DArray.MostDetailedMip = 0;
+            tmp.Texture2DArray.MipLevels = -1;
+            tmp.Texture2DArray.FirstArraySlice = 0;
+            tmp.Texture2DArray.ArraySize = d.ArraySize;
+        }
+        else {
+            tmp.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+            tmp.Texture2D.MostDetailedMip = 0;
+            tmp.Texture2D.MipLevels = -1;
+        }
+        ComPtr<ID3D11ShaderResourceView> tmpSrv;
+        device_->CreateShaderResourceView(tex.Get(), &tmp, &tmpSrv);
+        ctx->GenerateMips(tmpSrv.Get());
+    }
+
+    // Final SRV (typed if typeless; preserves *_SRGB)
     auto ToTypedForSRV = [](DXGI_FORMAT f)->DXGI_FORMAT {
         switch (f) {
         case DXGI_FORMAT_R8G8B8A8_TYPELESS: return DXGI_FORMAT_R8G8B8A8_UNORM;
+        case DXGI_FORMAT_B8G8R8A8_TYPELESS: return DXGI_FORMAT_B8G8R8A8_UNORM;
         case DXGI_FORMAT_BC1_TYPELESS:      return DXGI_FORMAT_BC1_UNORM;
         case DXGI_FORMAT_BC2_TYPELESS:      return DXGI_FORMAT_BC2_UNORM;
         case DXGI_FORMAT_BC3_TYPELESS:      return DXGI_FORMAT_BC3_UNORM;
         case DXGI_FORMAT_BC4_TYPELESS:      return DXGI_FORMAT_BC4_UNORM;
         case DXGI_FORMAT_BC5_TYPELESS:      return DXGI_FORMAT_BC5_UNORM;
+        case DXGI_FORMAT_BC7_TYPELESS:      return DXGI_FORMAT_BC7_UNORM;
         default:                            return f;
         }
         };
@@ -326,43 +392,35 @@ AssetSystem::createTexture_(const Texture2DPayload& p)
     D3D11_SHADER_RESOURCE_VIEW_DESC sd{};
     sd.Format = ToTypedForSRV(p.desc.Format);
 
-    const bool isCube = (p.desc.MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE) != 0;
-    if (isCube) {
-        const UINT cubeCount = p.desc.ArraySize / 6;
-        sd.ViewDimension = (cubeCount > 1) ? D3D11_SRV_DIMENSION_TEXTURECUBEARRAY
-            : D3D11_SRV_DIMENSION_TEXTURECUBE;
-        if (cubeCount > 1) {
-            sd.TextureCubeArray.MostDetailedMip = 0;
-            sd.TextureCubeArray.MipLevels = p.desc.MipLevels;
-            sd.TextureCubeArray.First2DArrayFace = 0;
-            sd.TextureCubeArray.NumCubes = cubeCount;
-        }
-        else {
-            sd.TextureCube.MostDetailedMip = 0;
-            sd.TextureCube.MipLevels = p.desc.MipLevels;
-        }
-    }
-    else if (p.desc.ArraySize > 1) {
+    D3D11_TEXTURE2D_DESC finalDesc{};
+    tex->GetDesc(&finalDesc);
+
+    if (finalDesc.ArraySize > 1) {
         sd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
         sd.Texture2DArray.MostDetailedMip = 0;
-        sd.Texture2DArray.MipLevels = p.desc.MipLevels;
+        sd.Texture2DArray.MipLevels = -1;
         sd.Texture2DArray.FirstArraySlice = 0;
-        sd.Texture2DArray.ArraySize = p.desc.ArraySize;
+        sd.Texture2DArray.ArraySize = finalDesc.ArraySize;
     }
     else {
         sd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
         sd.Texture2D.MostDetailedMip = 0;
-        sd.Texture2D.MipLevels = p.desc.MipLevels;
+        sd.Texture2D.MipLevels = -1;
     }
 
-    ComPtr<ID3D11ShaderResourceView> srv;
-    hr = device_->CreateShaderResourceView(tex.Get(), &sd, &srv);
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
+    HRESULT hr = device_->CreateShaderResourceView(tex.Get(), &sd, &srv);
     if (FAILED(hr)) throw std::runtime_error("CreateShaderResourceView failed");
+
+    // (Optional) quick sanity print:
+    // D3D11_TEXTURE2D_DESC check{}; tex->GetDesc(&check);
+    // printf("created mips = %u (wanted %u, full %u)\n", check.MipLevels, wantedMips, fullMips);
 
     auto out = std::make_shared<EntropyAssets::Texture2DRes>();
     out->srv = srv;
     return out;
 }
+
 
 AssetHandle<EntropyAssets::Texture3DRes> AssetSystem::Enqueue3DTexture(uint32_t id)
 {
@@ -539,7 +597,7 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
         }
 
         STechnique Tfx = bin::parse<STechnique>(techniqueId.data, techniqueId.size, bin::Endian::Little);
-        printf("Starting Eval for MAT %08X \n", id);
+        //printf("Starting Eval for MAT %08X \n", id);
         //auto lines = Disassemble(Tfx.PixelShader.TFX_Bytecode, Tfx.PixelShader.TFX_Constants);
         //std::vector<Vec4> cb0(64, Vec4::ZERO());   // output constant buffer
         //std::array<Vec4, 16> temps{};               // 16 temp slots
@@ -631,7 +689,7 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
             const uint32_t texId = t.Texture.tagHash32;   // your mapping
             TagHash texTag(texId);
             if (texTag.sub_type == 3) {
-                printf("Found 3s tex");
+                //printf("Found 3s tex");
                 if (!R_->HasTexture(texId)) {
                     if (auto payload = BuildTexture3DPayloadFromTag(texTag)) {
                         R_->Register3DTexture(texId, std::move(*payload));

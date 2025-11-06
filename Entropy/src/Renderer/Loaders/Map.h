@@ -31,5 +31,7 @@ public:
 	void load_entity_into_scene(TagHash tag, glm::quat quat, glm::vec4 pos);
 	uint32_t RegisterBufferBlob(const void* bytes, size_t size, uint32_t id,
 		UINT bindFlags, UINT stride = 0);
+	MapStaticAO LoadAmbAO(SAmbientOcclusionBuffer tag);
+	MapStaticAO AOMap1;
 	Graphics& gfx;
 };

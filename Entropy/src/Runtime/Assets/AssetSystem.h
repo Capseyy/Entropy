@@ -40,7 +40,7 @@ using Microsoft::WRL::ComPtr;
 
 class AssetSystem {
 public:
-    AssetSystem(ID3D11Device* device,
+	AssetSystem(ID3D11Device* device, ID3D11DeviceContext* context,
         ThreadPool& pool,
         MainThreadQueue& mainThread,
         RuntimeAssetRegistry* registry);
@@ -79,6 +79,7 @@ public:
 private:
     // ---------------- members ----------------
     ID3D11Device* device_ = nullptr;            // not owned
+    ID3D11DeviceContext* context_ = nullptr;
     ThreadPool& pool_;
     MainThreadQueue& mainThread_;
     RuntimeAssetRegistry* R_ = nullptr;         // not owned

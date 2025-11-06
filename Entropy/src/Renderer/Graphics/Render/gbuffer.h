@@ -8,6 +8,9 @@
 #include <atomic>
 #include "d3dcompiler.h"
 
+#undef min
+#undef max
+
 inline HRESULT SetDebugName(ID3D11DeviceChild* obj, const char* name) {
 #if defined(_DEBUG)
     if (!obj || !name) return S_OK;
@@ -152,3 +155,5 @@ struct GBuffer {
 private:
     std::atomic<bool> post_is_ping{ true };
 };
+
+

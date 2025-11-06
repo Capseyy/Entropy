@@ -40,7 +40,7 @@ void Engine::Update()
 		{
 			if (me.GetType() == MouseEvent::EventType::RAW_MOVE)
 			{
-				this->gfx.camera.AdjustRotation(0.0f, (float)me.GetPosY() / 8 * 0.01f, (float)me.GetPosX() / 8 * 0.01f);
+				this->gfx.camera.AdjustRotation((float)me.GetPosY() / 8 * 0.01f, 0.0f, (float)me.GetPosX() / 8 * -0.01f);
 			}
 		}
 	}
@@ -54,14 +54,14 @@ void Engine::Update()
 		cameraSpeed = gfx.camera.GetSpeed();
 	}
 
-	if (keyboard.KeyIsPressed('W'))
+	if (keyboard.KeyIsPressed('S'))
 	{
 		DirectX::XMVECTOR forward = gfx.camera.GetForwardVector();     // XMVECTOR
 		DirectX::XMVECTOR delta = DirectX::XMVectorScale(forward, cameraSpeed * dt); // scale by scalar
 		this->gfx.camera.AdjustPosition(delta);               // whatever type it expects
 	}
 
-	if (keyboard.KeyIsPressed('S'))
+	if (keyboard.KeyIsPressed('W'))
 	{
 		DirectX::XMVECTOR backward = gfx.camera.GetBackwardVector();     // XMVECTOR
 		DirectX::XMVECTOR delta = DirectX::XMVectorScale(backward, cameraSpeed * dt); // scale by scalar
