@@ -737,7 +737,7 @@ void Graphics::RenderFrame()
 {
 	static bool drawrt1 = false, drawrt0 = false, drawrt2 = false, drawLight_diffuse = false,
 		drawLight_specular = false, drawDepth = false, drawShading = false,
-		drawShadingRead = false, drawLight_ibl = false;
+		drawShadingRead = false, drawLight_ibl = false, stageGlobalLighting =false;
 	mainQueue->Drain();
 	gTimer.tick();
 	// Per-frame externs
@@ -881,9 +881,10 @@ void Graphics::RenderFrame()
 		pContext->ClearRenderTargetView(gbufA.light_diffuse.rtv.Get(), dim);
 		pContext->ClearRenderTargetView(gbufA.light_specular.rtv.Get(), black);
 		pContext->ClearRenderTargetView(gbufA.light_ibl_specular.rtv.Get(), black);
-
-		if (auto it = globalTechniques.find("global_lighting"); it != globalTechniques.end())
-			it->second.get()->Bind(pDevice, pContext, externs, states, scopes);
+		if (stageGlobalLighting) {
+			if (auto it = globalTechniques.find("global_lighting"); it != globalTechniques.end())
+				it->second.get()->Bind(pDevice, pContext, externs, states, scopes);
+		}
 
 		pContext->OMSetDepthStencilState(depthStencilStateLighting.Get(), 0);
 		pContext->RSSetState(rasterizerStateNoCull.Get());
@@ -1085,6 +1086,7 @@ void Graphics::RenderFrame()
 	ImGui::Checkbox("Draw Shading", &drawShading);
 	ImGui::Checkbox("Draw drawLight_ibl", &drawLight_ibl);
 	ImGui::Checkbox("Draw ShadingRead", &drawShadingRead);
+	ImGui::Checkbox("Global Lighting", &stageGlobalLighting);
 	// ... (rest of your ImGui panes unchanged)
 	ImGui::End();
 	ImGui::Render();
@@ -1623,7 +1625,7 @@ bool Graphics::InitializeScene()
 	CreateLightVolumeResources();
 	
 	loadzone = std::make_unique<LoadZone>(*this);
-	loadzone->parentHash = 0x8114E4DF; //duality
+	loadzone->parentHash = 0x80E88E36; //duality
 	loadzone->ProcessMap();
 	this->staticsToDraw = loadzone->statics;
 	this->lightsToDraw = loadzone->lights;
