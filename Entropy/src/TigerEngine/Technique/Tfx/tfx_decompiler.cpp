@@ -294,7 +294,73 @@ DecompilationResult TfxBytecodeDecompiler::decompile(
             pushS(extern_expr("float4", d.ext, off));
             break;
         }
+        case TfxBytecode::Spline8Const: {
+            const auto d = std::get<SplineConstData>(i.data);
 
+            // Pop x (the only stack input)
+            auto x = popS();
+
+            // Helper to fetch constants as strings (float4(...) pretty printed)
+            auto C = [&](size_t rel) -> std::string {
+                const size_t k = size_t(d.constant_start) + rel;
+                const Vec4 v = (k < constants.size()) ? constants[k] : Vec4{ 0,0,0,0 };
+                return f4(v);
+                };
+
+            // Map to the Rust parameter names for readability
+            std::string c3 = C(0);
+            std::string c2 = C(1);
+            std::string c1 = C(2);
+            std::string c0 = C(3);
+            std::string d3 = C(4);
+            std::string d2 = C(5);
+            std::string d1 = C(6);
+            std::string d0 = C(7);
+            std::string c_thresholds = C(8);
+            std::string d_thresholds = C(9);
+
+            // c_high = c3*x + c2; c_low = c1*x + c0;
+            std::string c_high = "(" + c3 + " * " + x + " + " + c2 + ")";
+            std::string c_low = "(" + c1 + " * " + x + " + " + c0 + ")";
+
+            // d_high = d3*x + d2; d_low = d1*x + d0;
+            std::string d_high = "(" + d3 + " * " + x + " + " + d2 + ")";
+            std::string d_low = "(" + d1 + " * " + x + " + " + d0 + ")";
+
+            // x2 = x*x
+            std::string x2 = "(" + x + " * " + x + ")";
+
+            // evaluated splines
+            std::string c_eval = "(" + c_high + " * " + x2 + " + " + c_low + ")";
+            std::string d_eval = "(" + d_high + " * " + x2 + " + " + d_low + ")";
+
+            // masks
+            std::string c_mask = "step((" + c_thresholds + "), (" + x + "))";
+            std::string d_mask = "step((" + d_thresholds + "), (" + x + "))";
+
+            // channel masks (fake xor trick, keep exactly like your Rust)
+            std::string c_chan = "float4((_fake_bitwise_ops_fake_xor((" + c_mask + "), (" + c_mask + ").yzww)).xyz, (" + c_mask + ").w)";
+            std::string d_chan = "float4((_fake_bitwise_ops_fake_xor((" + d_mask + "), (" + d_mask + ").yzww)).xyz, (" + d_mask + ").w)";
+
+            // masked contributions
+            std::string c_in4 = "((" + c_eval + ") * (" + c_chan + "))";
+            std::string d_in4 = "((" + d_eval + ") * (" + d_chan + "))";
+
+            // sum components
+            auto sum4 = [](const std::string& v) {
+                return "((" + v + ").x + (" + v + ").y + (" + v + ").z + (" + v + ").w)";
+                };
+            std::string c_sum = sum4(c_in4);
+            std::string d_sum = sum4(d_in4);
+
+            // select spline (if d_mask.x > 0.0 -> d_sum else c_sum)
+            std::string spline = "(((" + d_mask + ").x > 0.0) ? (" + d_sum + ") : (" + c_sum + "))";
+
+            // splat to float4
+            std::string outv = "float4(" + spline + ", " + spline + ", " + spline + ", " + spline + ")";
+            pushS(outv);
+            break;
+        }
         default:
             // Fallback textual marker so output is still useful
             pushS("/*op:" + std::to_string(int(i.op)) + "*/");

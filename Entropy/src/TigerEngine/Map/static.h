@@ -84,11 +84,16 @@ public:
 
 };
 
-struct SStaticInstanceTransform
-{
+struct ObjectVectors {
 	glm::quat rotation;
 	glm::vec3 translation;
-	glm::vec3 scale;
+	float_t scale;
+};
+
+struct SStaticInstanceTransform
+{
+	ObjectVectors transform;
+	uint64_t _unk20;
 	uint32_t _unk28;
 	uint32_t _unk2C;
 	std::array<uint32_t,4> unk30;

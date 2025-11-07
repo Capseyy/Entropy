@@ -55,34 +55,6 @@ auto ShowMat = [](const char* name, const Mat4& m)
 	};
 
 
-// helper – create the 1216-byte PS CB0 (usage: dynamic so we can Map/Unmap like in the capture)
-static void EnsureCB0(ID3D11Device* dev, Microsoft::WRL::ComPtr<ID3D11Buffer>& buf)
-{
-	if (buf) return;
-	D3D11_BUFFER_DESC bd{};
-	bd.ByteWidth = 76 * 16;                  // 76 float4 = 1216 bytes
-	bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-	bd.Usage = D3D11_USAGE_DYNAMIC;
-	bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-	dev->CreateBuffer(&bd, nullptr, &buf);
-}
-
-// exact CB0 contents from your capture (cb0_v0..cb0_v75)
-static const float kCB0Data[76][4] = { {0,0,0,0},
- {0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},
- {0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},
- {0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},
- {0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},
- {0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},
- {0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},{1,1,1,1},
- {0,0,0,0},{1,1,1,1},{0,0,0,0},{0,0,0,0},{0.001f,0,0,0},{0,0,0,0},{1,-1,1,0},{0.25f,0.25f,0.25f,0.25f},
- {1,0,0,0},{0.25f,0.25f,0.25f,0.25f},{-0.5f,0.75f,0,0},{0,0,0,0},{0,0,0,0},{1,1,1,1},
- {0,0,0,0},{0,0,0,0},{1,0,0,0},{0.25f,0.25f,0.25f,0.25f},{1,-1,1,0},{0,0,0,0},{0,0,0,0},{0,0,0,0},
- {1,-1,0,0},{1,1,1,1},{0,0,0,0},{1,1,1,1},{0,100,0,0}
-};
-
-
-
 void Graphics::Create1x1SRV(UINT color, ComPtr<ID3D11ShaderResourceView>& address)
 {
 	D3D11_TEXTURE2D_DESC td = {};
@@ -113,21 +85,6 @@ static void DrawFullscreenTriangle(ID3D11DeviceContext* ctx) {
 	ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 	ctx->IASetInputLayout(nullptr);   // shader must be VS that generates a triangle or uses no inputs
 	ctx->Draw(4, 0);
-}
-
-static DirectX::XMMATRIX MakeReversedZProjLH(float fovY, float aspect, float zNear)
-{
-	// Infinite far plane, left-handed, reversed-Z
-	const float y = 1.0f / std::tan(fovY * 0.5f);
-	const float x = y / aspect;
-
-	using namespace DirectX;
-	XMMATRIX M;
-	M.r[0] = XMVectorSet(x, 0, 0, 0);
-	M.r[1] = XMVectorSet(0, y, 0, 0);
-	M.r[2] = XMVectorSet(0, 0, 0, 1);    // puts depth in w
-	M.r[3] = XMVectorSet(0, 0, zNear, 0);
-	return M;
 }
 
 struct GpuMarker {
@@ -171,6 +128,18 @@ void CreateCB1(ID3D11Device* dev) {
 	CB1Payload zero{};
 	D3D11_SUBRESOURCE_DATA init{ &zero, 0, 0 };
 	dev->CreateBuffer(&bd, &init, g_cb1.GetAddressOf());
+}
+
+void CreateCB1_FallBack(ID3D11Device* dev) {
+	D3D11_BUFFER_DESC bd{};
+	bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+	bd.ByteWidth = sizeof(CB1Payload);
+	bd.Usage = D3D11_USAGE_DYNAMIC;
+	bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+
+	CB1Payload zero{};
+	D3D11_SUBRESOURCE_DATA init{ &zero, 0, 0 };
+	dev->CreateBuffer(&bd, &init, g_cb1_fallback.GetAddressOf());
 }
 
 void Graphics::InitializeInputLayouts()
@@ -245,7 +214,7 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 			continue;
 		}
 		const auto& part = mesh.parts[mg.part_index];
-		if (part.LodCatagory > 1) {
+		if (part.LodCatagory > 2) {
 			// Skip non-highest LOD parts for now
 			continue;
 		}
@@ -620,6 +589,16 @@ void Graphics::DrawEntity(const RenderEntity& rs, const View& /*view*/, TfxRende
 	const XMVECTOR qn = XMQuaternionNormalize(q);
 	const XMMATRIX R = XMMatrixRotationQuaternion(qn);
 	const XMMATRIX T = XMMatrixTranslation(rs.pos.x, rs.pos.y, rs.pos.z);
+	std::vector<ObjectVectors> instances;
+	auto mesh_scale = rs.meshData.model_scale;
+	float instance_scale = rs.pos.w;
+	ObjectVectors ov;
+	ov.scale = rs.pos.w;
+	ov.rotation = rs.rot;
+	ov.translation = rs.pos;
+
+	instances.push_back(ov);
+	instances.push_back(ov);
 	XMFLOAT4X4 worldXM;
 	XMStoreFloat4x4(&worldXM, R * T);
 
@@ -629,7 +608,8 @@ void Graphics::DrawEntity(const RenderEntity& rs, const View& /*view*/, TfxRende
 		rs.meshData.model_offset.y,
 		rs.meshData.model_offset.z
 	};
-	const float mesh_scale = rs.meshData.model_scale.x;                  // uniform; use .x
+	
+	// uniform; use .x
 	const float texScale = rs.meshData.texcoord_scale.x;               // if non-uniform you can split
 	const float texOffX = rs.meshData.texcoord_offset.x;
 	const float texOffY = rs.meshData.texcoord_offset.y;
@@ -638,7 +618,8 @@ void Graphics::DrawEntity(const RenderEntity& rs, const View& /*view*/, TfxRende
 	{
 		UpdateCB1_Single(ctx,
 			rs.meshData.model_offset,
-			mesh_scale,
+			rs.meshData.model_scale,
+			instance_scale,
 			texScale,
 			texOffX,
 			texOffY,
@@ -702,27 +683,30 @@ void Graphics::DrawEntity(const RenderEntity& rs, const View& /*view*/, TfxRende
 			else
 				ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 			// Set constant buffer
-			ID3D11Buffer* b1 = g_cb1.Get();
-			ctx->VSSetConstantBuffers(1, 1, &b1);
+			ID3D11Buffer* b1_ovd = g_cb1.Get();
+			ID3D11Buffer* b1 = g_cb1_fallback.Get();
 			// Technique binding
 			//ctx->PSSetConstantBuffers(1, 1, &b1);
 			if (part.meshpartinfo.varient_shader_index == 0xFFFF) {
 				part.technique->Bind(pDevice, pContext, externs, states, scopes);
-			} 
+			}
 			else {
-				auto tech = rs.external_mats[rs.external_material_mapping[part.meshpartinfo.varient_shader_index].technique_start];
+				auto gt = static_cast<UINT>(externs.getFloat(TfxExtern::Frame, 0));
+				auto tech = rs.external_mats[rs.external_material_mapping[part.meshpartinfo.varient_shader_index].technique_start];//+(gt % rs.external_material_mapping.size())];
 				if (tech)
 					tech->Bind(pDevice, pContext, externs, states, scopes);
 			}
 
-			
-			
+
+
 
 			// Optional skinning VS override
-			if (mesh.buffers->skinning_buffer.get())
+			if (mesh.buffers->skinning_buffer.get()){
 				pContext->VSSetShader(entity_vs_override.Get(), nullptr, 0);
-			ctx->VSSetConstantBuffers(1, 1, &b1);
-			
+				
+			}
+			ctx->VSSetConstantBuffers(1, 1, &b1_ovd);
+		
 			// Draw call
 			ctx->DrawIndexed(
 				part.meshpartinfo.index_count,
@@ -1437,7 +1421,10 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		CD3D11_DEPTH_STENCIL_DESC ds_decal(D3D11_DEFAULT);
 		ds_decal.DepthEnable = TRUE;
 		ds_decal.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
-		ds_decal.DepthFunc = D3D11_COMPARISON_GREATER; // <? NOT GREATER_EQUAL
+		ds_decal.DepthFunc = D3D11_COMPARISON_GREATER_EQUAL; // <? NOT GREATER_EQUAL
+		ds_decal.StencilEnable = FALSE;
+		ds_decal.StencilReadMask = 0;
+		ds_decal.StencilWriteMask = 0;
 		hr = pDevice->CreateDepthStencilState(&ds_decal, depthStencilDecal.GetAddressOf());
 		COM_ERROR_IF_FAILED(hr, "Failed to create reversed-Z depth stencil state.");
 
@@ -1468,6 +1455,7 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 
 	CreateScopeViewCB12(pDevice.Get());
 	CreateCB1(pDevice.Get());
+	CreateCB1_FallBack(pDevice.Get());
 	PublishGlobalChannelsToExterns(externs, channels);
 	RenderStates::Create(pDevice.Get(), states);
 
@@ -1476,21 +1464,6 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 
 bool Graphics::InitializeShaders()
 {
-	//D3D11_INPUT_ELEMENT_DESC layout[] =
-	//{
-	//	{ "POSITION", 0, DXGI_FORMAT_R16G16B16A16_SNORM, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 }, // slot 0, offset 0
-	//	{ "TANGENT",  0, DXGI_FORMAT_R16G16B16A16_SNORM, 0, 8, D3D11_INPUT_PER_VERTEX_DATA, 0 }, // slot 0, offset 8
-	//	{ "TEXCOORD", 0, DXGI_FORMAT_R16G16_SNORM,       1, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 }, // slot 1, offset 0
-	//};
-
-	/*UINT numElements = ARRAYSIZE(layout);*/
-
-	/*if (!this->vertexshader.Initialize(this->pDevice, L"vertexshader.cso", layout, numElements))
-		return false;
-
-	if (!this->pixelshader.Initialize(this->pDevice, L"pixelshader.cso"))
-		return false;*/
-
 	Microsoft::WRL::ComPtr<ID3DBlob> vsBytecode;
 	HRESULT hr = CompileVSFromMemory(
 		pDevice.Get(),
@@ -1625,7 +1598,7 @@ bool Graphics::InitializeScene()
 	CreateLightVolumeResources();
 	
 	loadzone = std::make_unique<LoadZone>(*this);
-	loadzone->parentHash = 0x80E88E36; //duality
+	loadzone->parentHash = 0x80EF4378; //duality
 	loadzone->ProcessMap();
 	this->staticsToDraw = loadzone->statics;
 	this->lightsToDraw = loadzone->lights;

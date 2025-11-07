@@ -99,16 +99,17 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
         this->pixeldata.TFX_Constants);
     // implement getFloat/getVec4/getMat4 in extern.cpp
     auto& cb0 = this->pixeldata.SamplerFallback; // std::vector<Vec4> used as cb0 backing
-    /*if (this->id == 0x80C0D09E)
+    /*if (this->id == 0x810AF322)
     {
         prog.Evaluate_Trace(externs, cb0);
     }
     else {
-        prog.Evaluate(externs, cb0);
+        
     }*/
     
-    
     prog.Evaluate(externs, cb0);
+
+
     
             // writes float4s to cb0[..] as dictated by bytecode
     

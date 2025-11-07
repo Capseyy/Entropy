@@ -13,6 +13,7 @@
 using namespace DirectX;
 
  inline Microsoft::WRL::ComPtr<ID3D11Buffer> g_cb1;
+ inline Microsoft::WRL::ComPtr<ID3D11Buffer> g_cb1_fallback;
 
 static inline float asfloat_u32(std::uint32_t u) {
 	return std::bit_cast<float>(u);
@@ -48,8 +49,9 @@ struct CB1Payload {
 
 static void UpdateCB1_Single(
     ID3D11DeviceContext* ctx,
-    const glm::vec3& model_offset,
-    float             model_scale,
+    glm::vec4 model_offset,
+    glm::vec4             model_scale,
+    float            instance_scale,
     float             texScale,
     float             texOffX, float texOffY,
     const glm::quat& rot,      // GLM stores (w,x,y,z) but .x/.y/.z/.w are available
@@ -59,21 +61,24 @@ static void UpdateCB1_Single(
 
     CB1Payload_override cb{};
 
-    // --- Build transform (row-major) ---
-    // 1) GLM quat -> DirectX: XM expects (x,y,z,w)
     const XMVECTOR q = XMVectorSet(rot.w, rot.x, rot.y, rot.z);
     const XMMATRIX R = XMMatrixRotationQuaternion(q);
     const XMMATRIX T = XMMatrixTranslation(pos.x, pos.y, pos.z);
 
-    // Row-vector convention: apply Basis, then Rotate, then Translate
-    const XMMATRIX M = R * T;
+    // Uniform scale goes IN THE MATRIX:
+    float s = instance_scale;
+    const XMMATRIX S = XMMatrixScaling(s, s, s);
+
+    // Row-vector convention: Scale ? Rotate ? Translate
+    const XMMATRIX M = S * R * T;
     XMStoreFloat4x4(&cb.mesh_to_world, M);
 
-    // --- Other cb1 fields exactly as your VS expects ---
-    cb.position_scale = XMFLOAT4(model_scale, model_scale, model_scale, 0.0f);
-    cb.position_offset = XMFLOAT4(model_offset.x, model_offset.y, model_offset.z, model_scale);
+    // Keep authored per-mesh scale in cb (unchanged) to avoid double scaling.
+    cb.position_scale = XMFLOAT4(model_scale.x, model_scale.y, model_scale.z, model_scale.w);
+    cb.position_offset = XMFLOAT4(model_offset.x, model_offset.y, model_offset.z, model_offset.w);
+
     cb.texcoord0_scale_offset = XMFLOAT4(texScale, texScale, texOffX, texOffY);
-    cb.dynamic_sh_ao_values = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f); // matches capture
+    cb.dynamic_sh_ao_values = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f);
 
     D3D11_MAPPED_SUBRESOURCE m{};
     if (SUCCEEDED(ctx->Map(g_cb1.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &m))) {
@@ -82,9 +87,9 @@ static void UpdateCB1_Single(
     }
 }
 
-inline DirectX::XMMATRIX MakeWorld(const SStaticInstanceTransform& s) {
+inline DirectX::XMMATRIX MakeWorld(const ObjectVectors& s) {
     using namespace DirectX;
-    const XMMATRIX S = XMMatrixScaling(s.scale.x, s.scale.x, s.scale.x);
+    const XMMATRIX S = XMMatrixScaling(s.scale, s.scale, s.scale);
 
     // If your quat is (w,x,y,z) -> reorder to (x,y,z,w)
     const XMVECTOR q = XMVectorSet(s.rotation.w, s.rotation.x, s.rotation.y, s.rotation.z);
@@ -109,7 +114,7 @@ static void CreateCB1_FreshDynamic(
     ID3D11DeviceContext* ctx,
     const DirectX::XMFLOAT3& meshOffset, float meshScale,
     float uvScaleX, float uvOffX, float uvOffY, std::uint32_t maxColorOrClampBits,
-    const std::vector<SStaticInstanceTransform>& worlds, Microsoft::WRL::ComPtr<ID3D11Buffer>& b)
+    const std::vector<ObjectVectors>& worlds, Microsoft::WRL::ComPtr<ID3D11Buffer>& b)
 {
     using namespace DirectX;
 
@@ -160,5 +165,7 @@ static void CreateCB1_FreshDynamic(
     init.pSysMem = rows.data();
 
     b.Reset();
-    HRESULT hr = device->CreateBuffer(&bd, &init, b.ReleaseAndGetAddressOf());
+    HRESULT hr = device->CreateBuffer(&bd, &init, b.GetAddressOf());
 }
+
+

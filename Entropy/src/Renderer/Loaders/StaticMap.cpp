@@ -17,7 +17,7 @@ bool StaticMap::Initialize(uint32_t mapRootHash)
 		auto renderpart = renderer.Build();
 		for (int i = static_instance.instance_start; i < static_instance.instance_start + static_instance.instance_count; i++) {
 			auto& transform = static_instancer.instance_transforms[i];
-			renderpart.world.push_back(transform);
+			renderpart.world.push_back(transform.transform);
 		}
 		renderpart.AOID = static_instancer.unk98;
 		statics_.push_back(renderpart);

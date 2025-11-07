@@ -80,6 +80,30 @@ namespace tfx_eval_detail {
 #endif 
 
 
+inline Vec4 step4(const Vec4& edge, const Vec4& x) {
+    return Vec4(
+        x.x >= edge.x ? 1.f : 0.f,
+        x.y >= edge.y ? 1.f : 0.f,
+        x.z >= edge.z ? 1.f : 0.f,
+        x.w >= edge.w ? 1.f : 0.f
+    );
+}
+
+// XOR for {0,1} masks: a ? b = a + b - 2ab
+inline Vec4 xor01(const Vec4& a, const Vec4& b) {
+    return Vec4(
+        a.x + b.x - 2.f * a.x * b.x,
+        a.y + b.y - 2.f * a.y * b.y,
+        a.z + b.z - 2.f * a.z * b.z,
+        a.w + b.w - 2.f * a.w * b.w
+    );
+}
+
+inline float hsum4(const Vec4& v) { return v.x + v.y + v.z + v.w; }
+
+// Convenience swizzle used by the spline logic: .yzww
+inline Vec4 yzww(const Vec4& v) { return Vec4(v.y, v.z, v.w, v.w); }
+
 inline const char* OpName(TfxBytecode);
 
 
@@ -142,6 +166,12 @@ static inline std::string DescribePayload(const TfxData& i) {
     case TfxBytecode::PushTexTileCount: {
         auto d = std::get<PushTexParamData>(i.data);
         std::snprintf(b, sizeof(b), "idx=%u fields=0x%02X", d.index, d.fields); break;
+    }
+    case TfxBytecode::Spline4Const:
+    case TfxBytecode::Spline8Const:
+    case TfxBytecode::Spline8ConstChain: {
+        auto d = std::get<SplineConstData>(i.data);
+        std::snprintf(b, sizeof(b), "start=%u", d.constant_start); break;
     }
     default: break;
     }
@@ -298,7 +328,12 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
         case TfxBytecode::PushObjectChannelVector: {
             // Object channels not wired; push zero for now.
             // If you have an object-channel table, read it here via externs.getVec4(...)
-            push(Vec4::zero());
+            push(Vec4::one());
+            break;
+        }
+        case TfxBytecode::PushTexDimensions: {; 
+           
+            push(Vec4(64.0f,64.0f,1.0f,1.0f));
             break;
         }
 
@@ -315,6 +350,58 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             Vec4 v = pop1(ip, "PopOutput");
             if (trace) std::printf("    -> cb[%u] = %s\n", d.element, to_str(v).c_str());
             cb[d.element] = v; break;
+        }
+        case TfxBytecode::Spline8Const: {
+            auto d = std::get<SplineConstData>(i.data);
+            // x comes from stack top
+            Vec4 X = pop1(ip, "Spline8Const");
+
+            // Load 10 constants starting at constant_start (C:0..3, D:4..7, thresholds:8,9)
+            auto load = [&](size_t rel) -> Vec4 {
+                size_t k = size_t(d.constant_start) + rel;
+                return (k < constants.size()) ? constants[k] : Vec4::zero();
+                };
+            Vec4 C3 = load(0), C2 = load(1), C1 = load(2), C0 = load(3);
+            Vec4 D3 = load(4), D2 = load(5), D1 = load(6), D0 = load(7);
+            Vec4 Cth = load(8), Dth = load(9);
+
+            // Estrin cubic on each bank
+            Vec4 X2 = X * X;
+            Vec4 Chigh = C3 * X + C2;
+            Vec4 Clow = C1 * X + C0;
+            Vec4 Ceval = Chigh * X2 + Clow;
+
+            Vec4 Dhigh = D3 * X + D2;
+            Vec4 Dlow = D1 * X + D0;
+            Vec4 Deval = Dhigh * X2 + Dlow;
+
+            // Threshold masks, channel XOR masks
+            Vec4 Cmask = step4(Cth, X);
+            Vec4 Dmask = step4(Dth, X);
+
+            Vec4 Cchan = Vec4(xor01(Cmask, yzww(Cmask)).x,
+                xor01(Cmask, yzww(Cmask)).y,
+                xor01(Cmask, yzww(Cmask)).z,
+                Cmask.w); // keep .w
+            Vec4 Dchan = Vec4(xor01(Dmask, yzww(Dmask)).x,
+                xor01(Dmask, yzww(Dmask)).y,
+                xor01(Dmask, yzww(Dmask)).z,
+                Dmask.w);
+
+            // Masked contributions + horizontal sum
+            float Csum = hsum4(Ceval * Cchan);
+            float Dsum = hsum4(Deval * Dchan);
+
+            float spline = (Dmask.x > 0.f) ? Dsum : Csum;
+            Vec4 result = Vec4::splat(spline);
+
+            if (trace) {
+                std::printf("    Spline8: Csum=%g Dsum=%g use=%s\n",
+                    Csum, Dsum, (Dmask.x > 0.f ? "D" : "C"));
+            }
+
+            push(result);
+            break;
         }
         case TfxBytecode::PopOutputMat4: {
             auto d = std::get<PopOutputMat4Data>(i.data);
@@ -340,7 +427,6 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
         case TfxBytecode::Unk4c:
         case TfxBytecode::Unk50:
         case TfxBytecode::Unk51:
-        case TfxBytecode::PushTexDimensions:
         case TfxBytecode::PushTexTileParams:
         case TfxBytecode::PushTexTileCount:
         case TfxBytecode::Unk42:

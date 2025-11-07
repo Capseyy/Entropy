@@ -63,8 +63,9 @@ void LoadZone::ProcessMap()
 	{
 		load_datatable_into_scene(datatable);
 	}
-	load_datatable_into_scene(TagHash(0x80D268D7));
-	load_datatable_into_scene(TagHash(0x80D26815)); 
+	//load_datatable_into_scene(TagHash(0x80D2771C));
+	//load_datatable_into_scene(TagHash(0x80D26815)); 
+	//load_datatable_into_scene(TagHash(0x80D271D9));
 	//load_datatable_into_scene(TagHash(0x80D406B9));
 	printf("Loaded %d datatables\n", data_tables.size());
 }
@@ -119,6 +120,7 @@ void LoadZone::load_datatable_into_scene(TagHash table) {
 		}
 		//if (entry.entity.tagHash32 == 0x810A3E87)
 		load_entity_into_scene(TagHash(entry.entity.tagHash32), entry.rotation, entry.translation);
+
 
 
 	}

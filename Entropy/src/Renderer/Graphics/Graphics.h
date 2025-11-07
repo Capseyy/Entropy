@@ -163,7 +163,7 @@ private:
 	ComPtr<ID3D11SamplerState> lighting1;
 	ComPtr<ID3D11SamplerState> lighting2;
 
-
+	Microsoft::WRL::ComPtr<ID3D11Buffer> g_cb1_fallback;
 
 	Microsoft::WRL::ComPtr<ID3D11BlendState> bsGBufferOpaqueIndependent;
 	Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerStateGBuffer;

@@ -9,7 +9,7 @@
 struct RenderStatic {
     std::shared_ptr<StaticMesh> mesh;     // geometry + techniques (built by StaticRenderer)
 	SStaticMeshData meshData;          // raw mesh data (for LOD or other purposes)
-    std::vector<SStaticInstanceTransform>  world;    // per-object transform (if you have one)
+    std::vector<ObjectVectors>  world;    // per-object transform (if you have one)
     Microsoft::WRL::ComPtr<ID3D11Buffer> cb1;
     std::vector<std::shared_ptr<StaticSpecial>> specials;
 	uint64_t AOID = 0;  // AmbientOccusion ID
