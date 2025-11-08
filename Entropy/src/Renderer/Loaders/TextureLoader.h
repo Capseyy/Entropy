@@ -197,13 +197,7 @@ BuildTexture3DPayloadFromTag(TagHash textureTag)
     return tp;
 }
 
-// =====================================================================================
-// BuildTexturePayloadFromTag  (2D): FORCE FULL MIP CHAIN via mip-0 only
-//
-// We advertise MipLevels = full pyramid (down to 1×1) BUT only provide subresources
-// for mip 0. Your AssetSystem::createTexture_ (as patched) sees that not all
-// subresources are provided, creates a render-targetable texture with GENERATE_MIPS,
-// uploads mip 0, and calls GenerateMips ? you ALWAYS get all mips.
+
 // =====================================================================================
 static std::optional<Texture2DPayload>
 BuildTexturePayloadFromTag(TagHash textureTag)
@@ -246,7 +240,7 @@ BuildTexturePayloadFromTag(TagHash textureTag)
         w = std::max(1u, w >> 1);
         h = std::max(1u, h >> 1);
     }
-    if (!stored) return std::nullopt;
+    //if (!stored) return std::nullopt;
 
     Texture2DPayload tp{};
     tp.data = std::move(bytes);
@@ -255,8 +249,8 @@ BuildTexturePayloadFromTag(TagHash textureTag)
     ZeroMemory(&d, sizeof(d));
     d.Width = header.width;
     d.Height = header.height;
-    d.MipLevels = targetMips;                // what we WANT (Rust uses mipcount_fixed)
-    d.ArraySize = 1;                         // this path is non-cube
+    d.MipLevels = targetMips;                
+    d.ArraySize = 1;                         
     d.Format = texFmt;
     d.SampleDesc.Count = 1;
     d.Usage = D3D11_USAGE_DEFAULT;

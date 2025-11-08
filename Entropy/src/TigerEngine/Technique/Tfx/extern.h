@@ -17,6 +17,44 @@
 inline float qNaN() { return std::numeric_limits<float>::quiet_NaN(); }
 
 
+
+#pragma pack(push, 1)
+struct TransparentExtern
+{
+    // --- SRVs (TextureView) ---
+    // 0x00..0x67 (8-byte pointers on x64)
+    ID3D11ShaderResourceView* atmos_ss_far_lookup = nullptr; // 0x00
+    ID3D11ShaderResourceView* atmos_ss_far_lookup_downsampled = nullptr; // 0x08
+    ID3D11ShaderResourceView* atmos_ss_near_lookup = nullptr; // 0x10
+    ID3D11ShaderResourceView* atmos_ss_near_lookup_downsampled = nullptr; // 0x18
+    ID3D11ShaderResourceView* atmosphere_depth_angle_density_lookup = nullptr; // 0x20
+    ID3D11ShaderResourceView* unk28 = nullptr; // 0x28 (Texture3D)
+    ID3D11ShaderResourceView* unk30 = nullptr; // 0x30 (Texture3D)
+    ID3D11ShaderResourceView* unk38 = nullptr; // 0x38 (Texture3D)
+    ID3D11ShaderResourceView* unk40 = nullptr; // 0x40 (light_grid_shadow_final 3D)
+    ID3D11ShaderResourceView* unk48 = nullptr; // 0x48 (volumetrics surface0 / result 2D)
+    ID3D11ShaderResourceView* unk50 = nullptr; // 0x50 (volumetrics intensity 3D)
+    ID3D11ShaderResourceView* unk58 = nullptr; // 0x58
+    ID3D11ShaderResourceView* unk60 = nullptr; // 0x60 (shading_result_read)
+
+    // Align up to 0x70 for the next Vec4 block (0x68..0x6F are padding)
+    uint8_t _pad68[0x70 - 0x68]{};
+
+    // --- Vec4s ---
+    // 0x70..0xBF
+    Vec4  unk70 = Vec4::one(); // left as ONE by default unless you have better values
+    Vec4  unk80 = Vec4::one();
+    Vec4  unk90 = Vec4::one();
+    Vec4  unka0 = Vec4::one();
+    Vec4  unkb0 = Vec4::one();
+};
+
+
+inline TransparentExtern MakeTransparentExternDefaults() {
+    return TransparentExtern{}; // all SRVs nullptr; vec4s = ONE
+};
+
+
 struct FrameAuxCB
 {
     // scalars (pad to 16B)
@@ -758,6 +796,7 @@ struct ExternStorage
         ex.set(TfxExtern::Atmosphere, AtmosphereExtern{}); // <— new
         ex.set(TfxExtern::SimpleGeometry, SimpleGeometryExtern{}); // << add this
         ex.set(TfxExtern::DeferredLight, DeferredLightExtern{});
+        ex.set(TfxExtern::Transparent, TransparentExtern{});
         return ex;
     }
 
@@ -840,6 +879,34 @@ struct ExternStorage
         if (intensity) fx.noise_intensity_scale = *intensity;
         set(TfxExtern::Fxaa, fx);
     }
+    // Set every SRV (pass nullptr for any you don’t have)
+    void SetTransparentSRVs(ExternStorage& ex,
+        ID3D11ShaderResourceView* atmos_ss_far_lookup,
+        ID3D11ShaderResourceView* atmos_ss_far_lookup_downsampled,
+        ID3D11ShaderResourceView* atmos_ss_near_lookup,
+        ID3D11ShaderResourceView* atmos_ss_near_lookup_downsampled,
+        ID3D11ShaderResourceView* atmosphere_depth_angle_density_lookup,
+        ID3D11ShaderResourceView* unk28,
+        ID3D11ShaderResourceView* unk30,
+        ID3D11ShaderResourceView* unk38,
+        ID3D11ShaderResourceView* unk40,
+        ID3D11ShaderResourceView* unk48,
+        ID3D11ShaderResourceView* unk50,
+        ID3D11ShaderResourceView* unk58,
+        ID3D11ShaderResourceView* unk60
+    ) {
+        TransparentExtern t = MakeTransparentExternDefaults();
+        t.atmos_ss_far_lookup = atmos_ss_far_lookup;
+        t.atmos_ss_far_lookup_downsampled = atmos_ss_far_lookup_downsampled;
+        t.atmos_ss_near_lookup = atmos_ss_near_lookup;
+        t.atmos_ss_near_lookup_downsampled = atmos_ss_near_lookup_downsampled;
+        t.atmosphere_depth_angle_density_lookup = atmosphere_depth_angle_density_lookup;
+        t.unk28 = unk28; t.unk30 = unk30; t.unk38 = unk38;
+        t.unk40 = unk40; t.unk48 = unk48; t.unk50 = unk50;
+        t.unk58 = unk58; t.unk60 = unk60;
+
+        ex.set(TfxExtern::Transparent, t);
+    }
 
 private:
     // Helper: read current GPU width (returns 0 if unknown)
@@ -850,3 +917,8 @@ private:
         return bd.ByteWidth;
     }
 };
+
+
+
+
+

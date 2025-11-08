@@ -205,7 +205,7 @@ namespace bin {
     template<std::size_t N>
     inline void read_into(Reader& r, SkipTo<N>&) {
         //r.need(N);
-        r.pos = N;   // advance by N bytes, no alloc, no copy
+        r.seek(N);   // advance by N bytes, no alloc, no copy
     }
 
     inline void read_into(Reader& r, Aabb& q) {

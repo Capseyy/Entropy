@@ -44,6 +44,13 @@ struct Unk_80806A40 {//AO
 	uint64_t unk8;
 	TagHash ambient_occlusion;
 };
+
+struct Unk_80806AA3 {//AO
+	uint64_t unk0;
+	uint64_t unk8;
+	TagHash sky_ents;
+};
+
 struct s_bubble_definition {
 	uint64_t filesize;
 	std::vector<WideHash> resources;
@@ -180,3 +187,25 @@ MakeSrvSlice(ID3D11Device* dev,
 	HRESULT hr = dev->CreateShaderResourceView(res.Get(), &desc, &slice);
 	return SUCCEEDED(hr) ? slice : nullptr;
 }
+
+struct SObjectOcclusionBounds {
+	Aabb unk0;
+	std::array<uint32_t, 4> unk10;
+};
+
+
+struct Unk_80806AA9 {
+	std::array<float_t, 16> transform;
+	std::array<uint32_t,8> unk40;
+	TagHash unk60;
+	std::array<uint32_t, 3> unk64;
+	uint32_t unk70;
+	std::array<uint32_t, 7> unk6c;
+};
+
+struct Unk_80806AA7 {
+	uint64_t file_size;
+	std::vector<Unk_80806AA9> unk8;
+	std::vector<SObjectOcclusionBounds> unk18;
+	std::vector<uint32_t> unk28;
+};

@@ -57,33 +57,20 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
     const auto sel = DecodeStateSelection(this->StateSelection);
 
     // Blend ----------------------------------------------------------
-    //if (sel.blend && *sel.blend < states.blend_states.size() &&
-    //    states.blend_states[*sel.blend]) {
-    //    const float blendFactor[4] = { 1.f, 1.f, 1.f, 1.f };
-    //    const UINT sampleMask = 0xFFFFFFFFu;
-    //    //printf("Mapped blend\n");
-    //    pContext->OMSetBlendState(states.blend_states[*sel.blend].Get(), blendFactor, sampleMask);
-    //}
+    if (sel.blend && *sel.blend < states.blend_states.size() &&
+        states.blend_states[*sel.blend]) {
+        const float blendFactor[4] = { 1.f, 1.f, 1.f, 1.f };
+        const UINT sampleMask = 0xFFFFFFFFu;
+        //printf("Mapped blend\n");
+        pContext->OMSetBlendState(states.blend_states[*sel.blend].Get(), blendFactor, sampleMask);
+    }
 
-    //if (sel.rasterizer && *sel.rasterizer < 9 &&
-    //    sel.depthBias && *sel.depthBias < 9) {
-    //    auto& rs = states.rasterizer_states[*sel.rasterizer];
-    //    if (rs) {
-    //        //printf("Mapped raster\n");
-    //        pContext->RSSetState(rs.Get());
-    //    }
-    //}
-    //if (sel.depthStencilCombo && *sel.depthStencilCombo < states.depth_stencil_states.size()) {
-    //    // Choose primary or "alt" (reverse) depth func variant.
-    //    // Wire this to whatever logic you use to flip GREATER/LESS, etc.
-    //    const bool useAltDepth = false;               // TODO: set this from your engine state
-    //    const UINT stencilRef = 0;                   // TODO: set if your pass needs a non-zero ref
-
-    //    auto& pair = states.depth_stencil_states[*sel.depthStencilCombo];
-    //    ID3D11DepthStencilState* ds = (useAltDepth ? pair.second : pair.first).Get();
-    //    printf("Mapped stencil\n");
-    //    pContext->OMSetDepthStencilState(ds, stencilRef);
-    //}
+    if (sel.rasterizer && *sel.rasterizer < 9) {
+        auto& rs = states.rasterizer_states[*sel.rasterizer];
+        if (rs) {
+            pContext->RSSetState(rs.Get());
+        }
+    }
 
     if (!this->VS.empty()) {
 

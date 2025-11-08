@@ -5,8 +5,9 @@
 #include <algorithm>
 #include <string>
 #include "extern.h"
-
-
+#include <cmath>
+#define _USE_MATH_DEFINES
+#include <numbers>
 #ifndef TFX_EVAL_HELPERS_DEFINED
 #define TFX_EVAL_HELPERS_DEFINED
 namespace tfx_eval_detail {
@@ -326,9 +327,18 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             break;
         }
         case TfxBytecode::PushObjectChannelVector: {
-            // Object channels not wired; push zero for now.
-            // If you have an object-channel table, read it here via externs.getVec4(...)
-            push(Vec4::one());
+            // Slow oscillation between -1 and 1.
+            // Increase 'period' to slow it down further (e.g., 120s = 2 minutes per full cycle).
+            const float time = externs.getFloat(TfxExtern::Frame, 0.0f);          // seconds
+            const float period = std::max(0.001f, 10.0f);          // seconds per loop (default: VERY slow)
+
+            // Use TAU (2?) without relying on M_PI
+            constexpr float TAU = 6.28318530717958647692f; // 2?
+
+            const float phase = std::fmod(time, period) / period * TAU;
+            const float v = std::sin(phase) * 2.0f; // now in [-2, 2]
+
+            push(Vec4(v, v, v, v));
             break;
         }
         case TfxBytecode::PushTexDimensions: {; 

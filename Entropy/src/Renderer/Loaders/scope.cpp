@@ -10,6 +10,71 @@ ComPtr<ID3D11Buffer> TigerScope::GetVSCBuffer() {
 
 inline FrameAuxCB MakeFrameAuxFromRustDefaults() { return FrameAuxCB{}; }
 
+// Match Rust #[repr(C)] Vec4[37] layout exactly.
+// sizeof(Vec4) must be 16; sizeof(ScopeTransparentAdvancedCB) must be 592.
+struct ScopeTransparentAdvancedCB {
+    Vec4 unk0, unk1, unk2, unk3, unk4, unk5, unk6, unk7, unk8, unk9,
+        unk10, unk11, unk12, unk13, unk14, unk15, unk16, unk17, unk18, unk19,
+        unk20, unk21, unk22, unk23, unk24, unk25, unk26, unk27, unk28, unk29,
+        unk30, unk31, unk32, unk33, unk34, unk35, unk36;
+};
+
+static_assert(sizeof(Vec4) == 16, "Vec4 must be 16 bytes");
+static_assert(sizeof(ScopeTransparentAdvancedCB) == 37 * 16, "CB size must be 592 bytes");
+
+inline ScopeTransparentAdvancedCB MakeScopeTransparentAdvancedFromRustDefaults()
+{
+    ScopeTransparentAdvancedCB cb{};
+    cb.unk0 = { 0.0009849314f, 0.0019836868f, 0.0007783567f, 0.0015586712f };
+    cb.unk1 = { 0.00098604f,   0.002085914f,  0.0009838239f, 0.0018864698f };
+    cb.unk2 = { 0.0011860824f, 0.0024346288f, 0.0009468408f, 0.001850187f };
+    cb.unk3 = { 0.7903466f,    0.7319064f,    0.56213695f,   0.0f };
+    cb.unk4 = { 0.0f,          1.0f,          0.109375f,     0.046875f };
+    cb.unk5 = { 0.0f,          0.0f,          0.0f,          0.00086945295f };
+    cb.unk6 = { 0.55f,         0.41091052f,   0.22670946f,   0.50381273f };
+    cb.unk7 = { 1.0f,          1.0f,          1.0f,          0.9997778f };
+    cb.unk8 = { 132.92885f,    66.40444f,     56.853416f,    0.0f };
+    cb.unk9 = { 132.92885f,    66.40444f,     1000.0f,       1e-4f };
+    cb.unk10 = { 131.92885f,    65.40444f,     55.853416f,    0.6784314f };
+    cb.unk11 = { 131.92885f,    65.40444f,     999.0f,        5.5f };
+    cb.unk12 = { 0.0f,          0.5f,          25.575994f,    0.0f };
+    cb.unk13 = { 0.0f,          0.0f,          0.0f,          0.0f };
+    cb.unk14 = { 0.025f,        10000.0f,      -9999.0f,      1.0f };
+    cb.unk15 = { 1.0f,          1.0f,          1.0f,          0.0f };
+    cb.unk16 = { 0.0f,          0.0f,          0.0f,          0.0f };
+    cb.unk17 = { 10.979255f,    7.1482353f,    6.3034935f,    0.0f };
+    cb.unk18 = { 0.0037614072f, 0.0f,          0.0f,          0.0f };
+    cb.unk19 = { 0.0f,          0.0075296126f, 0.0f,          0.0f };
+    cb.unk20 = { 0.0f,          0.0f,          0.017589089f,  0.0f };
+    cb.unk21 = { 0.27266484f,  -0.31473818f,  -0.15603681f,   1.0f };
+    cb.unk22 = { 0.0f,          0.0f,          0.0f,          0.0f };
+    cb.unk23 = { 0.0f,          0.0f,          0.0f,          0.0f };
+    cb.unk24 = { 0.0f,          0.0f,          0.0f,          0.0f };
+    cb.unk25 = { 0.0f,          0.0f,          0.0f,          0.0f };
+    cb.unk26 = { 0.0f,          0.0f,          0.0f,          0.0f };
+    cb.unk27 = { 0.0f,          0.0f,          0.0f,          0.0f };
+    cb.unk28 = { 0.0f,          0.0f,          0.0f,          0.0f };
+    cb.unk29 = { 0.0f,          0.0f,          0.0f,          0.0f };
+    cb.unk30 = { 0.0f,          0.0f,          0.0f,          0.0f };
+    cb.unk31 = { 0.0f,          0.0f,          0.0f,          0.0f };
+    cb.unk32 = { 0.0f,          0.0f,          0.0f,          0.0f };
+    cb.unk33 = { 0.0f,          0.0f,          0.0f,          0.0f };
+    cb.unk34 = { 0.0f,          0.0f,          0.0f,          0.0f };
+    cb.unk35 = { 0.0f,          0.0f,          0.0f,          0.0f };
+    cb.unk36 = { 1.0f,          0.0f,          0.0f,          0.0f };
+    return cb;
+}
+
+template <class T>
+static void UploadCBStruct(ID3D11DeviceContext* ctx, ID3D11Buffer* buf, const T& data) {
+    if (!buf) return;
+    D3D11_MAPPED_SUBRESOURCE m{};
+    if (SUCCEEDED(ctx->Map(buf, 0, D3D11_MAP_WRITE_DISCARD, 0, &m))) {
+        std::memcpy(m.pData, &data, sizeof(T));
+        ctx->Unmap(buf, 0);
+    }
+}
+
 void PrintCbVS(const std::vector<Vec4>& cb_vs, const char* name = "cb_vs")
 {
     char line[160];
@@ -149,6 +214,11 @@ void TigerScope::UpdateScopeBuffers(ComPtr<ID3D11DeviceContext> pContext, Extern
         //UploadCB(pContext.Get(), this->frameBuffer.Get(), buffer);
 
     }
+    if (this->Scope.name.name == "transparent_advanced") {
+        ScopeTransparentAdvancedCB ta = MakeScopeTransparentAdvancedFromRustDefaults();
+
+        UploadCBStruct(pContext.Get(), this->pscbuffer.Get(), ta);
+	}
 }
 
 void TigerScope::Bind(ComPtr<ID3D11DeviceContext> pContext)

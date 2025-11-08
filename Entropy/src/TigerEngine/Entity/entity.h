@@ -64,7 +64,7 @@ struct Unk_808072C5
 	uint32_t unk08;
 };
 
-struct Unk_80806D8F  // Entity Mesh Resource
+struct Unk_80806D8F  // Entity Mesh Resource 
 {
     SkipTo<0x244> Unk0;            // 0x000..0x223  (136 dwords) -> MeshFile at 0x224
     TagHash MeshFile;                          // 0x224 (or 0x244 if you chose 145)
@@ -89,6 +89,11 @@ struct Unk_80809c04
 	TagHash entity_resource;
 	uint32_t unk04;
 	uint32_t unk07;
+};
+struct Unk_80806AAE
+{
+	uint64_t FileSize;
+	TagHash sem;
 };
 
 struct SEntity

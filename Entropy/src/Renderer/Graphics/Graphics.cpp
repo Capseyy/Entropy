@@ -391,6 +391,7 @@ void Graphics::DrawStaticTransparent(const RenderStatic& rs, const View& view)
 				//ctx->VSSetShaderResources(1, 1, &s);
 				ctx->VSSetShaderResources(0, 1, &s);
 			}
+
 			ctx->IASetVertexBuffers(0, vbCount, vbs, strides, offsets);
 			ctx->IASetIndexBuffer(special->group->index.get(), special->group->indexFormat, 0);
 			if (tech)
@@ -400,7 +401,11 @@ void Graphics::DrawStaticTransparent(const RenderStatic& rs, const View& view)
 			ID3D11ShaderResourceView* srvs[] = {            // t4
 			this->temp_angle_lookup.Get(),             // t5
 			};
+			ID3D11ShaderResourceView* srvs1[] = {            // t4
+			this->gbufA.depth.texCopySRV.Get(),             // t5
+			};
 			pContext->PSSetShaderResources(15, 1, srvs);
+			pContext->PSSetShaderResources(10, 1, srvs1);
 			ID3D11Buffer* b = instanceBuf.Get();
 			ctx->VSSetConstantBuffers(1, 1, &b);
 			
@@ -673,9 +678,11 @@ void Graphics::DrawEntity(const RenderEntity& rs, const View& /*view*/, TfxRende
 		{
 			const auto& partPtr = mesh.parts[i];
 			//if (!partPtr) continue;
-
+			if (renderStage == TfxRenderStage::Transparents) {
+				pContext->RSSetState(states.rasterizer_states[2].Get());
+			}
 			const DynamicMeshPart& part = *partPtr;
-			if (part.meshpartinfo.LodCatagory > 2) continue;
+			if (part.meshpartinfo.LodCatagory > 3) continue;
 
 			// Primitive type
 			if (part.meshpartinfo.PrimitiveType == 5)
@@ -706,6 +713,16 @@ void Graphics::DrawEntity(const RenderEntity& rs, const View& /*view*/, TfxRende
 				
 			}
 			ctx->VSSetConstantBuffers(1, 1, &b1_ovd);
+			if (renderStage == TfxRenderStage::Transparents) {
+				ID3D11ShaderResourceView* srvs[] = {            // t4
+			this->temp_angle_lookup.Get(),             // t5
+				};
+				ID3D11ShaderResourceView* srvs1[] = {            // t4
+				this->gbufA.depth.texCopySRV.Get(),             // t5
+				};
+				pContext->PSSetShaderResources(15, 1, srvs);
+				pContext->PSSetShaderResources(10, 1, srvs1);
+			}
 		
 			// Draw call
 			ctx->DrawIndexed(
@@ -942,6 +959,25 @@ void Graphics::RenderFrame()
 
 		ID3D11ShaderResourceView* nulls[8] = {};
 		pContext->PSSetShaderResources(0, 8, nulls);
+
+		pContext->CopyResource(gbufA.shading_result_read.tex.Get(), gbufA.shading_result.tex.Get());
+
+		externs.SetTransparentSRVs(
+			externs,
+			gbufA.atmos_ss_far_lookup.srv.Get(),             // 0x00
+			nullptr, // 0x08
+			gbufA.atmos_ss_far_lookup.srv.Get(),            // 0x10
+			nullptr,// 0x18
+			nullptr,
+			this->grey1x1SRV.Get(),// 0x28 (placeholder 3D)
+			this->grey1x1SRV.Get(),                  // 0x30 (placeholder 3D)
+			this->grey1x1SRV.Get(),                 // 0x38 (placeholder 3D)
+			nullptr,              // 0x40
+			nullptr /*volumetrics surface0*/,             // 0x48
+			nullptr /*volumetrics intensity 3D*/,         // 0x50
+			this->grey1x1SRV.Get(),                   // 0x58
+			gbufA.shading_result_read.srv.Get()              // 0x60
+		);
 	}
 
 	// =========================
@@ -1598,7 +1634,7 @@ bool Graphics::InitializeScene()
 	CreateLightVolumeResources();
 	
 	loadzone = std::make_unique<LoadZone>(*this);
-	loadzone->parentHash = 0x80EF4378; //duality
+	loadzone->parentHash = 0x80BDCF08; //duality
 	loadzone->ProcessMap();
 	this->staticsToDraw = loadzone->statics;
 	this->lightsToDraw = loadzone->lights;

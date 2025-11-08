@@ -1,6 +1,14 @@
 #include "Map.h"
 #include "Renderer/Graphics/Graphics.h"
 #include "TigerEngine/Map/TigerBuffer.h"
+#undef min
+#undef max
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>         // glm::make_mat4
+#include <glm/gtx/matrix_decompose.hpp> // glm::decompose
+#include <glm/gtc/quaternion.hpp>
+#include <cmath>
 
 
 MapStaticAO LoadZone::LoadAmbAO(SAmbientOcclusionBuffer tag)
@@ -63,10 +71,10 @@ void LoadZone::ProcessMap()
 	{
 		load_datatable_into_scene(datatable);
 	}
-	//load_datatable_into_scene(TagHash(0x80D2771C));
-	//load_datatable_into_scene(TagHash(0x80D26815)); 
-	//load_datatable_into_scene(TagHash(0x80D271D9));
-	//load_datatable_into_scene(TagHash(0x80D406B9));
+	load_datatable_into_scene(TagHash(0x80D2771C));
+	load_datatable_into_scene(TagHash(0x80D26815)); 
+	load_datatable_into_scene(TagHash(0x80D271D9));
+	load_datatable_into_scene(TagHash(0x80D406B9));
 	printf("Loaded %d datatables\n", data_tables.size());
 }
 
@@ -118,21 +126,49 @@ void LoadZone::load_datatable_into_scene(TagHash table) {
 			auto ao_map3 = LoadAmbAO(ao_parent.offset_mappings3);
 
 		}
-		//if (entry.entity.tagHash32 == 0x810A3E87)
+		else if (entry.resource.type == 0x80806aa3) {
+			printf("Found Sky placement in %08X \n", table.hash);
+			auto resource = entry.resource.Parse<Unk_80806AA3>(table);
+			printf("Sky Ent Tag: %08X \n", resource.sky_ents.hash);
+			auto header = bin::parse<Unk_80806AA7>(resource.sky_ents.data, resource.sky_ents.size);
+
+			const size_t n = std::min({ header.unk8.size(), header.unk18.size(), header.unk28.size() });
+
+			for (size_t i = 0; i < n; ++i) {
+				const auto& u8 = header.unk8[i];
+				const auto& u18 = header.unk18[i];
+
+				if (u8.unk70 == 5) continue;
+
+				// u8.transform is std::array<float, 16> in column-major order
+				const glm::mat4 M = glm::make_mat4(u8.transform.data());
+
+				glm::vec3 scale, translation, skew;
+				glm::vec4 perspective;
+				glm::quat rotation;
+				if (!glm::decompose(M, scale, rotation, translation, skew, perspective)) {
+					rotation = glm::quat(1, 0, 0, 0);
+					translation = glm::vec3(0);
+					scale = glm::vec3(1);
+				}
+				const float sx = std::abs(scale.x), sy = std::abs(scale.y), sz = std::abs(scale.z);
+				const float s_uniform = std::cbrt(std::max(1e-6f, sx * sy * sz));
+
+				glm::quat rot;
+				rot.w = rotation.x;
+				rot.x = rotation.y;
+				rot.y = rotation.z;
+				rot.z = rotation.w;
+				//rot = glm::conjugate(rot); // to match engine convention
+				glm::vec4 pos(translation, s_uniform);
+
+				auto sky_entity = bin::parse<Unk_80806AAE>(u8.unk60.data, u8.unk60.size);
+				load_entity_model_into_scene(sky_entity.sem, rot, pos, {}, {});
+			}
+		}
 		load_entity_into_scene(TagHash(entry.entity.tagHash32), entry.rotation, entry.translation);
 
 
 
 	}
 }
-
-
-//else if (entry.resource.type == 0x80806a40) {// Ambient OCclusion placementP
-	//	printf("Found AO placement\n");
-	//	/*auto const resource = entry.resource.Parse<Unk_80806A40>(table);
-	//	const auto ao_parent = bin::parse<SAmbientOcclusionParent>(resource.ambient_occlusion.data, resource.ambient_occlusion.size);
-	//	auto const ao_map1 = MapStaticAO::FromTag(&gfx, ao_parent.offset_mappings1);
-	//	auto const ao_map2 = MapStaticAO::FromTag(&gfx, ao_parent.offset_mappings2);
-	//	auto const ao_map3 = MapStaticAO::FromTag(&gfx, ao_parent.offset_mappings3);*/
-
-	//}
