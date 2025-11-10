@@ -7,6 +7,7 @@
 #include <execution>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>  
+#include "Renderer/Graphics/Render/FrustumCulling.h"
 
 
 struct Unk_0x14008080 {
@@ -84,12 +85,6 @@ public:
 
 };
 
-struct ObjectVectors {
-	glm::quat rotation;
-	glm::vec3 translation;
-	float_t scale;
-};
-
 struct SStaticInstanceTransform
 {
 	ObjectVectors transform;
@@ -110,7 +105,9 @@ struct SStaticMeshInstances {
 	uint64_t FileSize;
 	std::array<uint32_t, 4> _unk08;
 	TagHash occlusionBounds;
-	std::array<uint32_t, 9> _unk1c;
+	uint32_t _unk1C;
+	std::vector<uint32_t> occlusion_map;
+	std::array<uint32_t, 4> _unk1c;
 	std::vector<SStaticInstanceTransform> instance_transforms;
 	std::array<uint64_t, 5> _unk50;
 	std::vector<TagHash> static_tags;

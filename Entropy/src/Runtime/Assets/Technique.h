@@ -99,6 +99,7 @@ namespace EntropyAssets {           // <<< add
         uint32_t StateSelection;
         
         bool Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice, Microsoft::WRL::ComPtr<ID3D11DeviceContext> pContext, ExternStorage& externs, RenderStates& states, std::vector<std::pair<std::string, TigerScope>>& scopes);
+        bool Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11Device> pDevice, Microsoft::WRL::ComPtr<ID3D11DeviceContext> pContext, ExternStorage& externs, RenderStates& states, std::vector<std::pair<std::string, TigerScope>>& scopes, std::unordered_map<uint32_t, float_t> channels);
     };
 
 } // namespace EntropyAssets       // <<< add

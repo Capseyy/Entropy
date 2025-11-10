@@ -1,0 +1,22 @@
+{
+    "version": 1,
+    "revision": 0,
+    "rules": [
+        {
+            "primary-output": "x64\\Debug\\FrustumCulling.obj",
+            "outputs": [
+                "x64\\Debug\\FrustumCulling.h_9C071C8E6457FEBF.ifc.dt.module.json",
+                "x64\\Debug\\FrustumCulling.h_9C071C8E6457FEBF.ifc.dt.d.json",
+                "x64\\Debug\\FrustumCulling.h.ifc"
+            ],
+            "provides": [
+                {
+                    "logical-name": "C:\\Users\\SAM-PC\\source\\repos\\Entropy\\Entropy\\src\\Renderer\\Graphics\\Render\\FrustumCulling.h",
+                    "source-path": "c:\\users\\sam-pc\\source\\repos\\entropy\\entropy\\src\\renderer\\graphics\\render\\frustumculling.h",
+                    "lookup-method": "absolute"
+                }
+            ],
+            "requires": []
+        }
+    ]
+}

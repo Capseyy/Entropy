@@ -187,7 +187,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
     std::vector<Vec4>& cb,
     const std::vector<Vec4>& constants,
     std::array<Vec4, 16>& temp,
-    void*  /*user_tex_hook*/ = nullptr,
+	std::unordered_map<uint32_t, float_t> channel_floats,
     void*  /*user_samp_hook*/ = nullptr,
     bool trace = true)
 {
@@ -327,18 +327,20 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             break;
         }
         case TfxBytecode::PushObjectChannelVector: {
-            // Slow oscillation between -1 and 1.
-            // Increase 'period' to slow it down further (e.g., 120s = 2 minutes per full cycle).
-            const float time = externs.getFloat(TfxExtern::Frame, 0.0f);          // seconds
-            const float period = std::max(0.001f, 10.0f);          // seconds per loop (default: VERY slow)
+            const auto* d = std::get_if<PushObjectChannelVectorData>(&i.data);
+			
+            if (!channel_floats.empty()) {
+                //printf("PushObjectChannelVector: hash_be=0x%08X\n", d->hash_be);
+                const auto it = channel_floats.find(d->hash_be);
+                const float_t float_value = (it != channel_floats.end()) ? it->second : 1.0f;
+                push(Vec4::splat(float_value));
+            }
+            else {
+                                // Fallback: push 1.0f if no channel floats provided
+				push(Vec4::splat(1.0f));
+            }
 
-            // Use TAU (2?) without relying on M_PI
-            constexpr float TAU = 6.28318530717958647692f; // 2?
-
-            const float phase = std::fmod(time, period) / period * TAU;
-            const float v = std::sin(phase) * 2.0f; // now in [-2, 2]
-
-            push(Vec4(v, v, v, v));
+            // Intentionally do nothing else (no push to the VM stack, etc.)
             break;
         }
         case TfxBytecode::PushTexDimensions: {; 
@@ -452,4 +454,29 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             break;
         }
     }
+}
+
+inline std::vector<uint32_t>
+CollectObjectChannelU32(const std::vector<TfxData>& ops)
+{
+    std::vector<uint32_t> out;
+    out.reserve(16);
+
+    for (const auto& ins : ops) {
+        if (ins.op != TfxBytecode::PushObjectChannelVector)
+            continue;
+
+        // Try to read the payload; adjust field name if needed.
+        if (const auto* d = std::get_if<PushObjectChannelVectorData>(&ins.data)) {
+            // ---- Pick the correct field name for your payload struct ----
+            // Common patterns in codebases: d->index, d->channel, d->unk1
+			const uint32_t key = d->hash_be;
+
+            out.push_back(key);
+        }
+        // If the instruction encodes the id in a unified type used by both Global/Object,
+        // add another branch here (e.g., std::get_if<ChannelVectorData>(...)).
+    }
+
+    return out;
 }

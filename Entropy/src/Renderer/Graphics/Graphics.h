@@ -32,6 +32,7 @@
 #include "Renderer/Loaders/TextureLoader.h"
 #include "Renderer/Loaders/Map.h"
 #include "Renderer/Graphics/Render/GBufferRT.h"
+#include "Render/FrustumCulling.h"
 
 
 enum class TfxRenderStage : uint8_t {
@@ -198,7 +199,7 @@ private:
 
 	Microsoft::WRL::ComPtr<ID3D11BlendState> bsAdditive2RT;
 
-	void DrawStaticMesh(const RenderStatic& rs, const View& view);
+	void DrawStaticMesh(const RenderStatic& rs, const View& view, TfxRenderStage renderStage);
 	void Create1x1SRV(UINT color, ComPtr<ID3D11ShaderResourceView>&);
 	void CreateCB13();
 	void InitializeScopes();

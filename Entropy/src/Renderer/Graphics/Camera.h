@@ -45,7 +45,7 @@ private:
 	XMMATRIX viewMatrix;
 	XMMATRIX projectionMatrix;
 
-	
+
 
 	const XMVECTOR DEFAULT_FORWARD_VECTOR = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
 	const XMVECTOR DEFAULT_BACKWARD_VECTOR = XMVectorSet(0.0f, -1.0f, 0.0f, 0.0f);

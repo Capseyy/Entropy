@@ -18,7 +18,9 @@
 #include <glm/gtc/quaternion.hpp>
 #include "TigerEngine/Technique/Tfx/tfx_runtime.h"
 #include "TigerEngine/Map/occlusion.h"
+#include "Renderer/Graphics/Render/FrustumCulling.h"
 #include <glm/gtc/type_ptr.hpp> 
+#include "d3d11.h"
 
 class WideHashData {
 public:
@@ -89,8 +91,11 @@ public:
     bool     valid{ false };
 
     template <typename T>
-    T Parse(TagHash& tag);   // defined after namespace bin
-                // shim, defined after namespace bin
+    inline T Parse(TagHash& tag);   
+
+    template <typename T>
+    inline T Parse(const TagHash& owner) const;   // const-correct
+                
 };
 
 struct RelativePointer64 {
@@ -207,20 +212,20 @@ namespace bin {
         //r.need(N);
         r.seek(N);   // advance by N bytes, no alloc, no copy
     }
-
+   
     inline void read_into(Reader& r, Aabb& q) {
-        glm::vec4 vec;
-        vec.w = r.read_arith<float_t>();
+        DirectX::XMFLOAT3 vec;
         vec.x = r.read_arith<float_t>();
         vec.y = r.read_arith<float_t>();
         vec.z = r.read_arith<float_t>();
-        q.min = vec;
-        glm::vec4 vec1;
-        vec1.w = r.read_arith<float_t>();
+        r.read_arith<float_t>();
+        q.minv = vec;
+        DirectX::XMFLOAT3 vec1;
         vec1.x = r.read_arith<float_t>();
         vec1.y = r.read_arith<float_t>();
         vec1.z = r.read_arith<float_t>();
-        q.max = vec1;
+        r.read_arith<float_t>();
+        q.maxv = vec1;
     }
 
     inline void read_into(Reader& r, glm::vec4& v) {
@@ -419,6 +424,18 @@ inline T ResourcePointer::Parse(TagHash& tag) {
     return bin::parse<T>(ptr, remaining);
 }
 
+template <typename T>
+inline T ResourcePointer::Parse(const TagHash& tag) const{
+    if (!tag.data) {
+        throw std::invalid_argument("ResourcePointer::Parse: TagHash.data is null");
+    }
+    if (offset > static_cast<uint64_t>(tag.size)) {
+        throw std::out_of_range("ResourcePointer::Parse: offset beyond tag buffer");
+    }
+    const unsigned char* ptr = tag.data + static_cast<size_t>(offset);
+    const std::size_t remaining = static_cast<std::size_t>(tag.size - offset);
+    return bin::parse<T>(ptr, remaining);
+}
 //template <typename T>
 //inline T ResourcePointer::Parse(TagHash tag) {
 //    return Parse<T>(static_cast<const TagHash&>(tag));

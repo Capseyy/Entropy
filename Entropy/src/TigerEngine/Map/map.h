@@ -11,7 +11,6 @@
 #include "occlusion.h"
 #include "TigerEngine/Entity/entity.h"
 #include "Runtime/Assets/AssetSystem.h"
-//#include "TigerEngine/Map/TigerBuffer.h"
 
 struct s_bubble_parent {
 	uint64_t filesize;
@@ -147,7 +146,7 @@ struct SLightCollection {
 
 struct MapStaticAO {
 public:
-	std::shared_ptr<ID3D11ShaderResourceView> ao_buffer;                       // big packed AO vertex blob
+	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> ao_buffer;                       // big packed AO vertex blob
 	std::unordered_map<uint64_t, uint32_t> offsets;  // id -> offset (units: vertices or bytes)
 	UINT AO_stride = 0; // bytes per vertex
 
@@ -187,12 +186,6 @@ MakeSrvSlice(ID3D11Device* dev,
 	HRESULT hr = dev->CreateShaderResourceView(res.Get(), &desc, &slice);
 	return SUCCEEDED(hr) ? slice : nullptr;
 }
-
-struct SObjectOcclusionBounds {
-	Aabb unk0;
-	std::array<uint32_t, 4> unk10;
-};
-
 
 struct Unk_80806AA9 {
 	std::array<float_t, 16> transform;

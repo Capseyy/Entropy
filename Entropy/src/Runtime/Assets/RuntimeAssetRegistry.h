@@ -13,6 +13,7 @@ struct BufferPayload {
     D3D11_BUFFER_DESC desc{};
     std::vector<uint8_t> data;
     UINT stride = 0;
+	uint32_t id = 0;
 };
 
 struct ShaderPayload {

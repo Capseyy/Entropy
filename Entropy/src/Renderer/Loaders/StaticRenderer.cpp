@@ -20,6 +20,7 @@ uint32_t StaticRenderer::RegisterBufferBlob(const void* bytes, size_t size, uint
     UINT bindFlags, UINT stride)
 {
     if (id == 0xFFFFFFFFu) return 0;
+
     if (!gfx_.registry->HasBuffer(id)) {
         BufferPayload p{};
         p.desc.Usage = D3D11_USAGE_DEFAULT;
@@ -31,16 +32,22 @@ uint32_t StaticRenderer::RegisterBufferBlob(const void* bytes, size_t size, uint
 
         const uint8_t* b = static_cast<const uint8_t*>(bytes);
         p.data.assign(b, b + size);
-
         gfx_.registry->RegisterBuffer(id, std::move(p));
+    }
+    else {
+        // make sure SRV bind intent isn’t lost later
+        auto payload = gfx_.registry->GetBuffer(id);
+        const UINT newFlags = payload.desc.BindFlags | bindFlags;
+        if (newFlags != payload.desc.BindFlags) {
+            payload.desc.BindFlags = newFlags;
+            gfx_.registry->RegisterBuffer(id, std::move(payload)); // update
+        }
     }
     return id;
 }
 
 RenderStatic StaticRenderer::Build()
 {
-    //printf("StaticRenderer::Build for static hash %08X\n", static_hash_.hash);
-
     // --- Parse model + mesh ---
     auto static_tag = TagHash(static_hash_);
     auto s = bin::parse<SStaticModel>(static_tag.data, static_tag.size, bin::Endian::Little);
@@ -48,214 +55,183 @@ RenderStatic StaticRenderer::Build()
     auto mesh_tag = TagHash(s.opaque_meshes);
     auto m = bin::parse<SStaticMeshData>(mesh_tag.data, mesh_tag.size, bin::Endian::Little);
 
-    // Pick LOD (your logic)
+    // LOD pass
     int max_detail = 0xff;
-    for (auto group : m.mesh_groups) {
-        if (group.TfxRenderStage < max_detail) {
-            max_detail = group.TfxRenderStage;
-        }
-    }
+    for (const auto& group : m.mesh_groups)
+        if (group.TfxRenderStage < max_detail) max_detail = group.TfxRenderStage;
 
-    // ---- Collect buffer-group ids + index format once (avoid TagHash(ids[1]) later) ----
-    struct GroupRef { uint32_t posId{}, idxId{}, uvId{}, colId{}; bool idx32{}; };
+    // Pre-extract buffer refs + derived info from headers (no registry queries later)
+    struct GroupRef {
+        uint32_t posId{}, idxId{}, uvId{}, colId{};
+        uint32_t vertexStride{}, uvStride{}, colorStride{};
+        uint32_t indexCount{};
+        DXGI_FORMAT indexFormat{ DXGI_FORMAT_UNKNOWN };
+        bool hasPos{}, hasIdx{}, hasUv{}, hasCol{};
+    };
     std::vector<GroupRef> groupRefs;
     groupRefs.reserve(m.buffers.size());
 
+    auto registerVB = [&](const auto& vb, uint32_t& idOut, uint32_t& strideOut, bool& has) {
+        if (vb.hash == 0xFFFFFFFFu) { has = false; return; }
+        const auto vbh = bin::parse<VertexBufferHeader>(vb.data, vb.size, bin::Endian::Little);
+        const void* bytes = TagHash(vb.reference).data;
+        idOut = RegisterBufferBlob(bytes, vbh.dataSize, vb.hash, D3D11_BIND_VERTEX_BUFFER, vbh.stride);
+        strideOut = vbh.stride;
+        has = (idOut != 0);
+        };
+    auto registerIB = [&](const auto& ib, uint32_t& idOut, uint32_t& idxCountOut, DXGI_FORMAT& fmtOut, bool& has) {
+        if (ib.hash == 0xFFFFFFFFu) { has = false; return; }
+        const auto ibh = bin::parse<IndexBufferHeader>(ib.data, ib.size, bin::Endian::Little);
+        const void* bytes = TagHash(ib.reference).data;
+        idOut = RegisterBufferBlob(bytes, ibh.dataSize, ib.hash, D3D11_BIND_INDEX_BUFFER, 0);
+        const bool idx32 = (ibh.is32 != 0);
+        fmtOut = idx32 ? DXGI_FORMAT_R32_UINT : DXGI_FORMAT_R16_UINT;
+        idxCountOut = idx32 ? (ibh.dataSize / 4u) : (ibh.dataSize / 2u);
+        has = (idOut != 0);
+        };
+
     for (const auto& bg : m.buffers) {
         GroupRef gr{};
-        if (bg.IndexBuffer.hash != 0xffffffff) {
-            auto ibh = bin::parse<IndexBufferHeader>(bg.IndexBuffer.data, bg.IndexBuffer.size, bin::Endian::Little);
-            auto ib_bytes = TagHash(bg.IndexBuffer.reference).data;
-            gr.idxId = RegisterBufferBlob(ib_bytes, ibh.dataSize, bg.IndexBuffer.hash, D3D11_BIND_INDEX_BUFFER);
-            gr.idx32 = (ibh.is32 != 0);
-        }
-        if (bg.VertexBuffer.hash != 0xffffffff) {
-            auto vbh = bin::parse<VertexBufferHeader>(bg.VertexBuffer.data, bg.VertexBuffer.size, bin::Endian::Little);
-            auto vb_bytes = TagHash(bg.VertexBuffer.reference).data;
-            gr.posId = RegisterBufferBlob(vb_bytes, vbh.dataSize, bg.VertexBuffer.hash, D3D11_BIND_VERTEX_BUFFER, vbh.stride);
-        }
-        if (bg.UVBuffer.hash != 0xffffffff) {
-            auto uvbh = bin::parse<VertexBufferHeader>(bg.UVBuffer.data, bg.UVBuffer.size, bin::Endian::Little);
-            auto uv_bytes = TagHash(bg.UVBuffer.reference).data;
-            gr.uvId = RegisterBufferBlob(uv_bytes, uvbh.dataSize, bg.UVBuffer.hash, D3D11_BIND_VERTEX_BUFFER, uvbh.stride);
-        }
-        if (bg.VertexColourBuffer.hash != 0xffffffff) {
-            auto vcbh = bin::parse<VertexBufferHeader>(bg.VertexColourBuffer.data, bg.VertexColourBuffer.size, bin::Endian::Little);
-            auto vc_bytes = TagHash(bg.VertexColourBuffer.reference).data;
-            gr.colId = RegisterBufferBlob(vc_bytes, vcbh.dataSize, bg.VertexColourBuffer.hash, D3D11_BIND_VERTEX_BUFFER, vcbh.stride);
+        registerIB(bg.IndexBuffer, gr.idxId, gr.indexCount, gr.indexFormat, gr.hasIdx);
+        registerVB(bg.VertexBuffer, gr.posId, gr.vertexStride, gr.hasPos);
+        registerVB(bg.UVBuffer, gr.uvId, gr.uvStride, gr.hasUv);
+        // colour buffer needs SRV later; still capture stride now
+        if (bg.VertexColourBuffer.hash != 0xFFFFFFFFu) {
+            const auto vcbh = bin::parse<VertexBufferHeader>(bg.VertexColourBuffer.data, bg.VertexColourBuffer.size, bin::Endian::Little);
+            const void* bytes = TagHash(bg.VertexColourBuffer.reference).data;
+            gr.colId = RegisterBufferBlob(bytes, vcbh.dataSize, bg.VertexColourBuffer.hash,
+                D3D11_BIND_VERTEX_BUFFER | D3D11_BIND_SHADER_RESOURCE,
+                vcbh.stride);
+            gr.colorStride = vcbh.stride;
+            gr.hasCol = (gr.colId != 0);
         }
         groupRefs.push_back(gr);
     }
+
+    // Specials: same idea — derive counts/strides from headers; no registry reads.
     UINT highestDetail_special = 99;
-    for (const auto& party : s.special_meshes) {
-        if (party.LodCatagory < highestDetail_special) {
-            highestDetail_special = party.LodCatagory;
-        }
-    }
+    for (const auto& party : s.special_meshes)
+        if (party.LodCatagory < highestDetail_special) highestDetail_special = party.LodCatagory;
 
     std::vector<StaticSpecial> specials;
-    for (auto& bg : s.special_meshes)
-    {
-        if (highestDetail_special != bg.LodCatagory) {
-            continue;
-        }
-        GroupRef gr_special{};
-        StaticSpecial special;
+    specials.reserve(s.special_meshes.size());
+    for (const auto& bg : s.special_meshes) {
+        if (bg.LodCatagory != highestDetail_special) continue;
+
         auto grp = std::make_shared<BufferGroup>();
-        if (bg.IndexBuffer.hash != 0xffffffff) {
-            auto ibh = bin::parse<IndexBufferHeader>(bg.IndexBuffer.data, bg.IndexBuffer.size, bin::Endian::Little);
-            auto ib_bytes = TagHash(bg.IndexBuffer.reference).data;
-            gr_special.idxId = RegisterBufferBlob(ib_bytes, ibh.dataSize, bg.IndexBuffer.hash, D3D11_BIND_INDEX_BUFFER);
-            gr_special.idx32 = (ibh.is32 != 0);
-            const UINT byteWidth = gfx_.registry->GetBuffer(gr_special.idxId).desc.ByteWidth;
-            grp->index = gfx_.assets->EnqueueBuffer(gr_special.idxId).future.get();
-            grp->indexFormat = gr_special.idx32 ? DXGI_FORMAT_R32_UINT : DXGI_FORMAT_R16_UINT;
-            grp->indexCount = gr_special.idx32 ? (byteWidth / 4u) : (byteWidth / 2u);
+
+        // index
+        if (bg.IndexBuffer.hash != 0xFFFFFFFFu) {
+            const auto ibh = bin::parse<IndexBufferHeader>(bg.IndexBuffer.data, bg.IndexBuffer.size, bin::Endian::Little);
+            const void* bytes = TagHash(bg.IndexBuffer.reference).data;
+            const uint32_t id = RegisterBufferBlob(bytes, ibh.dataSize, bg.IndexBuffer.hash, D3D11_BIND_INDEX_BUFFER, 0);
+            grp->index = gfx_.assets->EnqueueBuffer(id).future.get();
+            grp->indexFormat = (ibh.is32 ? DXGI_FORMAT_R32_UINT : DXGI_FORMAT_R16_UINT);
+            grp->indexCount = ibh.is32 ? (ibh.dataSize / 4u) : (ibh.dataSize / 2u);
         }
-        if (bg.VertexBuffer1.hash != 0xffffffff) {
-            auto vbh = bin::parse<VertexBufferHeader>(bg.VertexBuffer1.data, bg.VertexBuffer1.size, bin::Endian::Little);
-            auto vb_bytes = TagHash(bg.VertexBuffer1.reference).data;
-            gr_special.posId = RegisterBufferBlob(vb_bytes, vbh.dataSize, bg.VertexBuffer1.hash, D3D11_BIND_VERTEX_BUFFER, vbh.stride);
-            grp->vertex = gfx_.assets->EnqueueBuffer(gr_special.posId).future.get();
-            grp->vertexStride = gfx_.registry->GetBuffer(gr_special.posId).stride;
+
+        // pos
+        if (bg.VertexBuffer1.hash != 0xFFFFFFFFu) {
+            const auto vbh = bin::parse<VertexBufferHeader>(bg.VertexBuffer1.data, bg.VertexBuffer1.size, bin::Endian::Little);
+            const void* bytes = TagHash(bg.VertexBuffer1.reference).data;
+            const uint32_t id = RegisterBufferBlob(bytes, vbh.dataSize, bg.VertexBuffer1.hash, D3D11_BIND_VERTEX_BUFFER, vbh.stride);
+            grp->vertex = gfx_.assets->EnqueueBuffer(id).future.get();
+            grp->vertexStride = vbh.stride;
         }
-        if (bg.VertexBuffer2.hash != 0xffffffff) {
-            auto uvbh = bin::parse<VertexBufferHeader>(bg.VertexBuffer2.data, bg.VertexBuffer2.size, bin::Endian::Little);
-            auto uv_bytes = TagHash(bg.VertexBuffer2.reference).data;
-            gr_special.uvId = RegisterBufferBlob(uv_bytes, uvbh.dataSize, bg.VertexBuffer2.hash, D3D11_BIND_VERTEX_BUFFER, uvbh.stride);
-            grp->uv = gfx_.assets->EnqueueBuffer(gr_special.uvId).future.get();
-            grp->uvStride = gfx_.registry->GetBuffer(gr_special.uvId).stride;
+
+        // uv
+        if (bg.VertexBuffer2.hash != 0xFFFFFFFFu) {
+            const auto uvbh = bin::parse<VertexBufferHeader>(bg.VertexBuffer2.data, bg.VertexBuffer2.size, bin::Endian::Little);
+            const void* bytes = TagHash(bg.VertexBuffer2.reference).data;
+            const uint32_t id = RegisterBufferBlob(bytes, uvbh.dataSize, bg.VertexBuffer2.hash, D3D11_BIND_VERTEX_BUFFER, uvbh.stride);
+            grp->uv = gfx_.assets->EnqueueBuffer(id).future.get();
+            grp->uvStride = uvbh.stride;
         }
-        if (bg.VertexColourBuffer.hash != 0xffffffff) {
-            auto vcbh = bin::parse<VertexBufferHeader>(bg.VertexColourBuffer.data, bg.VertexColourBuffer.size, bin::Endian::Little);
-            auto vc_bytes = TagHash(bg.VertexColourBuffer.reference).data;
-            gr_special.colId = RegisterBufferBlob(vc_bytes, vcbh.dataSize, bg.VertexColourBuffer.hash, D3D11_BIND_VERTEX_BUFFER, vcbh.stride);
-            const auto& buf = gfx_.registry->GetBuffer(gr_special.colId);
-            const UINT stride = buf.stride;
-            const UINT byteWidth = buf.desc.ByteWidth;
+
+        // color SRV (no AddRef/Release; move the ComPtr the asset system returns)
+        if (bg.VertexColourBuffer.hash != 0xFFFFFFFFu) {
+            const auto vcbh = bin::parse<VertexBufferHeader>(bg.VertexColourBuffer.data, bg.VertexColourBuffer.size, bin::Endian::Little);
+            const void* bytes = TagHash(bg.VertexColourBuffer.reference).data;
+
+            const uint32_t id = RegisterBufferBlob(bytes,
+                vcbh.dataSize,
+                bg.VertexColourBuffer.hash,
+                D3D11_BIND_VERTEX_BUFFER | D3D11_BIND_SHADER_RESOURCE, // ? add SRV bind
+                vcbh.stride);
+
             BufferSRVMeta meta{};
-            if (stride == 1) {
-                meta.typedFormat = DXGI_FORMAT_R8_UNORM;
-            }
-            else {
-                meta.typedFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
-            }
-            meta.bytesPerElement = stride;
-            auto res = gfx_.assets->EnqueueBufferSRV(gr_special.colId, meta).future.get();
+            meta.typedFormat = (vcbh.stride == 1) ? DXGI_FORMAT_R8_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM;
+            meta.bytesPerElement = vcbh.stride;
 
-            ID3D11ShaderResourceView* raw = res->srv.Get();
-            if (raw) raw->AddRef();  // take our own ref
-
-            grp->color.reset(raw, [](ID3D11ShaderResourceView* p) { if (p) p->Release(); });
-            grp->colorStride = gfx_.registry->GetBuffer(gr_special.colId).stride;
+            auto srvRes = gfx_.assets->EnqueueBufferSRV(id, meta).future.get();
+            grp->color = std::move(srvRes->srv);   // ? move the ComPtr, do NOT call .Get()
+            grp->colorStride = vcbh.stride;
         }
-        special.group = grp;
+
+        StaticSpecial special{};
+        special.group = std::move(grp);
         special.input_layout_index = bg.input_layout_index;
         special.part = bg;
-        specials.push_back(special);
-        //this->
+        specials.emplace_back(std::move(special));
     }
 
-    // ---- Enqueue buffer groups (parallel) ----
-    std::vector<std::shared_future<std::shared_ptr<BufferGroup>>> groupF;
-    groupF.reserve(groupRefs.size());
-
-    for (const auto& gr : groupRefs) {
-        auto fut = gfx_.pool->Submit([this, gr]() {
-            auto grp = std::make_shared<BufferGroup>();
-
-            if (gr.posId) {
-                grp->vertex = gfx_.assets->EnqueueBuffer(gr.posId).future.get();
-                grp->vertexStride = gfx_.registry->GetBuffer(gr.posId).stride;
-            }
-            if (gr.idxId) {
-                grp->index = gfx_.assets->EnqueueBuffer(gr.idxId).future.get();
-                const UINT byteWidth = gfx_.registry->GetBuffer(gr.idxId).desc.ByteWidth;
-                grp->indexFormat = gr.idx32 ? DXGI_FORMAT_R32_UINT : DXGI_FORMAT_R16_UINT;
-                grp->indexCount = gr.idx32 ? (byteWidth / 4u) : (byteWidth / 2u);
-            }
-            if (gr.uvId) {
-                grp->uv = gfx_.assets->EnqueueBuffer(gr.uvId).future.get();
-                grp->uvStride = gfx_.registry->GetBuffer(gr.uvId).stride;
-            }
-            if (gr.colId) {
-                const auto& buf = gfx_.registry->GetBuffer(gr.colId);
-                const UINT stride = buf.stride;
-                const UINT byteWidth = buf.desc.ByteWidth;
-                BufferSRVMeta meta{};
-                if (stride == 1) {
-                    meta.typedFormat = DXGI_FORMAT_R8_UNORM;
-                }
-                else {
-                    meta.typedFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
-                }
-                meta.bytesPerElement = stride;
-                auto res = gfx_.assets->EnqueueBufferSRV(gr.colId, meta).future.get();
-
-                ID3D11ShaderResourceView* raw = res->srv.Get();
-                if (raw) raw->AddRef();  // take our own ref
-
-                grp->color.reset(raw, [](ID3D11ShaderResourceView* p) { if (p) p->Release(); });
-                grp->colorStride = gfx_.registry->GetBuffer(gr.colId).stride;               // ComPtr copy (AddRef)
-            }
-            return grp;
-            }).share();
-        groupF.push_back(fut);
-    }
+    // Enqueue techniques (your dedupe already happens in asset system)
     auto mesh = std::make_shared<StaticMesh>();
     mesh->techniques.resize(s.Techniques.size());
-    std::vector<std::shared_future<std::shared_ptr<EntropyAssets::Technique>>> techniqueFutures;
-    for (size_t i = 0; i < s.Techniques.size(); ++i) {
-        const uint32_t tid32 = s.Techniques[i].Unk0.hash;
-        //printf("[Build] part %zu technique %08X\n", i, tid32);
-        auto tech = gfx_.assets->EnqueueTechnique(s.Techniques[i].Unk0); // returns shared_future<shared_ptr<Technique>>
-        mesh->techniques[i] = tech.get();
-    }
+    for (size_t i = 0; i < s.Techniques.size(); ++i)
+        mesh->techniques[i] = gfx_.assets->EnqueueTechnique(s.Techniques[i].Unk0).get();
 
-    std::vector<std::shared_future<std::shared_ptr<EntropyAssets::Technique>>> techF_specials(specials.size());
-    for (size_t i = 0; i < specials.size(); ++i) {
-        auto& tid32 = specials[i].part.technique.hash;
-        //printf("[Build] part %zu technique %08X\n", i, tid32);
-        techF_specials[i] = gfx_.assets->EnqueueTechnique(specials[i].part.technique); // returns shared_future<shared_ptr<Technique>>
-    }
-    // ---- Assemble mesh ----
-
-    mesh->groups.reserve(groupF.size());
-    for (auto& f : groupF) {
-        try {
-            mesh->groups.push_back(f.get());
+    // Build BufferGroups; spawn threads only if it’s worth it
+    mesh->groups.reserve(groupRefs.size());
+    auto buildOne = [this](const GroupRef& gr) -> std::shared_ptr<BufferGroup> {
+        auto grp = std::make_shared<BufferGroup>();
+        if (gr.hasPos) { grp->vertex = gfx_.assets->EnqueueBuffer(gr.posId).future.get(); grp->vertexStride = gr.vertexStride; }
+        if (gr.hasIdx) { grp->index = gfx_.assets->EnqueueBuffer(gr.idxId).future.get(); grp->indexFormat = gr.indexFormat; grp->indexCount = gr.indexCount; }
+        if (gr.hasUv) { grp->uv = gfx_.assets->EnqueueBuffer(gr.uvId).future.get(); grp->uvStride = gr.uvStride; }
+        if (gr.hasCol) {
+            BufferSRVMeta meta{};
+            meta.typedFormat = (gr.colorStride == 1) ? DXGI_FORMAT_R8_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM;
+            meta.bytesPerElement = gr.colorStride;
+            auto srvRes = gfx_.assets->EnqueueBufferSRV(gr.colId, meta).future.get();
+            grp->color = std::move(srvRes->srv);
+            grp->colorStride = gr.colorStride;
         }
-        catch (const std::exception& e) {
-            //printf("[Build][Group] failed: %s\n", e.what());
-            mesh->groups.push_back(nullptr);
-        }
-    }
+        return grp;
+        };
 
+   
+    for (const auto& gr : groupRefs)
+        mesh->groups.emplace_back(buildOne(gr));
+    
+
+    // Copy over light meta only (avoid copying heavy m if not required)
     mesh->parts = m.parts;
     mesh->meshGroups = m.mesh_groups;
-
     mesh->id = static_hash_.hash;
-    // ---- Output renderable ----
+
+    StaticMeshConstants smc;
+	smc.mesh_offset = m.mesh_offset;
+	smc.max_colour_index = m.max_colour_index;
+	smc.mesh_scale = m.mesh_scale;
+	smc.texcoord_offset = m.texture_coordinate_offset;
+	smc.texcoord_scale = m.texture_coordinate_scale;
+
+
     RenderStatic out{};
     out.mesh = std::move(mesh);
-    out.meshData = m; // if you need original meta later
+    out.meshData = smc;
+
+    // specials techniques
     out.specials.resize(specials.size());
-    for (size_t i = 0; i < specials.size(); ++i)
-    {
+    for (size_t i = 0; i < specials.size(); ++i) {
+        auto spec = std::make_shared<StaticSpecial>(specials[i]);
+        // technique resolve
         std::shared_ptr<EntropyAssets::Technique> t;
-        try {
-            if (techF_specials[i].valid()) t = techF_specials[i].get();
-        }
-        catch (const std::exception& e) {
-            //printf("[Build][Tech] id=%08X get() failed: %s\n", techF_specials[i], e.what());
-        }
-        auto mesh_special = std::make_shared<StaticSpecial>();
-        mesh_special->group = specials[i].group;
-        mesh_special->input_layout_index = specials[i].input_layout_index;
-        mesh_special->part = specials[i].part;
-        mesh_special->technique = t;
-        mesh_special->techniqueId = specials[i].part.technique.hash;
-        out.specials[i] = std::move(mesh_special);
+        try { t = gfx_.assets->EnqueueTechnique(spec->part.technique).get(); }
+        catch (...) {}
+        spec->technique = std::move(t);
+        spec->techniqueId = spec->part.technique.hash;
+        out.specials[i] = std::move(spec);
     }
     return out;
 }

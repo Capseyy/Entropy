@@ -5,6 +5,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp> 
 #include "TigerEngine/Entity/entity.h"
+#include "TigerEngine/Technique/Tfx/tfx_program.h"
 
 struct DynamicMeshPart {
     uint32_t techniqueId = 0;
@@ -18,7 +19,7 @@ struct BufferGroupDynamic {
     std::shared_ptr<ID3D11Buffer> buffer2;
     std::shared_ptr<ID3D11Buffer> buffer3;
     std::shared_ptr<ID3D11Buffer> index_buffer;
-    std::shared_ptr<ID3D11ShaderResourceView> color;
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> color;
     std::shared_ptr<ID3D11Buffer> skinning_buffer;
     std::vector<DynamicMeshPart> parts;
     UINT vertex0Stride = 0;
@@ -49,5 +50,6 @@ struct RenderEntity {
     std::vector<std::shared_ptr<EntropyAssets::Technique>> external_mats;
     uint32_t id;
     std::vector<Unk_808072C5> external_material_mapping;
+    std::unordered_map<uint32_t, float_t> channels;
     // add per-part overrides if your format has them
 };

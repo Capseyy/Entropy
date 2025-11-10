@@ -4,6 +4,7 @@
 #include "Scope/AtmosphereExternUI.h"
 #include "Scope/FrameGlobalLightingExternUI.h"
 #include "Scope/global_channel_ui.h"
+#include "Scope/ChannelEditor.h"
 
 #pragma comment(lib, "d3dcompiler.lib")
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
@@ -174,43 +175,99 @@ inline float float_from_bits(std::uint32_t bits) {
 }
 Microsoft::WRL::ComPtr<ID3DUserDefinedAnnotation> anno;
 
-void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
+void BuildViewAndProj(View& viewState, const Camera& camera, int windowWidth, int windowHeight)
+{
+	// --- View (world -> camera) ---
+	// Whatever you already use to get the camera's view matrix:
+	XMMATRIX V = camera.GetViewMatrix();             // LH, row-major
+	XMStoreFloat4x4(&viewState.world_to_camera, V);
+
+	// --- Projection (camera -> projective) ---
+	const float fovY = XMConvertToRadians(90.0f);
+	const float aspect = float(windowWidth) / float(windowHeight);
+	const float zn = std::max(0.001f, camera.GetNearZ());
+
+	// Reversed-Z infinite LH projection:
+	const float t = tanf(0.5f * fovY);
+	const float m11 = 1.0f / (t * aspect);
+	const float m22 = 1.0f / t;
+
+	XMMATRIX P = XMMatrixSet(
+		m11, 0.0f, 0.0f, 0.0f,
+		0.0f, m22, 0.0f, 0.0f,
+		0.0f, 0.0f, 0.0f, -1.0f,
+		0.0f, 0.0f, zn, 0.0f
+	);
+	XMStoreFloat4x4(&viewState.camera_to_projective, P);
+
+	// --- Combined ---
+	XMMATRIX VP = XMMatrixMultiply(V, P);            // *** V * P (NOT P * V) ***
+	XMStoreFloat4x4(&viewState.world_to_projective, VP);
+}
+
+
+void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view, TfxRenderStage renderStage)
 {
 	ID3D11DeviceContext* ctx = pContext.Get();
+	const auto& mesh = *rs.mesh;
+
+	XMFLOAT3 mesh_offset{
+		rs.meshData.mesh_offset[0],
+		rs.meshData.mesh_offset[1],
+		rs.meshData.mesh_offset[2]
+	};
+	std::vector<ObjectVectors> visibleWorld;
+
+	using namespace culldbg;
+	const XMFLOAT4X4& W2P = view.world_to_projective;
+
+
+	Frustum fr = Frustum::FromColumnMajor(W2P, true);
+
+	// 3) (Optional) print once to verify
+	
+
+	for (uint32_t i = 0; i < rs.world.size(); ++i) {
+		int failed = -1;
+		if (!culldbg::aabb_in_frustum_dbg(fr, rs.bounds[i], &failed, /*verbose=*/false)) {
+			// dump the raw box
+			/*culldbg::print("[Cull] instance %u FAILED on plane %d\n", i, failed);
+			culldbg::printAabb("rs.bounds[i]", rs.bounds[i]);*/
+			continue; // culled
+		}
+		else {
+			visibleWorld.push_back(rs.world[i]);
+		}
+	}
+
+	if (visibleWorld.size() == 0) return;
+	 
+	Microsoft::WRL::ComPtr<ID3D11Buffer> instanceBuf;
+	ID3D11Buffer* b12 = g_scopeView_b12.Get();
+
+	static constexpr UINT AO_SLOT = 1;
+	UINT mesh_ao_offset = 0;
+	const bool hasAo =
+		this->staticAO1.TryGetOffset(rs.AOID, mesh_ao_offset); 
+	
+	CreateCB1_FreshDynamic(pDevice.Get(), pContext.Get(),
+		mesh_offset,
+		rs.meshData.mesh_scale,
+		rs.meshData.texcoord_scale,
+		rs.meshData.texcoord_offset[0],
+		rs.meshData.texcoord_offset[1],
+		rs.meshData.max_colour_index,
+		visibleWorld,   // <— just the visible ones
+		instanceBuf);
 	wchar_t label[128];
 	swprintf(label, 128, L"Static geometry Opaque %08X", rs.mesh->id);
 	//const DirectX::XMMATRIX world = rs.world;
 	//printf("Loading Static %08X", rs.mesh->id);
 	GpuMarker mark(ctx, label);
-	const auto& mesh = *rs.mesh;
-
-	static constexpr UINT AO_SLOT = 1; // keep 0 for your main mesh stream
-	UINT mesh_ao_offset = 0;
-	const bool hasAo =
-		this->staticAO1.TryGetOffset(rs.AOID, mesh_ao_offset); // overload w/ out param by ref or pointer
-	// View constant buffer(s)
-	Microsoft::WRL::ComPtr<ID3D11Buffer> instanceBuf;       // if you also use cb1 for per-object, leave it bound
-	
-	ID3D11Buffer* b12 = g_scopeView_b12.Get();
-	XMFLOAT3 mesh_offset;
-	mesh_offset.x = rs.meshData.mesh_offset[0];
-	mesh_offset.y = rs.meshData.mesh_offset[1];
-	mesh_offset.z = rs.meshData.mesh_offset[2];
-	
-	
-
-	CreateCB1_FreshDynamic(pDevice.Get(), ctx,
-		mesh_offset,
-		rs.meshData.mesh_scale,
-		rs.meshData.texture_coordinate_scale,
-		rs.meshData.texture_coordinate_offset[0],
-		rs.meshData.texture_coordinate_offset[1],
-		rs.meshData.max_colour_index,
-		rs.world,
-		instanceBuf);
-	for (int i=0; i < mesh.meshGroups.size(); ++i) {
+	ID3D11Buffer* buf = instanceBuf.Get();
+	for (int i = 0; i < mesh.meshGroups.size(); ++i) {
 		const auto& mg = mesh.meshGroups[i];
-		if (mg.TfxRenderStage != 0) {
+		if (mg.TfxRenderStage != static_cast<UINT>(renderStage)) {
 			continue;
 		}
 		const auto& part = mesh.parts[mg.part_index];
@@ -225,9 +282,9 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 		ctx->IASetInputLayout(tiger_input_layouts[mg.input_layout_index].Get());
 
 
-		const BufferGroup& bg = *mesh.groups[part.buffer_index];
+		const BufferGroup& bg = *mesh.groups[part.buffer_index].get();
 		if (!bg.index || !bg.vertex || bg.indexCount == 0) {
-			//printf("Skip part: missing VB/IB or zero indexCount\n");
+			printf("Skip part: missing VB/IB or zero indexCount\n");
 			continue;
 		}
 
@@ -239,24 +296,22 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 
 		if (bg.vertex) { vbs[vbCount] = bg.vertex.get(); strides[vbCount] = bg.vertexStride; ++vbCount; }
 		if (bg.uv) { vbs[vbCount] = bg.uv.get();     strides[vbCount] = bg.uvStride;     ++vbCount; }
-		//if (bg.color) { vbs[vbCount] = bg.color.get();  strides[vbCount] = bg.colorStride;  ++vbCount; }
 
 		ctx->IASetVertexBuffers(0, vbCount, vbs, strides, offsets);
 		ctx->IASetIndexBuffer(bg.index.get(), bg.indexFormat, 0);
 
-	
-		ID3D11ShaderResourceView* s = bg.color.get();
+
+		ID3D11ShaderResourceView* s = bg.color.Get();
 		//ctx->VSSetShaderResources(1, 1, &s);
 		ctx->VSSetShaderResources(0, 1, &s);
 		pContext->OMSetDepthStencilState(depthStencilState.Get(), 0);
 		if (tech)
 			tech->Bind(pDevice, pContext, externs, states, scopes);
 
-		ID3D11Buffer* buf = instanceBuf.Get();
 		ctx->VSSetConstantBuffers(1, 1, &buf);
-		const UINT instanceCount = (UINT)rs.world.size();
+		const UINT instanceCount = (UINT)visibleWorld.size();
 		if (hasAo) {
-			ID3D11ShaderResourceView* ao = staticAO1.ao_buffer.get();
+			ID3D11ShaderResourceView* ao = staticAO1.ao_buffer.Get();
 			pContext->VSSetShaderResources(1, 1, &ao);
 		}
 		ctx->DrawIndexedInstanced(part.index_count,
@@ -266,41 +321,10 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view)
 			0);
 	}
 
-}
-
-void Graphics::DrawStaticSpecial(const RenderStatic& rs, const View& view)
-{
-	ID3D11DeviceContext* ctx = pContext.Get();
-	wchar_t label[128];
-	swprintf(label, 128, L"Static geometry Special %08X", rs.mesh->id);
-	//const DirectX::XMMATRIX world = rs.world;
-	//printf("Loading Static %08X", rs.mesh->id);
-	GpuMarker mark(ctx, label);
-	const auto& mesh = *rs.mesh;
-
-	// View constant buffer(s)
-	Microsoft::WRL::ComPtr<ID3D11Buffer> b1;      // if you also use cb1 for per-object, leave it bound
-
-	ID3D11Buffer* b12 = g_scopeView_b12.Get();
-	XMFLOAT3 mesh_offset;
-	mesh_offset.x = rs.meshData.mesh_offset[0];
-	mesh_offset.y = rs.meshData.mesh_offset[1];
-	mesh_offset.z = rs.meshData.mesh_offset[2];
-
-	CreateCB1_FreshDynamic(pDevice.Get(), ctx,
-		mesh_offset,
-		rs.meshData.mesh_scale,
-		rs.meshData.texture_coordinate_scale,
-		rs.meshData.texture_coordinate_offset[0],
-		rs.meshData.texture_coordinate_offset[1],
-		rs.meshData.max_colour_index,
-		rs.world,
-		b1);
-	swprintf(label, 128, L"Static geometry decal %08X", rs.mesh->id);
 	for (const auto& special : rs.specials) {
 		// If technique is shared_ptr:
 		auto tech = special->technique;
-		if (special->part.TfxRenderStage == 1) {
+		if (special->part.TfxRenderStage == static_cast<UINT>(renderStage)) {
 			auto& part = special->part;
 			auto tech = special->technique.get();
 			ctx->IASetInputLayout(tiger_input_layouts[special->input_layout_index].Get());
@@ -313,169 +337,101 @@ void Graphics::DrawStaticSpecial(const RenderStatic& rs, const View& view)
 
 			ctx->IASetVertexBuffers(0, vbCount, vbs, strides, offsets);
 			ctx->IASetIndexBuffer(special->group->index.get(), special->group->indexFormat, 0);
-
-			tech->Bind(pDevice, pContext, externs, states, scopes);
-			/*ID3D11ShaderResourceView* rt1decal[1] = {
-			gbufA.rt1_read.srv.Get() 
-			};
-			pContext->PSSetShaderResources(2, 1, rt1decal);*/
-			pContext->OMSetDepthStencilState(depthStencilDecal.Get(),0);
-			ctx->VSSetConstantBuffers(1, 1, &b1);
-			const UINT instanceCount = (UINT)rs.world.size();
-			ctx->DrawIndexedInstanced(part.index_count,
-				instanceCount,               // InstanceCount
-				part.index_start,   // StartIndexLocation
-				0,                           // BaseVertexLocation
-				0);
-
-			
-			
-		}//decals
-	}
-}
-
-void Graphics::DrawStaticTransparent(const RenderStatic& rs, const View& view)
-{
-	ID3D11DeviceContext* ctx = pContext.Get();
-	wchar_t label[128];
-	swprintf(label, 128, L"Static geometry transparent %08X", rs.mesh->id);
-	//const DirectX::XMMATRIX world = rs.world;
-	//printf("Loading Static %08X", rs.mesh->id);
-	GpuMarker mark(ctx, label);
-	const auto& mesh = *rs.mesh;
-
-	// View constant buffer(s)
-	ID3D11Buffer* b1 = g_cb1.Get();            // if you also use cb1 for per-object, leave it bound
-
-	ID3D11Buffer* b12 = g_scopeView_b12.Get();
-	XMFLOAT3 mesh_offset;
-	mesh_offset.x = rs.meshData.mesh_offset[0];
-	mesh_offset.y = rs.meshData.mesh_offset[1];
-	mesh_offset.z = rs.meshData.mesh_offset[2];
-	Microsoft::WRL::ComPtr<ID3D11Buffer> instanceBuf;
-
-	CreateCB1_FreshDynamic(pDevice.Get(), ctx,
-		mesh_offset,
-		rs.meshData.mesh_scale,
-		rs.meshData.texture_coordinate_scale,
-		rs.meshData.texture_coordinate_offset[0],
-		rs.meshData.texture_coordinate_offset[1],
-		rs.meshData.max_colour_index,
-		rs.world, instanceBuf);
-	swprintf(label, 128, L"Static geometry decal %08X", rs.mesh->id);
-	for (const auto& special : rs.specials) {
-		// If technique is shared_ptr:
-		auto tech = special->technique;
-		if (special->part.TfxRenderStage == 7) {
-			auto& part = special->part;
-			auto tech = special->technique.get();
-			ctx->IASetInputLayout(tiger_input_layouts[part.input_layout_index].Get());
-			if (part.PrimitiveType == 5) {
-				pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-			}
-			else {
-				pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			}
-			//printf("%d\n", part.input_layout_index);
-			ID3D11Buffer* vbs[3];
-			UINT          strides[3];
-			UINT          offsets[3] = { 0,0,0 };
-			UINT          vbCount = 0;
-			
-			
-
-			if (special->group->vertex) { vbs[vbCount] = special->group->vertex.get(); strides[vbCount] = special->group->vertexStride; ++vbCount; }
-			if (special->group->uv) { vbs[vbCount] = special->group->uv.get();     strides[vbCount] = special->group->uvStride;     ++vbCount; }
 			if (special->part.VertexColourBuffer.hash != 0xffffffff) {
-				ID3D11ShaderResourceView* s = special->group->color.get();
+				ID3D11ShaderResourceView* s = special->group->color.Get();
 				//ctx->VSSetShaderResources(1, 1, &s);
 				ctx->VSSetShaderResources(0, 1, &s);
 			}
-
-			ctx->IASetVertexBuffers(0, vbCount, vbs, strides, offsets);
-			ctx->IASetIndexBuffer(special->group->index.get(), special->group->indexFormat, 0);
-			if (tech)
-				tech->Bind(pDevice, pContext, externs, states, scopes);
-			pContext->OMSetDepthStencilState(depthStencilDecal.Get(), 0);
-			pContext->RSSetState(rasterizerStateNoCull.Get());
-			ID3D11ShaderResourceView* srvs[] = {            // t4
-			this->temp_angle_lookup.Get(),             // t5
-			};
-			ID3D11ShaderResourceView* srvs1[] = {            // t4
-			this->gbufA.depth.texCopySRV.Get(),             // t5
-			};
-			pContext->PSSetShaderResources(15, 1, srvs);
-			pContext->PSSetShaderResources(10, 1, srvs1);
-			ID3D11Buffer* b = instanceBuf.Get();
-			ctx->VSSetConstantBuffers(1, 1, &b);
+			tech->Bind(pDevice, pContext, externs, states, scopes);
+			if (renderStage == TfxRenderStage::Decals) {
+				pContext->OMSetDepthStencilState(depthStencilDecal.Get(), 0);
+			} else if (renderStage == TfxRenderStage::Transparents) {
+				float bf[4] = { 1,1,1,1 };
+				pContext->OMSetBlendState(states.blend_states[8].Get(), bf, 0xFFFFFFFF); // alpha blend
+				pContext->OMSetDepthStencilState(depthStencilDecal.Get(), 0); // reversed-Z read-only
+				pContext->RSSetState(states.rasterizer_states[2].Get());
+				pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+				pContext->OMSetDepthStencilState(depthStencilDecal.Get(), 0);
+				pContext->RSSetState(rasterizerStateNoCull.Get());
+				ID3D11ShaderResourceView* srvs[] = {            // t4
+				this->temp_angle_lookup.Get(),             // t5
+				};
+				ID3D11ShaderResourceView* srvs1[] = {            // t4
+				this->gbufA.depth.texCopySRV.Get(),             // t5
+				};
+				pContext->PSSetShaderResources(15, 1, srvs);
+				pContext->PSSetShaderResources(10, 1, srvs1);
+			}
 			
-			const UINT instanceCount = (UINT)rs.world.size();
+			ctx->VSSetConstantBuffers(1, 1, &buf);
+			const UINT instanceCount = (UINT)visibleWorld.size();
 			ctx->DrawIndexedInstanced(part.index_count,
-				instanceCount,               // InstanceCount
+				visibleWorld.size(),               // InstanceCount
 				part.index_start,   // StartIndexLocation
 				0,                           // BaseVertexLocation
 				0);
-			SetFullViewport(ctx, float(windowWidth), float(windowHeight));
 
 
 
 		}//decals
 	}
 }
+
+
 
 // Graphics.cpp
 void Graphics::RunPostprocessChain()
 {
-    ID3D11DeviceContext* ctx = pContext.Get();
-    ScopedGpuEvent G(anno_.Get(), L"postprocess");
+	ID3D11DeviceContext* ctx = pContext.Get();
+	ScopedGpuEvent G(anno_.Get(), L"postprocess");
 
-    // Pass 0: blit_texture_alphaluminance  (HDR shading_result -> post_ping/pong)
-    {
-        ScopedGpuEvent e(anno_.Get(), L"blit_texture_alphaluminance");
-        RenderTarget* src; RenderTarget* dst;
-        gbufA.GetPostRT(src, dst, /*swapAfterUse=*/true);
+	// Pass 0: blit_texture_alphaluminance  (HDR shading_result -> post_ping/pong)
+	{
+		ScopedGpuEvent e(anno_.Get(), L"blit_texture_alphaluminance");
+		RenderTarget* src; RenderTarget* dst;
+		gbufA.GetPostRT(src, dst, /*swapAfterUse=*/true);
 
-        ID3D11RenderTargetView* rtv = dst->rtv.Get();
-        ctx->OMSetRenderTargets(1, &rtv, nullptr);
-        PP_Viewport(ctx, float(windowWidth), float(windowHeight));
-        PP_CommonStates(ctx, bsOpaque.Get(), dsDisabled.Get(), rasterizerStateNoCull.Get());
+		ID3D11RenderTargetView* rtv = dst->rtv.Get();
+		ctx->OMSetRenderTargets(1, &rtv, nullptr);
+		PP_Viewport(ctx, float(windowWidth), float(windowHeight));
+		PP_CommonStates(ctx, bsOpaque.Get(), dsDisabled.Get(), rasterizerStateNoCull.Get());
 
-        if (auto it = globalTechniques.find("blit_texture_alphaluminance");
-            it != globalTechniques.end())
+		if (auto it = globalTechniques.find("blit_texture_alphaluminance");
+			it != globalTechniques.end())
 			it->second.get()->Bind(pDevice, pContext, externs, states, scopes);
 
-        ID3D11ShaderResourceView* srvs[] = { gbufA.shading_result.srv.Get() }; // t0
-        ctx->PSSetShaderResources(0, 1, srvs);
-        ID3D11SamplerState* samp[] = { samplerLinearClamp.Get() };
-        ctx->PSSetSamplers(0, 1, samp);
+		ID3D11ShaderResourceView* srvs[] = { gbufA.shading_result.srv.Get() }; // t0
+		ctx->PSSetShaderResources(0, 1, srvs);
+		ID3D11SamplerState* samp[] = { samplerLinearClamp.Get() };
+		ctx->PSSetSamplers(0, 1, samp);
 
-        PP_SetFS(ctx); PP_DrawFS(ctx);
-        UnbindAllSRVs(ctx);
-    }
+		PP_SetFS(ctx); PP_DrawFS(ctx);
+		UnbindAllSRVs(ctx);
+	}
 
-    // Pass 1: blit_texture  (post A -> post B)
-    {
-        ScopedGpuEvent e(anno_.Get(), L"debug_overlay_blit_texture");
-        RenderTarget* src; RenderTarget* dst;
-        gbufA.GetPostRT(src, dst, /*swapAfterUse=*/true);
+	// Pass 1: blit_texture  (post A -> post B)
+	{
+		ScopedGpuEvent e(anno_.Get(), L"debug_overlay_blit_texture");
+		RenderTarget* src; RenderTarget* dst;
+		gbufA.GetPostRT(src, dst, /*swapAfterUse=*/true);
 
-        ID3D11RenderTargetView* rtv = dst->rtv.Get();
-        ctx->OMSetRenderTargets(1, &rtv, nullptr);
-        PP_Viewport(ctx, float(windowWidth), float(windowHeight));
-        PP_CommonStates(ctx, bsOpaque.Get(), dsDisabled.Get(), rasterizerStateNoCull.Get());
+		ID3D11RenderTargetView* rtv = dst->rtv.Get();
+		ctx->OMSetRenderTargets(1, &rtv, nullptr);
+		PP_Viewport(ctx, float(windowWidth), float(windowHeight));
+		PP_CommonStates(ctx, bsOpaque.Get(), dsDisabled.Get(), rasterizerStateNoCull.Get());
 
-        if (auto it = globalTechniques.find("debug_overlay_blit_texture");
-            it != globalTechniques.end())
+		if (auto it = globalTechniques.find("debug_overlay_blit_texture");
+			it != globalTechniques.end())
 			it->second.get()->Bind(pDevice, pContext, externs, states, scopes);
 
-        ID3D11ShaderResourceView* s[] = { src->srv.Get() }; // note: SRGB SRV
-        ctx->PSSetShaderResources(0, 1, s);
-        ID3D11SamplerState* samp[] = { samplerLinearClamp.Get() };
-        ctx->PSSetSamplers(0, 1, samp);
+		ID3D11ShaderResourceView* s[] = { src->srv.Get() }; // note: SRGB SRV
+		ctx->PSSetShaderResources(0, 1, s);
+		ID3D11SamplerState* samp[] = { samplerLinearClamp.Get() };
+		ctx->PSSetSamplers(0, 1, samp);
 
-        PP_SetFS(ctx); PP_DrawFS(ctx);
-        UnbindAllSRVs(ctx);
-    }
+		PP_SetFS(ctx); PP_DrawFS(ctx);
+		UnbindAllSRVs(ctx);
+	}
 	{
 		ScopedGpuEvent e(anno_.Get(), L"final_present");
 		ID3D11RenderTargetView* bbSRGB = pRenderTargetView.Get();
@@ -496,24 +452,24 @@ void Graphics::RunPostprocessChain()
 
 void Graphics::DrawLight(const RenderLight& rl, const View& view)
 {
-    ID3D11DeviceContext* ctx = pContext.Get();
-    wchar_t label[128];
-    swprintf(label, 128, L"Light Render %08X %d", rl.parent, rl.idx);
-    GpuMarker mark(ctx, label);
+	ID3D11DeviceContext* ctx = pContext.Get();
+	wchar_t label[128];
+	swprintf(label, 128, L"Light Render %08X %d", rl.parent, rl.idx);
+	GpuMarker mark(ctx, label);
 	//printf("Light Render %08X %d  at pos x %f %f %f\n", rl.parent, rl.idx, rl.pos.x, rl.pos.y, rl.pos.z);
-    // ------------------- Bind light MRTs + scene depth -------------------
-    ID3D11RenderTargetView* rts[] = {
-        gbufA.light_diffuse.rtv.Get(),
-        gbufA.light_specular.rtv.Get()
-    };
-    ctx->OMSetRenderTargets(2, rts, nullptr);
+	// ------------------- Bind light MRTs + scene depth -------------------
+	ID3D11RenderTargetView* rts[] = {
+		gbufA.light_diffuse.rtv.Get(),
+		gbufA.light_specular.rtv.Get()
+	};
+	ctx->OMSetRenderTargets(2, rts, nullptr);
 
-    using namespace DirectX;
+	using namespace DirectX;
 
-    // Node transform (local_to_world)
-    const XMVECTOR qn = XMQuaternionNormalize(XMVectorSet(rl.rot.x, rl.rot.y, rl.rot.z, rl.rot.w));
-    const XMMATRIX R  = XMMatrixRotationQuaternion(qn);
-    const XMMATRIX T  = XMMatrixTranslation(rl.pos.x, rl.pos.y, rl.pos.z);
+	// Node transform (local_to_world)
+	const XMVECTOR qn = XMQuaternionNormalize(XMVectorSet(rl.rot.w, rl.rot.x, rl.rot.y, rl.rot.z));
+	const XMMATRIX R = XMMatrixRotationQuaternion(qn);
+	const XMMATRIX T = XMMatrixTranslation(rl.pos.x, rl.pos.y, rl.pos.z);
 	const XMMATRIX NodeL2W = R * T;
 	const XMMATRIX LightL2W = XMLoadFloat4x4((const XMFLOAT4X4*)&rl.light_matrix);
 
@@ -548,13 +504,13 @@ void Graphics::DrawLight(const RenderLight& rl, const View& view)
 	// set externs
 	externs.SetDeferredLight(camT, l2wRel, rl.unk50);
 
-    // ------------------- SRVs (order matters!) -------------------
+	// ------------------- SRVs (order matters!) -------------------
 	ID3D11ShaderResourceView* srvs[] = {
-	gbufA.rt1_read.srv.Get(), 
+	gbufA.rt1_read.srv.Get(),
 	gbufA.depth.texCopySRV.Get(),// t0 : MATERIAL/PARAMS  (RT2)
 	gbufA.rt2.srv.Get(),     // t1 : NORMAL+ROUGHNESS (RT1 clone)
-	 // t2 : DEPTH            (R32_FLOAT)
-	// (t3, t4, t5 can be bound by the technique if used)
+	// t2 : DEPTH            (R32_FLOAT)
+   // (t3, t4, t5 can be bound by the technique if used)
 	};
 	ctx->PSSetShaderResources(0, (UINT)std::size(srvs), srvs);
 
@@ -572,14 +528,14 @@ void Graphics::DrawLight(const RenderLight& rl, const View& view)
 
 
 
-    // ------------------- Draw the light volume -------------------
-    ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    UINT stride = sizeof(float) * 3, offset = 0;
-    ID3D11Buffer* vb = lightCubeVB.Get();
-    ctx->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
-    ctx->IASetIndexBuffer(lightCubeIB.Get(), DXGI_FORMAT_R16_UINT, 0);
-    ctx->IASetInputLayout(tiger_input_layouts[0].Get());
-    ctx->DrawIndexed(36, 0, 0);
+	// ------------------- Draw the light volume -------------------
+	ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	UINT stride = sizeof(float) * 3, offset = 0;
+	ID3D11Buffer* vb = lightCubeVB.Get();
+	ctx->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
+	ctx->IASetIndexBuffer(lightCubeIB.Get(), DXGI_FORMAT_R16_UINT, 0);
+	ctx->IASetInputLayout(tiger_input_layouts[0].Get());
+	ctx->DrawIndexed(36, 0, 0);
 }
 
 void Graphics::DrawEntity(const RenderEntity& rs, const View& /*view*/, TfxRenderStage renderStage)
@@ -601,7 +557,7 @@ void Graphics::DrawEntity(const RenderEntity& rs, const View& /*view*/, TfxRende
 	ov.scale = rs.pos.w;
 	ov.rotation = rs.rot;
 	ov.translation = rs.pos;
-
+	auto channels = rs.channels;
 	instances.push_back(ov);
 	instances.push_back(ov);
 	XMFLOAT4X4 worldXM;
@@ -613,7 +569,7 @@ void Graphics::DrawEntity(const RenderEntity& rs, const View& /*view*/, TfxRende
 		rs.meshData.model_offset.y,
 		rs.meshData.model_offset.z
 	};
-	
+
 	// uniform; use .x
 	const float texScale = rs.meshData.texcoord_scale.x;               // if non-uniform you can split
 	const float texOffX = rs.meshData.texcoord_offset.x;
@@ -665,7 +621,7 @@ void Graphics::DrawEntity(const RenderEntity& rs, const View& /*view*/, TfxRende
 
 		// Optional vertex colour SRV (matches how you handled statics)
 		if (grp->color) {
-			ID3D11ShaderResourceView* s = grp->color.get();
+			ID3D11ShaderResourceView* s = grp->color.Get();
 			ID3D11Buffer* b = g_cb1.Get();
 			ctx->VSSetShaderResources(0, 1, &s);
 			ctx->VSSetConstantBuffers(1, 1, &b);
@@ -673,7 +629,7 @@ void Graphics::DrawEntity(const RenderEntity& rs, const View& /*view*/, TfxRende
 
 		// Draw each part with its technique
 		auto start = mesh.part_range_per_render_stage[static_cast<int>(renderStage)];
-		auto end = mesh.part_range_per_render_stage[static_cast<int>(renderStage)+1];
+		auto end = mesh.part_range_per_render_stage[static_cast<int>(renderStage) + 1];
 		for (size_t i = start; i < end; i += 1)
 		{
 			const auto& partPtr = mesh.parts[i];
@@ -695,22 +651,27 @@ void Graphics::DrawEntity(const RenderEntity& rs, const View& /*view*/, TfxRende
 			// Technique binding
 			//ctx->PSSetConstantBuffers(1, 1, &b1);
 			if (part.meshpartinfo.varient_shader_index == 0xFFFF) {
-				part.technique->Bind(pDevice, pContext, externs, states, scopes);
+				part.technique->Bind_With_Channels(pDevice, pContext, externs, states, scopes,channels);
 			}
 			else {
 				auto gt = static_cast<UINT>(externs.getFloat(TfxExtern::Frame, 0));
 				auto tech = rs.external_mats[rs.external_material_mapping[part.meshpartinfo.varient_shader_index].technique_start];//+(gt % rs.external_material_mapping.size())];
 				if (tech)
-					tech->Bind(pDevice, pContext, externs, states, scopes);
+					tech->Bind_With_Channels(pDevice, pContext, externs, states, scopes, channels);
 			}
-
+			/*if (rs.id == 0x80E250C8) {
+				for (auto& channal : rs.channels) {
+					printf("channel id %d value %f\n", channal.first, channal.second);
+										
+				}
+			}*/
 
 
 
 			// Optional skinning VS override
-			if (mesh.buffers->skinning_buffer.get()){
+			if (mesh.buffers->skinning_buffer.get()) {
 				pContext->VSSetShader(entity_vs_override.Get(), nullptr, 0);
-				
+
 			}
 			ctx->VSSetConstantBuffers(1, 1, &b1_ovd);
 			if (renderStage == TfxRenderStage::Transparents) {
@@ -723,7 +684,7 @@ void Graphics::DrawEntity(const RenderEntity& rs, const View& /*view*/, TfxRende
 				pContext->PSSetShaderResources(15, 1, srvs);
 				pContext->PSSetShaderResources(10, 1, srvs1);
 			}
-		
+
 			// Draw call
 			ctx->DrawIndexed(
 				part.meshpartinfo.index_count,
@@ -738,14 +699,13 @@ void Graphics::RenderFrame()
 {
 	static bool drawrt1 = false, drawrt0 = false, drawrt2 = false, drawLight_diffuse = false,
 		drawLight_specular = false, drawDepth = false, drawShading = false,
-		drawShadingRead = false, drawLight_ibl = false, stageGlobalLighting =false;
+		drawShadingRead = false, drawLight_ibl = false, stageGlobalLighting = false;
 	mainQueue->Drain();
 	gTimer.tick();
 	// Per-frame externs
 	externs.SetFrameTimes(float(gTimer.total_game_time()), float(gTimer.delta_game_time()), 4.0f);
 	externs.SetFxaa(float(gTimer.total_game_time()));
 
-	// Build view/projection (reversed-Z projection)
 	View viewState{};
 	XMStoreFloat4x4(&viewState.world_to_camera, camera.GetViewMatrix());
 
@@ -784,13 +744,14 @@ void Graphics::RenderFrame()
 		externs.UploadAll(pContext.Get());
 	}
 
+	
+
 	for (auto& scope : scopes)
 		scope.second.UpdateScopeBuffers(pContext, externs);
 
 	// =========================
 	// generate_gbuffer
 	// =========================
-
 
 	{
 		ScopedGpuEvent e(anno_.Get(), L"generate_gbuffer");
@@ -842,7 +803,7 @@ void Graphics::RenderFrame()
 		pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		pipelineStage = TfxRenderStage::GenerateGbuffer;
 
-		for (auto& rs : staticsToDraw) DrawStaticMesh(rs, viewState);
+		for (auto& rs : staticsToDraw) DrawStaticMesh(rs, viewState, TfxRenderStage::GenerateGbuffer);
 		for (auto& re : entitiesToDraw) DrawEntity(re, viewState);
 	}
 	{
@@ -857,12 +818,9 @@ void Graphics::RenderFrame()
 	{   // decals
 		ID3D11ShaderResourceView* nulls[8] = {};
 		pContext->PSSetShaderResources(0, 8, nulls);
-		//for (auto& rs : staticsToDraw)
-			//DrawStaticSpecial(rs, viewState);
+		for (auto& rs : staticsToDraw) DrawStaticMesh(rs, viewState, TfxRenderStage::Decals);
 	}
-	if (drawrt1) {
-		DumpRt1RoughnessStats(pDevice.Get(), pContext.Get(), gbufA.rt1_read.srv.Get(), 0.06f);
-	}
+	
 	// =========================
 	// lighting_pass
 	// =========================
@@ -878,7 +836,7 @@ void Graphics::RenderFrame()
 		SetFullViewport(pContext.Get(), float(windowWidth), float(windowHeight));
 
 		const float black[4] = { 0,0,0,0 };
-		const float dim[4] = { 0.001f,0.001f,0.001f,0.001f };
+		const float dim[4] = { 0.001f,0.001f,0.001f,0.0f };
 		pContext->ClearRenderTargetView(gbufA.light_diffuse.rtv.Get(), dim);
 		pContext->ClearRenderTargetView(gbufA.light_specular.rtv.Get(), black);
 		pContext->ClearRenderTargetView(gbufA.light_ibl_specular.rtv.Get(), black);
@@ -1000,7 +958,7 @@ void Graphics::RenderFrame()
 		pContext->RSSetState(states.rasterizer_states[2].Get());
 		pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-		for (auto& rs : staticsToDraw)   DrawStaticTransparent(rs, viewState);
+		for (auto& rs : staticsToDraw) DrawStaticMesh(rs, viewState, TfxRenderStage::Transparents);
 		for (auto& rs : entitiesToDraw)  DrawEntity(rs, viewState, TfxRenderStage::Transparents);
 
 		pContext->PSSetShaderResources(0, 16, nulls);
@@ -1056,7 +1014,7 @@ void Graphics::RenderFrame()
 	// =========================
 	// DEBUG PREVIEW (linear RTV like Alkahest)
 	// =========================
-	
+
 
 	const bool wantDebugPreview =
 		drawrt0 || drawrt1 || drawrt2 || drawLight_diffuse || drawLight_specular ||
@@ -1095,8 +1053,6 @@ void Graphics::RenderFrame()
 	ImGui::NewFrame();
 	ImGui::Begin("Debug Menu");
 	static float value = 50.0f;
-	if (ImGui::DragFloat("Speed X:", &value, 1, 0.0f, 100.0f, "%.0f%%"))
-		camera.SetSpeed(value / 10.0f);
 	ImGui::Checkbox("Draw gbuffer", &drawrt0);
 	ImGui::Checkbox("Draw Rt1", &drawrt1);
 	ImGui::Checkbox("Draw Rt2", &drawrt2);
@@ -1107,7 +1063,66 @@ void Graphics::RenderFrame()
 	ImGui::Checkbox("Draw drawLight_ibl", &drawLight_ibl);
 	ImGui::Checkbox("Draw ShadingRead", &drawShadingRead);
 	ImGui::Checkbox("Global Lighting", &stageGlobalLighting);
+	if (ImGui::CollapsingHeader("ViewExtern"))
+	{
+		ViewExtern v{};
+		if (TryGetViewExtern(externs, v))
+		{
+			ImGui::Text("Res: %.0f x %.0f", v.resolution_width, v.resolution_height);
+			ImGui::Text("Pos: (%.3f, %.3f, %.3f, %.3f)", v.position.x, v.position.y, v.position.z, v.position.w);
+			ImGui::Text("unk30: (%.3f, %.3f, %.3f, %.3f)", v.unk30.x, v.unk30.y, v.unk30.z, v.unk30.w);
+
+			ShowMat("world_to_camera", v.world_to_camera);
+			ShowMat("camera_to_projective", v.camera_to_projective);
+			ShowMat("camera_to_world", v.camera_to_world);
+			ShowMat("world_to_projective", v.world_to_projective);
+			ShowMat("projective_to_world", v.projective_to_world);
+			ShowMat("projective_to_camera", v.projective_to_camera);
+			ShowMat("target_pixel_to_camera", v.target_pixel_to_camera);
+			ShowMat("target_pixel_to_world", v.target_pixel_to_world);
+			ShowMat("tptow_no_proj_w", v.tptow_no_proj_w);
+		}
+		else {
+			ImGui::TextDisabled("ViewExtern not set.");
+		}
+	}
+	// In your ImGui debug window:
+	if (ImGui::CollapsingHeader("Atmosphere"))
+	{
+		if (ImGui::Button("Ensure + Defaults (once)")) {
+			EnsureAtmosphereCapacity(externs);
+			AtmosphereSetDefaults(externs);
+		}
+		bool changed = ShowAtmosphereExternEditor(externs);
+
+		// If you want changes to take effect immediately this frame:
+		if (changed) {
+			// If you already call externs.UploadAll() before the passes next frame,
+			// you can skip this; otherwise do it now with the current context.
+			externs.Upload(/*ID3D11DeviceContext* */ pContext.Get(), TfxExtern::Atmosphere);
+		}
+	}
+	if (ImGui::CollapsingHeader("Frame")) {
+		if (ImGui::Button("Ensure + Defaults (once)")) { EnsureFrameCapacity(externs); FrameSetDefaults(externs); }
+		bool changed = ShowFrameExternEditor(externs);
+		if (changed) externs.Upload(pContext.Get(), TfxExtern::Frame);
+	}
+
+	if (ImGui::CollapsingHeader("GlobalLighting")) {
+		if (ImGui::Button("Ensure + Defaults (once)")) { EnsureGlobalLightingCapacity(externs); GlobalLightingSetDefaults(externs); }
+		bool changed = ShowGlobalLightingExternEditor(externs);
+		if (changed) externs.Upload(pContext.Get(), TfxExtern::GlobalLighting);
+	}
+	if (ImGui::CollapsingHeader("Global Channels"))
+	{
+		bool changed = ShowGlobalChannelsEditor(channels, externs, /*autoPublish*/true);
+		if (changed) {
+			// If you don’t already call UploadAll later, do a targeted upload here:
+			externs.Upload(pContext.Get(), TfxExtern::Generic);
+		}
+	}
 	// ... (rest of your ImGui panes unchanged)
+	ShowEntityChannelEditorUI(entitiesToDraw, camera.GetPositionFloat3());
 	ImGui::End();
 	ImGui::Render();
 	ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
@@ -1366,12 +1381,12 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		}
 		{
 			CD3D11_SAMPLER_DESC s(D3D11_DEFAULT);
-			s.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;   // trilinear
+			s.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;   // trilinear
 			s.AddressU = s.AddressV = s.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
-			s.MipLODBias = 0.0f;
+			s.MipLODBias = -0.5f;
 			pDevice->CreateSamplerState(&s, lighting2.GetAddressOf());
 		}
-		
+
 		{
 			D3D11_BLEND_DESC bd{};
 			bd.RenderTarget[0].BlendEnable = FALSE;
@@ -1486,7 +1501,7 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 	pool = std::make_unique<ThreadPool>();
 	mainQueue = std::make_unique<MainThreadQueue>();
 	registry = std::make_unique<RuntimeAssetRegistry>();
-	assets = std::make_unique<AssetSystem>(pDevice.Get(),pContext.Get(), *pool, *mainQueue, registry.get());
+	assets = std::make_unique<AssetSystem>(pDevice.Get(), pContext.Get(), *pool, *mainQueue, registry.get());
 	// Create the camera constant buffer
 
 	CreateScopeViewCB12(pDevice.Get());
@@ -1632,15 +1647,16 @@ bool Graphics::InitializeScene()
 	InitializeScopes();
 	LoadGlobalTextures();
 	CreateLightVolumeResources();
-	
+
 	loadzone = std::make_unique<LoadZone>(*this);
-	loadzone->parentHash = 0x80BDCF08; //duality
+	loadzone->parentHash = 0x8102B52C; //duality
 	loadzone->ProcessMap();
 	this->staticsToDraw = loadzone->statics;
 	this->lightsToDraw = loadzone->lights;
 	this->entitiesToDraw = loadzone->entities;
 	this->staticAO1 = loadzone->AOMap1;
 	printf("Loading Render Engine\n");
+	//exit(1);
 	gTimer.reset();
 	return true;
 }

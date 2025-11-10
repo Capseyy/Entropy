@@ -82,30 +82,36 @@ AssetSystem::AssetSystem(ID3D11Device* device, ID3D11DeviceContext* context,
 //------------------------------------------------------------------------------
 AssetHandle<ID3D11Buffer> AssetSystem::EnqueueBuffer(uint32_t id)
 {
-	//printf("EnqueueBuffer ID %0x8\n", id);
-    auto fut = pool_.Submit([=] {
-        return bufferCache_.GetOrLoad(id, [&] {
-            BufferPayload payload = R_->GetBuffer(id);
-			//printf("Loading Buffer ID %0x8, size %u bytes\n", id, payload.desc.ByteWidth);
-            return createBuffer_(payload);
-            }).get();
-        }).share();
+    // Reuse the cache future directly (no thread-pool hop on hits).
+    auto fut = bufferCache_.GetOrLoad(id, [=] {
+        BufferPayload payload = R_->GetBuffer(id);
+        return createBuffer_(payload);
+        });
 
-    AssetHandle<ID3D11Buffer> h; h.future = fut; return h;
+    AssetHandle<ID3D11Buffer> h;
+    h.future = fut;              // shared_future<shared_ptr<ID3D11Buffer>>
+    return h;
 }
-
 std::shared_ptr<ID3D11Buffer> AssetSystem::createBuffer_(const BufferPayload& p)
 {
-    D3D11_SUBRESOURCE_DATA srd;
-    srd.pSysMem = p.data.empty() ? nullptr : (const void*)p.data.data();
-    srd.SysMemPitch = 0; srd.SysMemSlicePitch = 0;
+    D3D11_BUFFER_DESC desc = p.desc;
 
-    ComPtr<ID3D11Buffer> buf;
-    HRESULT hr = device_->CreateBuffer(&p.desc, p.data.empty() ? nullptr : &srd, &buf);
+    // If it looks like a static upload, tell the driver so:
+    const bool hasInit = !p.data.empty();
+    if (hasInit && (desc.Usage == D3D11_USAGE_DEFAULT) && (desc.CPUAccessFlags == 0)) {
+        desc.Usage = D3D11_USAGE_IMMUTABLE;
+    }
+
+    D3D11_SUBRESOURCE_DATA srd{};
+    srd.pSysMem = hasInit ? (const void*)p.data.data() : nullptr;
+
+    Microsoft::WRL::ComPtr<ID3D11Buffer> buf;
+    HRESULT hr = device_->CreateBuffer(&desc, hasInit ? &srd : nullptr, &buf);
     if (FAILED(hr)) throw std::runtime_error("CreateBuffer failed");
 
-    ID3D11Buffer* raw = buf.Detach();
-    return std::shared_ptr<ID3D11Buffer>(raw, [](ID3D11Buffer* b) { ; });
+    // Adopt COM pointer correctly
+    return std::shared_ptr<ID3D11Buffer>(buf.Detach(),
+        [](ID3D11Buffer* b) { if (b) b->Release(); });
 }
 
 //------------------------------------------------------------------------------
@@ -271,6 +277,7 @@ AssetSystem::EnqueueBufferSRV(uint32_t id, const BufferSRVMeta& meta)
         return bufSrvCache_.GetOrLoad(id, [&] {
             // Pull bytes from registry (same as EnqueueBuffer)
             BufferPayload payload = R_->GetBuffer(id);
+			payload.id = id;
             return createBufferSRV_(payload, meta);
             }).get();
         }).share();
@@ -509,40 +516,52 @@ AssetSystem::createBufferSRV_(const BufferPayload& p, const BufferSRVMeta& meta)
 {
     using Microsoft::WRL::ComPtr;
 
-    D3D11_BUFFER_DESC bd = {};
-    bd.ByteWidth = p.desc.ByteWidth;
-    bd.Usage = D3D11_USAGE_DEFAULT;     // or DYNAMIC if you Map/Write
-    bd.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-    bd.CPUAccessFlags = 0;                       // DYNAMIC -> D3D11_CPU_ACCESS_WRITE
-    bd.MiscFlags = 0;                       // leave 
+    // 1) Prefer the existing GPU buffer if one already exists in your registry.
+    //    (Assumes R_ / registry has already registered it via RegisterBuffer).
+    std::shared_ptr<ID3D11Buffer> existing;
+    try {
+        existing = bufferCache_.GetOrLoad(p.id, [&] { return createBuffer_(p); }).get(); // if you store id in payload
+    }
+    catch (...) {
+        // ignore; fall back to local creation
+    }
 
-    UINT numElements = p.desc.ByteWidth / p.stride;
+    ComPtr<ID3D11Buffer> bufCom;
+    if (existing) {
+        // borrow & AddRef to make a ComPtr
+        ID3D11Buffer* raw = existing.get();
+        if (raw) { raw->AddRef(); bufCom.Attach(raw); }  // <-- AddRef before Attach        // ComPtr from shared_ptr (via operator=) AddRefs
+    }
+    else {
+        // local creation (IMMUTABLE when possible)
+        D3D11_BUFFER_DESC bd = p.desc;
+        const bool hasInit = !p.data.empty();
+        if (hasInit && bd.Usage == D3D11_USAGE_DEFAULT && bd.CPUAccessFlags == 0)
+            bd.Usage = D3D11_USAGE_IMMUTABLE;
 
+        D3D11_SUBRESOURCE_DATA srd{};
+        srd.pSysMem = hasInit ? (const void*)p.data.data() : nullptr;
+
+        HRESULT hr = device_->CreateBuffer(&bd, hasInit ? &srd : nullptr, &bufCom);
+        if (FAILED(hr)) throw std::runtime_error("CreateBuffer (SRV) failed");
+    }
+
+    // 2) Build the SRV using the *meta* you passed in (you were ignoring it).
     D3D11_SHADER_RESOURCE_VIEW_DESC sd{};
     sd.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
-    sd.Format = (p.stride == 1)
-        ? DXGI_FORMAT_R8_UNORM
-        : DXGI_FORMAT_R8G8B8A8_UNORM;          // 4 bytes -> float4(unorm) in HLSL
-    sd.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+    sd.Format = meta.typedFormat;            // <- use meta
     sd.Buffer.FirstElement = 0;
-    sd.Buffer.NumElements = numElements;
-
-    
-
-    // Create buffer with initial data from payload (if any)
-    D3D11_SUBRESOURCE_DATA srd{};
-    srd.pSysMem = p.data.empty() ? nullptr : (const void*)p.data.data();
-
-    ComPtr<ID3D11Buffer> buf;
-    HRESULT hr = device_->CreateBuffer(&bd, p.data.empty() ? nullptr : &srd, &buf);
-    if (FAILED(hr)) throw std::runtime_error("CreateBuffer (SRV) failed");
+    sd.Buffer.NumElements = std::max<UINT>(1, p.desc.ByteWidth / std::max<UINT>(1, meta.bytesPerElement));
 
     ComPtr<ID3D11ShaderResourceView> srv;
-    hr = device_->CreateShaderResourceView(buf.Get(), &sd, &srv);
+    HRESULT hr = device_->CreateShaderResourceView(bufCom.Get(), &sd, &srv);
     if (FAILED(hr)) throw std::runtime_error("CreateShaderResourceView (buffer) failed");
 
     auto out = std::make_shared<EntropyAssets::BufferSRVRes>();
-    out->buffer = buf;
+    out->buffer = existing.get()
+        ? existing.get()
+        : std::shared_ptr<ID3D11Buffer>(bufCom.Detach(), [](ID3D11Buffer* b) { if (b) b->Release(); }).get();
+
     out->srv = srv;
     return out;
 }

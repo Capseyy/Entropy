@@ -47,7 +47,7 @@ unsigned char* TagHash::getData() {
 	}
 	Package* pkg = &it->second;
 	//printf("Extracting tag %08X\n", hash);
-	auto ReturnObject = pkg->ExtractEntry(entryId);
+	const auto ReturnObject = pkg->ExtractEntry(entryId);
 	success = ReturnObject.success;
 	size = pkg->Entries[entryId].file_size;
 	reference = pkg->Entries[entryId].reference;

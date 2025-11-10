@@ -1,6 +1,6 @@
 #include "Engine.h"
 
-bool Engine::Initialize(HINSTANCE hInstance, std::string window_title, std::string window_class, int width, int height) 
+bool Engine::Initialize(HINSTANCE hInstance, std::string window_title, std::string window_class, int width, int height)
 {
 	if (!render_window.Initialize(this, hInstance, window_title, window_class, width, height)) {
 		return false;
@@ -10,13 +10,13 @@ bool Engine::Initialize(HINSTANCE hInstance, std::string window_title, std::stri
 		return false;
 	}
 	return true;
-		
+
 
 }
 
 bool Engine::ProcessMessages() {
 	return render_window.ProcessMessages();
-}	
+}
 
 void Engine::Update()
 {
@@ -47,7 +47,13 @@ void Engine::Update()
 	float cameraSpeed;
 	if (keyboard.KeyIsPressed(VK_SHIFT))
 	{
-		cameraSpeed = gfx.camera.GetSpeed() * 10;
+		if (keyboard.KeyIsPressed(VK_SPACE)) {
+			cameraSpeed = gfx.camera.GetSpeed() * 50;
+		}
+		else {
+			cameraSpeed = gfx.camera.GetSpeed() * 10;
+		}
+		
 	}
 	else
 	{
@@ -81,7 +87,7 @@ void Engine::Update()
 		DirectX::XMVECTOR delta = DirectX::XMVectorScale(right, cameraSpeed * dt); // scale by scalar
 		this->gfx.camera.AdjustPosition(delta);               // whatever type it expects
 	}
-	
+
 }
 
 void Engine::RenderFrame()

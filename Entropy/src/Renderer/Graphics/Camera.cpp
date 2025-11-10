@@ -5,7 +5,7 @@ Camera::Camera()
 	this->pos = XMFLOAT3(0.0f, 0.0f, 0.0f);
 	this->posVector = XMLoadFloat3(&this->pos);
 
-	this->rot = XMFLOAT3(0.0f, 0.0f, 0.0f); 
+	this->rot = XMFLOAT3(0.0f, 0.0f, 0.0f);
 
 	this->rotVector = XMLoadFloat3(&this->rot);
 	this->UpdateViewMatrix();
@@ -161,7 +161,7 @@ void Camera::UpdateViewMatrix() //Updates view matrix and also updates the movem
 	XMMATRIX view = XMMatrixLookAtLH(this->posVector, camTarget, upDir);
 
 	static const XMMATRIX MirrorX = XMMatrixScaling(1.0f, 1.0f, 1.0f);
-	this->viewMatrix = MirrorX * view; 
+	this->viewMatrix = MirrorX * view;
 
 	XMMATRIX vecRotationMatrix = XMMatrixRotationRollPitchYaw(this->rot.x, this->rot.y, this->rot.z);
 	this->vec_forward = XMVector3TransformCoord(this->DEFAULT_FORWARD_VECTOR, vecRotationMatrix);
