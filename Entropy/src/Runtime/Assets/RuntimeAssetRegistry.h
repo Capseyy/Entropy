@@ -85,6 +85,7 @@ private:
         if (it == m.end()) {
             char buf[128];
             std::snprintf(buf, sizeof(buf), "RuntimeAssetRegistry: missing id 0x%08X\n", id);
+            printf(buf);
             throw std::runtime_error(buf);
         }
         return it->second;

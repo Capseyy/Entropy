@@ -16,14 +16,15 @@ struct StaticMeshConstants {
 
 
 struct RenderStatic {
-    std::shared_ptr<StaticMesh> mesh;     // geometry + techniques (built by StaticRenderer)
-    StaticMeshConstants meshData;          // raw mesh data (for LOD or other purposes)
-    std::vector<ObjectVectors>  world;    // per-object transform (if you have one)
-    Microsoft::WRL::ComPtr<ID3D11Buffer> cb1;
-    std::vector<std::shared_ptr<StaticSpecial>> specials;
-	std::vector<Aabb>  bounds;      // axis-aligned bounding box (in model space)
-	uint64_t AOID = 0;  // AmbientOccusion ID
-	std::vector<DirectX::XMFLOAT4X4> worldMatrices; // precomputed world matrices for faster rendering
+    SStaticMeshData mesh;      
+    std::vector<ObjectVectors>  world;  
+    std::vector<StaticSpecial> specials;
+	std::vector<Aabb>  bounds;      
+	uint64_t AOID = 0;  
+	std::vector<DirectX::XMFLOAT4X4> worldMatrices;
+    std::vector<uint32_t> techniques;
+	uint32_t id = 0;
+
 
 
     // add per-part overrides if your format has them

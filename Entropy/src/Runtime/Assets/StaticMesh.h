@@ -36,17 +36,14 @@ struct StaticMeshPart {
 // The full mesh = groups + parts
 struct StaticMesh {
     uint32_t id = 0;
-    std::vector<std::shared_ptr<BufferGroup>> groups;
+    std::vector<BufferGroup> groups;
     std::vector<SStaticMeshPart> parts;
     std::vector<SStaticMeshGroup> meshGroups;
-    std::vector<std::shared_ptr<EntropyAssets::Technique>> techniques; // filled by AssetSystem
 };
 
 struct StaticSpecial {
     uint32_t id = 0;
-    std::shared_ptr<BufferGroup> group;
     SStaticSpecial part;
     uint16_t input_layout_index;
     uint32_t techniqueId = 0;
-    std::shared_ptr<EntropyAssets::Technique> technique;
 };

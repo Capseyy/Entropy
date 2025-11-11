@@ -182,22 +182,27 @@ void TigerScope::UpdateScopeBuffers(ComPtr<ID3D11DeviceContext> pContext, Extern
 {
     // Pixel stage
     {
-        TfxProgram prog = TfxProgram::FromBytecode(this->Scope.stage_pixel.TFX_Bytecode,
-            this->Scope.stage_pixel.TFX_Constants);
-        auto& cb = this->Scope.stage_pixel.SamplerFallback; // std::vector<Vec4>
-        prog.Evaluate(externs, cb);                         // fills cb with Vec4s
-        UploadCB(pContext.Get(), pscbuffer.Get(), cb);
+        if (this->Scope.stage_pixel.TFX_Bytecode.size() != 0) {
+            TfxProgram prog = TfxProgram::FromBytecode(this->Scope.stage_pixel.TFX_Bytecode,
+                this->Scope.stage_pixel.TFX_Constants);
+            auto& cb = this->Scope.stage_pixel.SamplerFallback; // std::vector<Vec4>
+            prog.Evaluate(externs, cb);                         // fills cb with Vec4s
+            UploadCB(pContext.Get(), pscbuffer.Get(), cb);
+        }
+        
     }
 
     // Vertex stage
     {
-        TfxProgram prog_vs = TfxProgram::FromBytecode(this->Scope.stage_vertex.TFX_Bytecode,
-            this->Scope.stage_vertex.TFX_Constants);
-        auto& cb_vs = this->Scope.stage_vertex.SamplerFallback; // std::vector<Vec4>
-       
-        prog_vs.Evaluate(externs, cb_vs);
-            
-        UploadCB(pContext.Get(), vscbuffer.Get(), cb_vs);
+        if (this->Scope.stage_vertex.TFX_Bytecode.size() != 0) {
+            TfxProgram prog_vs = TfxProgram::FromBytecode(this->Scope.stage_vertex.TFX_Bytecode,
+                this->Scope.stage_vertex.TFX_Constants);
+            auto& cb_vs = this->Scope.stage_vertex.SamplerFallback; // std::vector<Vec4>
+
+            prog_vs.Evaluate(externs, cb_vs);
+
+            UploadCB(pContext.Get(), vscbuffer.Get(), cb_vs);
+        }
     }
     if (this->Scope.name.name == "frame") {
         std::vector<Vec4> buffer;

@@ -68,10 +68,7 @@ void LoadZone::ProcessMap()
 	{
 		load_datatable_into_scene(datatable);
 	}
-	/*load_datatable_into_scene(TagHash(0x80D2771C));
-	load_datatable_into_scene(TagHash(0x80D26815)); 
-	load_datatable_into_scene(TagHash(0x80D271D9));
-	load_datatable_into_scene(TagHash(0x80E68E50));*/
+
 	printf("Loaded %d datatables\n", data_tables.size());
 }
 
@@ -86,11 +83,9 @@ void LoadZone::load_datatable_into_scene(TagHash table) {
 			printf("Found static placement\n");
 			auto const resource = entry.resource.Parse<Unk_80806CC9>(table);
 			const auto static_parent = bin::parse<s_static_map_parent>(resource.static_parent.data, resource.static_parent.size);
-			std::unique_ptr<StaticMap> staticMap;
-			staticMap = std::make_unique<StaticMap>(gfx);
-			staticMap->Initialize(static_parent.static_data.hash);  // root map hash (or whatever yours is)//0x80AC5F28 duality calus //veil 0x8104113E
-			auto staticsToDraw = staticMap->GetRenderList();
-			for (const auto& static_ : staticsToDraw) {
+			StaticMap staticMap{};
+			staticMap.Initialize(static_parent.static_data.hash);
+			for (auto& static_ : staticMap.GetRenderList()) {
 				this->statics.push_back(static_);
 			}
 			break;
@@ -117,17 +112,17 @@ void LoadZone::load_datatable_into_scene(TagHash table) {
 			break;
 
 		}
-		case 0x80806a40: {// Ambient OCclusion placementP
-			printf("Found AO placement\n");
-			auto const resource = entry.resource.Parse<Unk_80806A40>(table);
-			auto ao_parent = bin::parse<SAmbientOcclusionParent>(resource.ambient_occlusion.data, resource.ambient_occlusion.size);
-			auto ao_map1 = LoadAmbAO(ao_parent.offset_mappings1);
-			this->AOMap1 = ao_map1;
-			auto ao_map2 = LoadAmbAO(ao_parent.offset_mappings2);
-			auto ao_map3 = LoadAmbAO(ao_parent.offset_mappings3);
-			break;
+		//case 0x80806a40: {// Ambient OCclusion placementP
+		//	printf("Found AO placement\n");
+		//	auto const resource = entry.resource.Parse<Unk_80806A40>(table);
+		//	auto ao_parent = bin::parse<SAmbientOcclusionParent>(resource.ambient_occlusion.data, resource.ambient_occlusion.size);
+		//	auto ao_map1 = LoadAmbAO(ao_parent.offset_mappings1);
+		//	this->AOMap1 = ao_map1;
+		//	auto ao_map2 = LoadAmbAO(ao_parent.offset_mappings2);
+		//	auto ao_map3 = LoadAmbAO(ao_parent.offset_mappings3);
+		//	break;
 
-		}
+		//}
 		case 0x80806aa3: {
 			printf("Found Sky placement in %08X \n", table.hash);
 			auto resource = entry.resource.Parse<Unk_80806AA3>(table);
@@ -161,11 +156,10 @@ void LoadZone::load_datatable_into_scene(TagHash table) {
 				rot.x = rotation.y;
 				rot.y = rotation.z;
 				rot.z = rotation.w;
-				//rot = glm::conjugate(rot); // to match engine convention
 				glm::vec4 pos(translation, s_uniform);
 
 				auto sky_entity = bin::parse<Unk_80806AAE>(u8.unk60.data, u8.unk60.size);
-				load_entity_model_into_scene(sky_entity.sem, rot, pos, {}, {});
+				load_entity_model_into_scene(sky_entity.sem, rot, pos, {}, {},header.unk18[i].unk0);
 			}
 			break;
 		}

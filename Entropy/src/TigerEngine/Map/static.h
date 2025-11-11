@@ -55,7 +55,7 @@ struct SStaticSpecial {
 	TagHash VertexColourBuffer;
 	uint32_t index_start;
 	uint32_t index_count;
-	TagHash technique;
+	uint32_t technique;
 };
 
 struct SStaticModel {
@@ -63,7 +63,7 @@ public:
 	uint64_t FileSize{};
 	TagHash opaque_meshes{};
 	uint32_t Unk0C{};
-	std::vector<Unk_0x14008080> Techniques{};
+	std::vector<uint32_t> Techniques{};
 	std::vector<SStaticSpecial> special_meshes; //todo special_meshes
 	uint32_t Unk30{};
 	uint64_t Unk34{};

@@ -51,5 +51,6 @@ struct RenderEntity {
     uint32_t id;
     std::vector<Unk_808072C5> external_material_mapping;
     std::unordered_map<uint32_t, float_t> channels;
+    std::optional<Aabb> occlusion_bounds;
     // add per-part overrides if your format has them
 };

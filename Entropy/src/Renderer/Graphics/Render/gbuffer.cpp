@@ -341,8 +341,3 @@ static inline void PP_Viewport(ID3D11DeviceContext* ctx, float w, float h) {
     D3D11_VIEWPORT vp{ 0,0,w,h,0.0f,1.0f };
     ctx->RSSetViewports(1, &vp);
 }
-static inline void UnbindSRVs(ID3D11DeviceContext* ctx, UINT first, UINT count) {
-    ID3D11ShaderResourceView* nulls[16] = {};
-    ctx->PSSetShaderResources(first, count, nulls);
-    ctx->VSSetShaderResources(first, count, nulls);
-}

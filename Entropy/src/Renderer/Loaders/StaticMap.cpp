@@ -4,7 +4,6 @@
 #include "StaticRenderer.h"
 #include "TigerEngine/Map/static.h"
 
-StaticMap::StaticMap(Graphics& gfx) : gfx_(gfx) {}
 
 bool StaticMap::Initialize(uint32_t mapRootHash)
 {
@@ -16,9 +15,6 @@ bool StaticMap::Initialize(uint32_t mapRootHash)
     const auto occlusionTag =
         bin::parse<SOcclusionBounds>(static_instancer.occlusionBounds.data, static_instancer.occlusionBounds.size);
 
-    // Optional: guard heavy I/O logs behind a debug flag
-    // printf("Static Instance Table has %zu static tags\n", static_instancer.static_tags.size());
-
     statics_.clear();
     statics_.reserve(static_instancer.instance_groups.size());
 
@@ -26,8 +22,8 @@ bool StaticMap::Initialize(uint32_t mapRootHash)
 
     for (const auto& grp : static_instancer.instance_groups)
     {
-        // Your mesh/Build() caching is already in place elsewhere—keep calling it normally:
-        StaticRenderer renderer(gfx_, static_instancer.static_tags[grp.static_intex]);
+
+        StaticRenderer renderer(static_instancer.static_tags[grp.static_intex]);
         RenderStatic renderpart = renderer.Build();
 
         const int start = grp.instance_start;
@@ -59,11 +55,6 @@ bool StaticMap::Initialize(uint32_t mapRootHash)
     }
 
     return true;
-}
-
-void StaticMap::LoadAll_Statics()
-{
-    // no-op
 }
 
 // Prefer returning a const reference to avoid copying the whole vector

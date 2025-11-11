@@ -29,7 +29,7 @@ public:
 	void ProcessMap();
 	void load_datatable_into_scene(TagHash);
 	void load_entity_into_scene(TagHash tag, glm::quat quat, glm::vec4 pos);
-	void load_entity_model_into_scene(TagHash sem, glm::quat rot, glm::vec4 pos, std::vector<Unk_808072C5> tech_maps, std::vector<TagHash> ext_techs);
+	void load_entity_model_into_scene(TagHash sem, glm::quat rot, glm::vec4 pos, std::vector<Unk_808072C5> tech_maps, std::vector<TagHash> ext_techs, std::optional<Aabb> Occlusion_Bounds);
 	uint32_t RegisterBufferBlob(const void* bytes, size_t size, uint32_t id,
 		UINT bindFlags, UINT stride = 0);
 	MapStaticAO LoadAmbAO(SAmbientOcclusionBuffer tag);

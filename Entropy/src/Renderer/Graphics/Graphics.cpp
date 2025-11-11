@@ -5,9 +5,469 @@
 #include "Scope/FrameGlobalLightingExternUI.h"
 #include "Scope/global_channel_ui.h"
 #include "Scope/ChannelEditor.h"
+#include "TigerEngine/Map/TigerBuffer.h" 
+#include <unordered_set>
 
 #pragma comment(lib, "d3dcompiler.lib")
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
+
+static inline bool FutReady(const std::shared_future<std::shared_ptr<ID3D11Buffer>>& f) {
+	using namespace std::chrono_literals;
+	return f.valid() && f.wait_for(0s) == std::future_status::ready;
+}
+static inline bool FutReady(const std::shared_future<std::shared_ptr<EntropyAssets::BufferSRVRes>>& f) {
+	using namespace std::chrono_literals;
+	return f.valid() && f.wait_for(0s) == std::future_status::ready;
+}
+
+bool Graphics::ResolveSpecialOnce(const SStaticSpecial& sp, ResolvedSpecial& out)
+{
+	// Ensure bind flags for everything present
+	EnsureSpecialBufferRegistered(sp, StaticBufKind::Index, D3D11_BIND_INDEX_BUFFER);
+	EnsureSpecialBufferRegistered(sp, StaticBufKind::Vertex, D3D11_BIND_VERTEX_BUFFER);
+	if (sp.VertexBuffer2.hash && sp.VertexBuffer2.hash != 0xFFFFFFFFu)
+		EnsureSpecialBufferRegistered(sp, StaticBufKind::UV, D3D11_BIND_VERTEX_BUFFER);
+	if (sp.VertexColourBuffer.hash && sp.VertexColourBuffer.hash != 0xFFFFFFFFu)
+		EnsureSpecialBufferRegistered(sp, StaticBufKind::Color, D3D11_BIND_SHADER_RESOURCE);
+
+	// Enqueue futures
+	auto& fIB = GetOrEnqueueBuffer(sp.IndexBuffer.hash, D3D11_BIND_INDEX_BUFFER);
+	auto& fVB1 = GetOrEnqueueBuffer(sp.VertexBuffer1.hash, D3D11_BIND_VERTEX_BUFFER);
+
+	std::shared_future<std::shared_ptr<ID3D11Buffer>>* fVB2 = nullptr;
+	if (sp.VertexBuffer2.hash && sp.VertexBuffer2.hash != 0xFFFFFFFFu)
+		fVB2 = &GetOrEnqueueBuffer(sp.VertexBuffer2.hash, D3D11_BIND_VERTEX_BUFFER);
+
+	std::shared_future<std::shared_ptr<EntropyAssets::BufferSRVRes>>* fCol = nullptr;
+	const bool hasColor = (sp.VertexColourBuffer.hash && sp.VertexColourBuffer.hash != 0xFFFFFFFFu);
+	if (hasColor) fCol = &GetOrEnqueueBufferSRV(sp.VertexColourBuffer.hash);
+
+	// Ready?
+	if (!FutReady(fIB) || !FutReady(fVB1) ||
+		(fVB2 && !FutReady(*fVB2)) ||
+		(hasColor && (!fCol || !FutReady(*fCol))))
+		return false;
+
+	// Resolve resources
+	out.ib = fIB.get();
+	out.vb1 = fVB1.get();
+	out.vb2 = (fVB2 ? fVB2->get() : nullptr);
+
+	out.vCol = nullptr;
+	if (hasColor && fCol) {
+		try { out.vCol = fCol->get(); }
+		catch (...) { out.vCol = nullptr; }
+	}
+
+	// Read payloads for strides/formats
+	const auto pIB = registry->GetBuffer(sp.IndexBuffer.hash);
+	const auto pVB1 = registry->GetBuffer(sp.VertexBuffer1.hash);
+
+	BufferPayload pVB2{};
+	if (out.vb2) pVB2 = registry->GetBuffer(sp.VertexBuffer2.hash);
+
+	BufferPayload pVC{};
+	if (out.vCol) pVC = registry->GetBuffer(sp.VertexColourBuffer.hash);
+
+	out.indexStart = sp.index_start;
+	out.indexCount = sp.index_count;
+	out.stride1 = pVB1.stride;
+	out.stride2 = out.vb2 ? pVB2.stride : 0;
+
+
+	if (out.vCol) {
+		out.vColFmt = (pVC.stride == 1) ? DXGI_FORMAT_R8_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM;
+	}
+
+	out.ready = true;
+	return true;
+}
+
+
+static inline TagHash GetBufTag(const SStaticMeshData& mesh,
+	const SStaticMeshPart& part,
+	StaticBufKind which)
+{
+	const auto& B = mesh.buffers[part.buffer_index];
+	switch (which) {
+	case StaticBufKind::Index: return B.IndexBuffer;
+	case StaticBufKind::Vertex: return B.VertexBuffer;
+	case StaticBufKind::UV: return B.UVBuffer;
+	case StaticBufKind::Color: return B.VertexColourBuffer;
+	}
+	return {};
+}
+
+struct GpuMarker {
+	ID3DUserDefinedAnnotation* a{};
+	GpuMarker(ID3D11DeviceContext* ctx, const wchar_t* name) {
+		if (SUCCEEDED(ctx->QueryInterface(IID_PPV_ARGS(&a))) && a) a->BeginEvent(name);
+	}
+	~GpuMarker() { if (a) { a->EndEvent(); a->Release(); } }
+};
+
+void Graphics::SubmitPackets(ID3D11DeviceContext* ctx,
+	std::vector<DrawPacket>& packets,
+	TfxRenderStage stage)
+{
+	struct Item { uint64_t key; uint32_t low; DrawPacket* p; };
+	static std::vector<Item> order;
+	order.clear(); order.reserve(packets.size());
+	for (auto& d : packets) order.push_back({ MakeStateKey(d), d.sortKeyLow, &d });
+
+	// Opaque: state-first, Transparent: depth-first (back-to-front), then state
+	std::sort(order.begin(), order.end(), [stage](const Item& a, const Item& b) {
+		if (stage == TfxRenderStage::Transparents) {
+			if (a.low != b.low) return a.low > b.low;     // bigger depth first (back-to-front)
+			if (a.key != b.key) return a.key < b.key;
+			return a.p->meshId < b.p->meshId;
+		}
+		else {
+			if (a.key != b.key) return a.key < b.key;
+			return a.low < b.low;
+		}
+		});
+
+	uint64_t curKey = ~0ull;
+	ID3D11InputLayout* curIL = nullptr;
+	ID3D11Buffer* curVBs[2] = {};
+	UINT curStrides[2] = {};
+	ID3D11Buffer* curIB = nullptr;
+	DXGI_FORMAT curFmt = DXGI_FORMAT_UNKNOWN;
+	D3D11_PRIMITIVE_TOPOLOGY curTopo = (D3D11_PRIMITIVE_TOPOLOGY)~0u;
+	EntropyAssets::Technique* curTech = nullptr;
+
+	// Per-pass static state (bind once if Transparent)
+	if (stage == TfxRenderStage::Transparents) {
+		float bf[4] = { 1,1,1,1 };
+		ctx->OMSetBlendState(states.blend_states[8].Get(), bf, 0xFFFFFFFF); // alpha blend
+		ctx->OMSetDepthStencilState(depthStencilDecal.Get(), 0);            // read-only depth
+		ctx->RSSetState(states.rasterizer_states[2].Get());                 // no-cull
+
+		// extra SRVs used by many transparent shaders (matches your old immediate path)
+		ID3D11ShaderResourceView* s0[] = { this->temp_angle_lookup.Get() };
+		ID3D11ShaderResourceView* s1[] = { this->gbufA.depth.texCopySRV.Get() };
+		ctx->PSSetShaderResources(15, 1, s0);
+		ctx->PSSetShaderResources(10, 1, s1);
+	}
+
+	for (const Item& it : order)
+	{
+		const DrawPacket& d = *it.p;
+		if (d.instanceCount == 0 || d.indexCount == 0) continue;
+
+		if (it.key != curKey) {
+			if (d.layout != curIL) { ctx->IASetInputLayout(d.layout); curIL = d.layout; }
+
+			// VBs
+			if (d.vb0 != curVBs[0] || d.vb1 != curVBs[1] ||
+				d.stride0 != curStrides[0] || d.stride1 != curStrides[1]) {
+				ID3D11Buffer* vbs[2] = { d.vb0, d.vb1 };
+				UINT strides[2] = { d.stride0, d.stride1 };
+				UINT offs[2] = { 0,0 };
+				const UINT n = d.vb1 ? 2u : 1u;
+				ctx->IASetVertexBuffers(0, n, vbs, strides, offs);
+				curVBs[0] = d.vb0; curVBs[1] = d.vb1; curStrides[0] = d.stride0; curStrides[1] = d.stride1;
+			}
+
+			// IB
+			if (d.ib != curIB || d.idxFmt != curFmt) {
+				ctx->IASetIndexBuffer(d.ib, d.idxFmt, 0);
+				curIB = d.ib; curFmt = d.idxFmt;
+			}
+
+			if (d.bVol) ctx->VSSetShaderResources(0, 1, &d.bVol);
+
+			if (d.topo != curTopo) { ctx->IASetPrimitiveTopology(d.topo); curTopo = d.topo; }
+
+			if (d.tech != curTech) { d.tech->Bind(pDevice, pContext, externs, states, scopes); curTech = d.tech; }
+
+			curKey = it.key;
+		}
+
+		// VS CB1
+		UpdateCB1_StaticReusable(ctx, d.cb1,
+			d.worldCount ? &frameWorlds_[d.worldOffset] : nullptr,
+			d.worldCount, g_cb1.Get());
+		ID3D11Buffer* b1 = g_cb1.Get();
+		ctx->VSSetConstantBuffers(1, 1, &b1);
+
+		ctx->DrawIndexedInstanced(d.indexCount, d.instanceCount, d.firstIndex, 0, d.baseInstance);
+	}
+
+	packets.clear();
+}
+
+bool Graphics::ResolveStaticPartOnce(
+	const SStaticMeshData& mesh,
+	const SStaticMeshPart& part,
+	ResolvedStaticPart& out)
+{
+	const auto& sb = mesh.buffers[part.buffer_index];
+
+	// register once if needed (cheap if already present)
+	EnsureStaticBufferRegistered(mesh, part, StaticBufKind::Index, D3D11_BIND_INDEX_BUFFER);
+	EnsureStaticBufferRegistered(mesh, part, StaticBufKind::Vertex, D3D11_BIND_VERTEX_BUFFER);
+	if (sb.UVBuffer.hash && sb.UVBuffer.hash != 0xFFFFFFFFu)
+		EnsureStaticBufferRegistered(mesh, part, StaticBufKind::UV, D3D11_BIND_VERTEX_BUFFER);
+	if (sb.VertexColourBuffer.hash && sb.VertexColourBuffer.hash != 0xFFFFFFFFu)
+		EnsureStaticBufferRegistered(mesh, part, StaticBufKind::Color, D3D11_BIND_SHADER_RESOURCE);
+
+
+	auto& fIB = GetOrEnqueueBuffer(sb.IndexBuffer.hash, D3D11_BIND_INDEX_BUFFER);
+	auto& fVB0 = GetOrEnqueueBuffer(sb.VertexBuffer.hash, D3D11_BIND_VERTEX_BUFFER);
+
+	std::shared_future<std::shared_ptr<ID3D11Buffer>>* fVB1 = nullptr;
+	if (sb.UVBuffer.hash && sb.UVBuffer.hash != 0xFFFFFFFFu)
+		fVB1 = &GetOrEnqueueBuffer(sb.UVBuffer.hash, D3D11_BIND_VERTEX_BUFFER);
+
+	std::shared_future<std::shared_ptr<EntropyAssets::BufferSRVRes>>* fColorSRVPtr = nullptr;
+	const bool hasColorId = (sb.VertexColourBuffer.hash != 0u && sb.VertexColourBuffer.hash != 0xFFFFFFFFu);
+	if (hasColorId) {
+		fColorSRVPtr = &GetOrEnqueueBufferSRV(sb.VertexColourBuffer.hash);
+	}
+
+	// wait until everything present is ready
+	if (!FutReady(fIB) ||
+		!FutReady(fVB0) ||
+		(fVB1 && !FutReady(*fVB1)) ||
+		(hasColorId && (!fColorSRVPtr || !FutReady(*fColorSRVPtr))))
+	{
+		return false; // not ready this frame
+	}
+
+	// resolve buffers
+	out.ib = fIB.get();
+	out.vb0 = fVB0.get();
+	out.vb1 = (fVB1 ? fVB1->get() : nullptr);
+	out.vCol = nullptr;
+	if (hasColorId && fColorSRVPtr) {
+		try {
+			out.vCol = fColorSRVPtr->get();   // may throw if asset load failed
+		}
+		catch (const std::exception& e) {
+			// log once and continue without vertex color
+			printf("Color SRV load failed: %\n " , std::string(e.what()));
+			out.vCol = nullptr;
+		}
+	}
+
+	// read strides (use const ref getter to avoid copies if you have one)
+	const auto pIB = registry->GetBuffer(sb.IndexBuffer.hash);
+	const auto pVB0 = registry->GetBuffer(sb.VertexBuffer.hash);
+	BufferPayload pVB1{};
+	if (out.vb1) pVB1 = registry->GetBuffer(sb.UVBuffer.hash);
+
+	BufferPayload pVC{};
+	if (out.vCol) pVC = registry->GetBuffer(sb.VertexColourBuffer.hash);
+
+
+	out.indexStart = part.index_start;      // uint32_t or UINT
+	out.indexCount = part.index_count;
+	out.stride0 = pVB0.stride;
+	out.stride1 = out.vb1 ? pVB1.stride : 0;
+	out.idxFmt = (pIB.stride == 2) ? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT;
+
+	// If you need a typed format for color anywhere:
+	if (out.vCol) {
+		switch (pVC.stride) {
+		case 1:  out.vCOlfmt = DXGI_FORMAT_R8_UNORM;        break;
+		default: out.vCOlfmt = DXGI_FORMAT_R8G8B8A8_UNORM;               break;
+		}
+	}
+
+	out.ready = true;
+	return true;
+}
+
+
+static BufferPayload BuildBufferPayloadFromTag(TagHash tag, StaticBufKind which)
+{
+	BufferPayload p{};
+	p.id = tag.hash;
+
+	if (!tag.data || tag.size == 0)
+		throw std::runtime_error("BuildBufferPayloadFromTag: header tag is empty");
+
+	// All headers are little-endian in your codebase
+	if (which == StaticBufKind::Index) {
+		// Parse header from THIS tag
+		const IndexBufferHeader ibh = bin::parse<IndexBufferHeader>(tag.data, tag.size, bin::Endian::Little);
+
+		// Actual bytes come from the *referenced* tag
+		TagHash dataTag(tag.reference);
+		if (!dataTag.data || dataTag.size == 0)
+			throw std::runtime_error("BuildBufferPayloadFromTag: index data tag empty");
+
+		const size_t want = static_cast<size_t>(ibh.dataSize);
+		if (dataTag.size < want)
+			throw std::runtime_error("BuildBufferPayloadFromTag: index data smaller than header declared size");
+
+		p.desc.Usage = D3D11_USAGE_IMMUTABLE;
+		p.desc.BindFlags = D3D11_BIND_INDEX_BUFFER;   // SRV will be added by Ensure... if needed
+		p.desc.ByteWidth = static_cast<UINT>(want);
+		p.desc.CPUAccessFlags = 0;
+		p.desc.MiscFlags = 0;
+
+		p.stride = (ibh.is32 != 0) ? 4u : 2u;        // store “index stride” in payload.stride
+		const auto* bytes = static_cast<const uint8_t*>(dataTag.data);
+		p.data.assign(bytes, bytes + want);
+	}
+	else {
+		// Vertex / UV / Colour share the same header
+		const VertexBufferHeader vbh = bin::parse<VertexBufferHeader>(tag.data, tag.size, bin::Endian::Little);
+
+		TagHash dataTag(tag.reference);
+		if (!dataTag.data || dataTag.size == 0)
+			throw std::runtime_error("BuildBufferPayloadFromTag: vertex data tag empty");
+
+		const size_t want = static_cast<size_t>(vbh.dataSize);
+		if (dataTag.size < want)
+			throw std::runtime_error("BuildBufferPayloadFromTag: vertex data smaller than header declared size");
+
+		p.desc.Usage = D3D11_USAGE_IMMUTABLE;
+		p.desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+		if (which == StaticBufKind::Color) {
+			// We’ll read this as a structured SRV later
+			p.desc.BindFlags |= D3D11_BIND_SHADER_RESOURCE;
+		}
+		p.desc.ByteWidth = static_cast<UINT>(want);
+		p.desc.CPUAccessFlags = 0;
+		p.desc.MiscFlags = 0;
+
+		p.stride = vbh.stride;                       // real vertex element stride
+		const auto* bytes = static_cast<const uint8_t*>(dataTag.data);
+		p.data.assign(bytes, bytes + want);
+	}
+	return p;
+}
+
+void Graphics::EnsureStaticBufferRegistered(const SStaticMeshData& mesh,
+	const SStaticMeshPart& part,
+	StaticBufKind which,
+	UINT addFlags)
+{
+	const auto& sb = mesh.buffers[part.buffer_index];
+	TagHash tag =
+		(which == StaticBufKind::Index) ? sb.IndexBuffer :
+		(which == StaticBufKind::Vertex) ? sb.VertexBuffer :
+		(which == StaticBufKind::UV) ? sb.UVBuffer :
+		sb.VertexColourBuffer;
+
+	const uint32_t id = tag.hash;
+	if (id == 0 || id == 0xFFFFFFFFu) return;
+
+	if (!registry->HasBuffer(id)) {
+		auto payload = BuildBufferPayloadFromTag(tag, which);
+		payload.desc.BindFlags |= addFlags;     // merge required flags for upcoming use
+		registry->RegisterBuffer(id, std::move(payload));
+		return;
+	}
+
+	auto payload = registry->GetBuffer(id);
+	const UINT merged = payload.desc.BindFlags | addFlags;
+	if (merged != payload.desc.BindFlags) {
+		payload.desc.BindFlags = merged;
+		registry->RegisterBuffer(id, std::move(payload));
+	}
+}
+
+void Graphics::EnsureSpecialBufferRegistered(const SStaticSpecial& sp,
+	StaticBufKind which,
+	UINT addFlags)
+{
+	TagHash tag{};
+	switch (which) {
+	case StaticBufKind::Index: tag = sp.IndexBuffer; break;
+	case StaticBufKind::Vertex:   tag = sp.VertexBuffer1; break;
+	case StaticBufKind::UV:   tag = sp.VertexBuffer2; break;
+	case StaticBufKind::Color: tag = sp.VertexColourBuffer; break;
+	}
+
+	const uint32_t id = tag.hash;
+	if (id == 0u || id == 0xFFFFFFFFu) return;
+
+	if (!registry->HasBuffer(id)) {
+		// Map SpecialBufKind -> StaticBufKind for header parse rules
+		StaticBufKind asStatic =
+			(which == StaticBufKind::Index) ? StaticBufKind::Index :
+			(which == StaticBufKind::Color) ? StaticBufKind::Color :
+			StaticBufKind::Vertex; // VB1/VB2
+		auto payload = BuildBufferPayloadFromTag(tag, asStatic);
+		payload.desc.BindFlags |= addFlags;
+		registry->RegisterBuffer(id, std::move(payload));
+		return;
+	}
+
+	auto payload = registry->GetBuffer(id);
+	const UINT merged = payload.desc.BindFlags | addFlags;
+	if (merged != payload.desc.BindFlags) {
+		payload.desc.BindFlags = merged;
+		registry->RegisterBuffer(id, std::move(payload));
+	}
+}
+
+// Merge bind flags into the registry payload so creation (VB/IB/SRV) is legal
+void Graphics::EnsureBufferBind(uint32_t id, UINT addFlags)
+{
+	if (id == 0 || id == 0xFFFFFFFFu) return;
+	auto payload = registry->GetBuffer(id);               // throws if missing
+	const UINT merged = payload.desc.BindFlags | addFlags;
+	if (merged != payload.desc.BindFlags) {
+		payload.desc.BindFlags = merged;
+		registry->RegisterBuffer(id, std::move(payload));
+	}
+}
+
+// Enqueue or get VB/UV/IB buffer future
+std::shared_future<std::shared_ptr<ID3D11Buffer>>&
+Graphics::GetOrEnqueueBuffer(uint32_t id, UINT addFlags)
+{
+	EnsureBufferBind(id, addFlags);
+	auto it = bufferFut_.find(id);
+	if (it == bufferFut_.end())
+		it = bufferFut_.emplace(id, assets->EnqueueBuffer(id).future).first;
+	return it->second;
+}
+
+// Enqueue or get SRV for a structured vertex-colour buffer
+std::shared_future<std::shared_ptr<EntropyAssets::BufferSRVRes>>&
+Graphics::GetOrEnqueueBufferSRV(uint32_t id)
+{
+	// Build the SRV meta from the registry’s payload (stride + element count)
+	auto payload = registry->GetBuffer(id);
+	BufferSRVMeta meta{};
+	meta.kind = BufferSRVMeta::Kind::Structured;
+	meta.structureByteStride = payload.stride;
+	meta.typedFormat = (payload.stride == 1) ? DXGI_FORMAT_R8_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM;
+	const UINT bytes = payload.desc.ByteWidth;
+	meta.bytesPerElement = payload.stride;
+
+	// Ensure SRV bind flag for creation
+	EnsureBufferBind(id, D3D11_BIND_SHADER_RESOURCE);
+
+	auto it = bufferSrvFut_.find(id);
+	if (it == bufferSrvFut_.end())
+		it = bufferSrvFut_.emplace(id, assets->EnqueueBufferSRV(id, meta).future).first;
+	return it->second;
+}
+
+// Extract the 4 buffer ids for a static mesh part
+struct StaticBuffersIDs {
+	uint32_t ib = 0xFFFFFFFFu, vb = 0xFFFFFFFFu, uv = 0xFFFFFFFFu, color = 0xFFFFFFFFu;
+};
+static inline StaticBuffersIDs GetStaticBuffersIDs(const SStaticMeshData& mesh, const SStaticMeshPart& part)
+{
+	StaticBuffersIDs out{};
+	if (part.buffer_index < mesh.buffers.size()) {
+		const auto& b = mesh.buffers[part.buffer_index];
+		out.ib = b.IndexBuffer.hash;
+		out.vb = b.VertexBuffer.hash;
+		out.uv = b.UVBuffer.hash;
+		out.color = b.VertexColourBuffer.hash;
+	}
+	return out;
+}
 
 static inline void BindGBufferForWriting(ID3D11DeviceContext* ctx, const GBufferRT& gbuf)
 {
@@ -55,6 +515,30 @@ auto ShowMat = [](const char* name, const Mat4& m)
 		ImGui::Text("  [ % .4f % .4f % .4f % .4f ]", f[12], f[13], f[14], f[15]);
 	};
 
+static inline bool IsReady(const std::shared_future<std::shared_ptr<EntropyAssets::Technique>>& f) {
+	using namespace std::chrono_literals;
+	return f.valid() && f.wait_for(0s) == std::future_status::ready;
+}
+
+// Returns ready technique or nullptr; enqueues once if unseen.
+std::shared_ptr<EntropyAssets::Technique>
+Graphics::GetStaticTechniqueOrEnqueue(uint32_t techId)
+{
+	if (techId == 0xFFFFFFFFu || techId == 0u) return nullptr;
+
+	auto it = TechCache_.find(techId);
+	if (it == TechCache_.end()) {
+		// First sighting this frame: enqueue via your AssetSystem.
+		TagHash th(techId);
+		auto fut = assets->EnqueueTechnique(th);        // std::shared_future<shared_ptr<Technique>>
+		it = TechCache_.emplace(techId, fut).first;
+	}
+
+	if (IsReady(it->second)) {
+		return it->second.get(); // EntropyAssets::Technique is fully constructed w/ shaders+SRVs+samplers+CBs
+	}
+	return nullptr;
+}
 
 void Graphics::Create1x1SRV(UINT color, ComPtr<ID3D11ShaderResourceView>& address)
 {
@@ -88,13 +572,7 @@ static void DrawFullscreenTriangle(ID3D11DeviceContext* ctx) {
 	ctx->Draw(4, 0);
 }
 
-struct GpuMarker {
-	ID3DUserDefinedAnnotation* a{};
-	GpuMarker(ID3D11DeviceContext* ctx, const wchar_t* name) {
-		if (SUCCEEDED(ctx->QueryInterface(IID_PPV_ARGS(&a))) && a) a->BeginEvent(name);
-	}
-	~GpuMarker() { if (a) { a->EndEvent(); a->Release(); } }
-};
+
 
 Microsoft::WRL::ComPtr<ID3DUserDefinedAnnotation> anno_;
 void Graphics::InitAnnotation() {
@@ -117,19 +595,20 @@ struct ScopedGpuEvent {
 	~ScopedGpuEvent() { if (a) a->EndEvent(); }
 };
 
-
+static constexpr UINT kCB1ByteCapacity = 64 * 1024;
 
 void CreateCB1(ID3D11Device* dev) {
 	D3D11_BUFFER_DESC bd{};
 	bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-	bd.ByteWidth = sizeof(CB1Payload);
+	bd.ByteWidth = kCB1ByteCapacity;            // full 64 KB
 	bd.Usage = D3D11_USAGE_DYNAMIC;
 	bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 
-	CB1Payload zero{};
-	D3D11_SUBRESOURCE_DATA init{ &zero, 0, 0 };
+	std::array<uint8_t, 64> zero{};             // tiny init ok
+	D3D11_SUBRESOURCE_DATA init{ nullptr, 0, 0 };
 	dev->CreateBuffer(&bd, &init, g_cb1.GetAddressOf());
 }
+
 
 void CreateCB1_FallBack(ID3D11Device* dev) {
 	D3D11_BUFFER_DESC bd{};
@@ -175,6 +654,29 @@ inline float float_from_bits(std::uint32_t bits) {
 }
 Microsoft::WRL::ComPtr<ID3DUserDefinedAnnotation> anno;
 
+void Graphics::CreateInstanceBuffer()
+{
+	const UINT totalBytes = m_instanceStride * m_instanceCapacity;
+
+	D3D11_BUFFER_DESC bd{};
+	bd.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+	bd.ByteWidth = totalBytes;
+	bd.Usage = D3D11_USAGE_DYNAMIC;
+	bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+	bd.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+	bd.StructureByteStride = m_instanceStride;
+
+	pDevice->CreateBuffer(&bd, nullptr, m_instanceSB.GetAddressOf());
+
+	D3D11_SHADER_RESOURCE_VIEW_DESC sd{};
+	sd.ViewDimension = D3D11_SRV_DIMENSION_BUFFEREX;
+	sd.Format = DXGI_FORMAT_UNKNOWN;              // structured
+	sd.BufferEx.FirstElement = 0;
+	sd.BufferEx.NumElements = m_instanceCapacity;
+
+	pDevice->CreateShaderResourceView(m_instanceSB.Get(), &sd, m_instanceSRV.GetAddressOf());
+}
+
 void BuildViewAndProj(View& viewState, const Camera& camera, int windowWidth, int windowHeight)
 {
 	// --- View (world -> camera) ---
@@ -209,173 +711,262 @@ void BuildViewAndProj(View& viewState, const Camera& camera, int windowWidth, in
 void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view, TfxRenderStage renderStage)
 {
 	ID3D11DeviceContext* ctx = pContext.Get();
-	const auto& mesh = *rs.mesh;
+	const auto& mesh = rs.mesh;
 
-	XMFLOAT3 mesh_offset{
-		rs.meshData.mesh_offset[0],
-		rs.meshData.mesh_offset[1],
-		rs.meshData.mesh_offset[2]
-	};
+	// --------- CPU visibility ----------
 	std::vector<ObjectVectors> visibleWorld;
+	{
+		using namespace culldbg;
+		const XMFLOAT4X4& W2P = view.world_to_projective;
+		Frustum fr = Frustum::FromColumnMajor(W2P, true);
 
-	using namespace culldbg;
-	const XMFLOAT4X4& W2P = view.world_to_projective;
-
-
-	Frustum fr = Frustum::FromColumnMajor(W2P, true);
-
-	// 3) (Optional) print once to verify
-	
-
-	for (uint32_t i = 0; i < rs.world.size(); ++i) {
-		int failed = -1;
-		if (!culldbg::aabb_in_frustum_dbg(fr, rs.bounds[i], &failed, /*verbose=*/false)) {
-			// dump the raw box
-			/*culldbg::print("[Cull] instance %u FAILED on plane %d\n", i, failed);
-			culldbg::printAabb("rs.bounds[i]", rs.bounds[i]);*/
-			continue; // culled
-		}
-		else {
+		visibleWorld.reserve(rs.world.size());
+		for (uint32_t i = 0; i < rs.world.size(); ++i) {
+			int failed = -1;
+			if (!culldbg::aabb_in_frustum_dbg(fr, rs.bounds[i], &failed, /*verbose=*/false))
+				continue;
 			visibleWorld.push_back(rs.world[i]);
 		}
 	}
+	if (visibleWorld.empty()) return;
 
-	if (visibleWorld.size() == 0) return;
-	 
-	Microsoft::WRL::ComPtr<ID3D11Buffer> instanceBuf;
-	ID3D11Buffer* b12 = g_scopeView_b12.Get();
-
-	static constexpr UINT AO_SLOT = 1;
-	UINT mesh_ao_offset = 0;
-	const bool hasAo =
-		this->staticAO1.TryGetOffset(rs.AOID, mesh_ao_offset); 
 	
-	CreateCB1_FreshDynamic(pDevice.Get(), pContext.Get(),
-		mesh_offset,
-		rs.meshData.mesh_scale,
-		rs.meshData.texcoord_scale,
-		rs.meshData.texcoord_offset[0],
-		rs.meshData.texcoord_offset[1],
-		rs.meshData.max_colour_index,
-		visibleWorld,   // <— just the visible ones
-		instanceBuf);
-	wchar_t label[128];
-	swprintf(label, 128, L"Static geometry Opaque %08X", rs.mesh->id);
-	//const DirectX::XMMATRIX world = rs.world;
-	//printf("Loading Static %08X", rs.mesh->id);
-	GpuMarker mark(ctx, label);
-	ID3D11Buffer* buf = instanceBuf.Get();
-	for (int i = 0; i < mesh.meshGroups.size(); ++i) {
-		const auto& mg = mesh.meshGroups[i];
-		if (mg.TfxRenderStage != static_cast<UINT>(renderStage)) {
-			continue;
-		}
-		const auto& part = mesh.parts[mg.part_index];
-		if (part.LodCatagory > 2) {
-			// Skip non-highest LOD parts for now
-			continue;
-		}
+	const UINT count = (UINT)visibleWorld.size();
+	if (!m_instWritePtr) return; 
 
-		ID3D11ShaderResourceView* nullsrv[30] = { nullptr };
-		pContext->PSSetShaderResources(0, 30, nullsrv); // unbind all PS SRVs
-		auto tech = mesh.techniques[i].get();
-		ctx->IASetInputLayout(tiger_input_layouts[mg.input_layout_index].Get());
-
-
-		const BufferGroup& bg = *mesh.groups[part.buffer_index].get();
-		if (!bg.index || !bg.vertex || bg.indexCount == 0) {
-			printf("Skip part: missing VB/IB or zero indexCount\n");
-			continue;
-		}
-
-
-		ID3D11Buffer* vbs[3];
-		UINT          strides[3];
-		UINT          offsets[3] = { 0,0,0 };
-		UINT          vbCount = 0;
-
-		if (bg.vertex) { vbs[vbCount] = bg.vertex.get(); strides[vbCount] = bg.vertexStride; ++vbCount; }
-		if (bg.uv) { vbs[vbCount] = bg.uv.get();     strides[vbCount] = bg.uvStride;     ++vbCount; }
-
-		ctx->IASetVertexBuffers(0, vbCount, vbs, strides, offsets);
-		ctx->IASetIndexBuffer(bg.index.get(), bg.indexFormat, 0);
-
-
-		ID3D11ShaderResourceView* s = bg.color.Get();
-		//ctx->VSSetShaderResources(1, 1, &s);
-		ctx->VSSetShaderResources(0, 1, &s);
-		pContext->OMSetDepthStencilState(depthStencilState.Get(), 0);
-		if (tech)
-			tech->Bind(pDevice, pContext, externs, states, scopes);
-
-		ctx->VSSetConstantBuffers(1, 1, &buf);
-		const UINT instanceCount = (UINT)visibleWorld.size();
-		if (hasAo) {
-			ID3D11ShaderResourceView* ao = staticAO1.ao_buffer.Get();
-			pContext->VSSetShaderResources(1, 1, &ao);
-		}
-		ctx->DrawIndexedInstanced(part.index_count,
-			instanceCount,               // InstanceCount
-			part.index_start,   // StartIndexLocation
-			0,                           // BaseVertexLocation
-			0);
+	// capacity guard (optional: grow if needed)
+	if (m_instCursor + count > m_instanceCapacity) {
+		// clamp, grow, or just skip for now
+		// here we clamp to what's left
+		if (m_instCursor >= m_instanceCapacity) return;
 	}
 
-	for (const auto& special : rs.specials) {
-		// If technique is shared_ptr:
-		auto tech = special->technique;
-		if (special->part.TfxRenderStage == static_cast<UINT>(renderStage)) {
-			auto& part = special->part;
-			auto tech = special->technique.get();
-			ctx->IASetInputLayout(tiger_input_layouts[special->input_layout_index].Get());
-			ID3D11Buffer* vbs[3];
-			UINT          strides[3];
-			UINT          offsets[3] = { 0,0,0 };
-			UINT          vbCount = 0;
-			if (special->group->vertex) { vbs[vbCount] = special->group->vertex.get(); strides[vbCount] = special->group->vertexStride; ++vbCount; }
-			if (special->group->uv) { vbs[vbCount] = special->group->uv.get();     strides[vbCount] = special->group->uvStride;     ++vbCount; }
+	const UINT  stride = m_instanceStride;
+	uint8_t* dst = m_instWritePtr + (size_t)m_instCursor * stride;
 
-			ctx->IASetVertexBuffers(0, vbCount, vbs, strides, offsets);
-			ctx->IASetIndexBuffer(special->group->index.get(), special->group->indexFormat, 0);
-			if (special->part.VertexColourBuffer.hash != 0xffffffff) {
-				ID3D11ShaderResourceView* s = special->group->color.Get();
-				//ctx->VSSetShaderResources(1, 1, &s);
-				ctx->VSSetShaderResources(0, 1, &s);
-			}
-			tech->Bind(pDevice, pContext, externs, states, scopes);
-			if (renderStage == TfxRenderStage::Decals) {
-				pContext->OMSetDepthStencilState(depthStencilDecal.Get(), 0);
-			} else if (renderStage == TfxRenderStage::Transparents) {
-				float bf[4] = { 1,1,1,1 };
-				pContext->OMSetBlendState(states.blend_states[8].Get(), bf, 0xFFFFFFFF); // alpha blend
-				pContext->OMSetDepthStencilState(depthStencilDecal.Get(), 0); // reversed-Z read-only
-				pContext->RSSetState(states.rasterizer_states[2].Get());
-				pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-				pContext->OMSetDepthStencilState(depthStencilDecal.Get(), 0);
-				pContext->RSSetState(rasterizerStateNoCull.Get());
-				ID3D11ShaderResourceView* srvs[] = {            // t4
-				this->temp_angle_lookup.Get(),             // t5
-				};
-				ID3D11ShaderResourceView* srvs1[] = {            // t4
-				this->gbufA.depth.texCopySRV.Get(),             // t5
-				};
-				pContext->PSSetShaderResources(15, 1, srvs);
-				pContext->PSSetShaderResources(10, 1, srvs1);
-			}
+	UINT written = 0;
+	for (UINT i = 0; i < count && (m_instCursor + i) < m_instanceCapacity; ++i) {
+		const ObjectVectors& ov = visibleWorld[i];
+		InstanceData* out = reinterpret_cast<InstanceData*>(dst + i * stride);
+		out->translation = DirectX::XMFLOAT4(ov.translation.x, ov.translation.y, ov.translation.z, 0.0f);
+		out->rotation = DirectX::XMFLOAT4(ov.rotation.x, ov.rotation.y, ov.rotation.z, ov.rotation.w);
+		out->scale = ov.scale;
+		++written;
+	}
+
+	const UINT base = m_instCursor;
+	m_instCursor += written;
+	if (written == 0) return;
+
+	packets_.reserve(packets_.size() + mesh.mesh_groups.size());
+
+	std::unordered_set<uint32_t> seenPartIdx;
+	seenPartIdx.reserve(mesh.mesh_groups.size());
+
+	for (int gi = 0; gi < (int)mesh.mesh_groups.size(); ++gi)
+	{
+		const auto& mg = mesh.mesh_groups[gi];
+		if (mg.TfxRenderStage != (UINT)renderStage) continue;
+		if (!seenPartIdx.insert(mg.part_index).second) continue; // dedupe
+
+		const auto& part = mesh.parts[mg.part_index];
+		if (part.LodCatagory > 2) continue;
+
+		// Technique (lazy/async)
+		std::shared_ptr<EntropyAssets::Technique> tech = nullptr;
+		if (gi >= 0 && gi < (int)rs.techniques.size())
+			tech = GetStaticTechniqueOrEnqueue(rs.techniques[gi]);
+		if (!tech) continue;
+
+		// Resolve buffers once per (meshId, part)
+		const uint64_t cacheKey = (uint64_t(rs.id) << 32) | uint32_t(mg.part_index);
+		auto& resolved = staticPartCache_[cacheKey];
+		if (!resolved.ready && !ResolveStaticPartOnce(mesh, part, resolved))
+			continue;
+		const uint32_t worldOffset = (uint32_t)frameWorlds_.size();
+		frameWorlds_.insert(frameWorlds_.end(), visibleWorld.begin(), visibleWorld.end());
+		const uint32_t worldCount = (uint32_t)visibleWorld.size();
+		DrawPacket dp{};
+		dp.meshId = rs.id;
+		dp.inputLayoutIndex = mg.input_layout_index;
+		dp.layout = (mg.input_layout_index < tiger_input_layouts.size() && tiger_input_layouts[mg.input_layout_index])
+			? tiger_input_layouts[mg.input_layout_index].Get() : nullptr;
+		dp.bVol = resolved.vCol ? resolved.vCol->srv.Get() : nullptr;
+
+		dp.vb0 = resolved.vb0.get();
+		dp.vb1 = resolved.vb1 ? resolved.vb1.get() : nullptr;
+		dp.stride0 = resolved.stride0;
+		dp.stride1 = resolved.stride1;
+
+		dp.cb1.mesh_offset = { rs.mesh.mesh_offset[0], rs.mesh.mesh_offset[1], rs.mesh.mesh_offset[2] };
+		dp.cb1.mesh_scale = rs.mesh.mesh_scale;
+		dp.cb1.uv_scale = rs.mesh.texture_coordinate_scale;
+		dp.cb1.uv_off_x = rs.mesh.texture_coordinate_offset[0];
+		dp.cb1.uv_off_y = rs.mesh.texture_coordinate_offset[1];
+		dp.cb1.max_colour = mesh.max_colour_index;
+
+		dp.ib = resolved.ib.get();
+		dp.idxFmt = resolved.idxFmt;
+		dp.worldOffset = worldOffset;
+		dp.worldCount = worldCount;   // keep in sync
+		dp.baseInstance = 0;
+		dp.tech = tech.get();
+		dp.topo = part.PrimitiveType == 3 ? D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST : D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP;
+		dp.indexCount = resolved.indexCount;
+		dp.firstIndex = resolved.indexStart;
+		// NEW: instancing via global StructuredBuffer
+		dp.instanceCount = (UINT)visibleWorld.size();
+		dp.baseInstance = base;
+		dp.flags_or_maxColorBits = mesh.max_colour_index;
+
+		// optional: dp.sortKeyLow = 0;
+
+		packets_.push_back(std::move(dp));
+	}
+	if (!rs.specials.empty())
+	{
+		const uint32_t spWorldOffset = (uint32_t)frameWorlds_.size();
+		frameWorlds_.insert(frameWorlds_.end(), visibleWorld.begin(), visibleWorld.end());
+		const uint32_t spWorldCount = (uint32_t)visibleWorld.size();
+
+		for (const auto& specialPtr : rs.specials)
+		{
+			const StaticSpecial& spWrap = specialPtr;
+			const SStaticSpecial& sp = spWrap.part;
+
+			if (sp.TfxRenderStage != (uint8_t)renderStage) continue;
+
+			// Technique: prefer wrapper.techniqueId, else part.technique
+			uint32_t techId = (spWrap.techniqueId ? spWrap.techniqueId : sp.technique);
+			auto tech = GetStaticTechniqueOrEnqueue(techId);
+			if (!tech) continue;
+
+			// Resolve (cached by key to avoid rework this frame)
+			const uint64_t cacheKey = (uint64_t(spWrap.id ? spWrap.id : rs.id) << 32) | uint32_t(sp.index_start);
+			auto& resolved = specialsCache_[cacheKey]; // add unordered_map<uint64_t, ResolvedSpecial> specialsCache_;
+			if (!resolved.ready && !ResolveSpecialOnce(sp, resolved))
+				continue;
+
+			DrawPacket dp{};
+			dp.meshId = spWrap.id ? spWrap.id : rs.id;
+
+			// Input layout
+			const uint16_t ilIdx = spWrap.input_layout_index ? spWrap.input_layout_index
+				: sp.input_layout_index;
+			dp.inputLayoutIndex = ilIdx;
+			dp.layout = (ilIdx < tiger_input_layouts.size() && tiger_input_layouts[ilIdx])
+				? tiger_input_layouts[ilIdx].Get()
+				: nullptr;
+
+			// Buffers & strides
 			
-			ctx->VSSetConstantBuffers(1, 1, &buf);
-			const UINT instanceCount = (UINT)visibleWorld.size();
-			ctx->DrawIndexedInstanced(part.index_count,
-				visibleWorld.size(),               // InstanceCount
-				part.index_start,   // StartIndexLocation
-				0,                           // BaseVertexLocation
-				0);
+			dp.vb0 = resolved.vb1.get();
+			dp.stride0 = resolved.stride1;
+			dp.vb1 = resolved.vb2 ? resolved.vb2.get() : nullptr;
+			dp.stride1 = resolved.stride2;
 
+			dp.ib = resolved.ib.get();
+			dp.idxFmt = resolved.idxFmt;
 
+			// Optional vertex color SRV to VS t0 (matches your SubmitPackets)
+			dp.bVol = (resolved.vCol ? resolved.vCol->srv.Get() : nullptr);
 
-		}//decals
+			// Mesh/UV constants (same as statics)
+			dp.cb1.mesh_offset = { rs.mesh.mesh_offset[0], rs.mesh.mesh_offset[1], rs.mesh.mesh_offset[2] };
+			dp.cb1.mesh_scale = rs.mesh.mesh_scale;
+			dp.cb1.uv_scale = rs.mesh.texture_coordinate_scale;
+			dp.cb1.uv_off_x = rs.mesh.texture_coordinate_offset[0];
+			dp.cb1.uv_off_y = rs.mesh.texture_coordinate_offset[1];
+			dp.cb1.max_colour = rs.mesh.max_colour_index;
+
+			// Instancing slice
+			dp.worldOffset = spWorldOffset;
+			dp.worldCount = spWorldCount;
+			dp.instanceCount = (UINT)visibleWorld.size();
+			dp.baseInstance = base;
+
+			// Technique/topology
+			dp.tech = tech.get();
+			dp.topo = (sp.PrimitiveType == 3)
+				? D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST
+				: D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP;
+
+			// Indices
+			dp.indexCount = resolved.indexCount;
+			dp.firstIndex = resolved.indexStart;
+
+			dp.flags_or_maxColorBits = rs.mesh.max_colour_index;
+
+			// Optional: sort transparents
+			dp.sortKeyLow = (renderStage == TfxRenderStage::Transparents)
+				? /*EncodeDepthKey(...)*/ 0u
+				: 0u;
+
+			packets_.push_back(std::move(dp));
+		}
 	}
 }
+
+
+	// NOTE: No binds, no Draw* here.
+	// Call SubmitPackets(pContext.Get(), packets_); once per pass in RenderFrame().
+
+
+	//for (const auto& special : rs.specials) {
+	//	// If technique is shared_ptr:
+	//	auto tech = special->technique;
+	//	if (special->part.TfxRenderStage == static_cast<UINT>(renderStage)) {
+	//		auto& part = special->part;
+	//		auto tech = special->technique.get();
+	//		ctx->IASetInputLayout(tiger_input_layouts[special->input_layout_index].Get());
+	//		ID3D11Buffer* vbs[3];
+	//		UINT          strides[3];
+	//		UINT          offsets[3] = { 0,0,0 };
+	//		UINT          vbCount = 0;
+	//		if (special->group->vertex) { vbs[vbCount] = special->group->vertex.get(); strides[vbCount] = special->group->vertexStride; ++vbCount; }
+	//		if (special->group->uv) { vbs[vbCount] = special->group->uv.get();     strides[vbCount] = special->group->uvStride;     ++vbCount; }
+
+	//		ctx->IASetVertexBuffers(0, vbCount, vbs, strides, offsets);
+	//		ctx->IASetIndexBuffer(special->group->index.get(), special->group->indexFormat, 0);
+	//		if (special->part.VertexColourBuffer.hash != 0xffffffff) {
+	//			ID3D11ShaderResourceView* s = special->group->color.Get();
+	//			//ctx->VSSetShaderResources(1, 1, &s);
+	//			ctx->VSSetShaderResources(0, 1, &s);
+	//		}
+	//		tech->Bind(pDevice, pContext, externs, states, scopes);
+	//		if (renderStage == TfxRenderStage::Decals) {
+	//			pContext->OMSetDepthStencilState(depthStencilDecal.Get(), 0);
+	//		} else if (renderStage == TfxRenderStage::Transparents) {
+	//			float bf[4] = { 1,1,1,1 };
+	//			pContext->OMSetBlendState(states.blend_states[8].Get(), bf, 0xFFFFFFFF); // alpha blend
+	//			pContext->OMSetDepthStencilState(depthStencilDecal.Get(), 0); // reversed-Z read-only
+	//			pContext->RSSetState(states.rasterizer_states[2].Get());
+	//			pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	//			pContext->OMSetDepthStencilState(depthStencilDecal.Get(), 0);
+	//			pContext->RSSetState(rasterizerStateNoCull.Get());
+	//			ID3D11ShaderResourceView* srvs[] = {            // t4
+	//			this->temp_angle_lookup.Get(),             // t5
+	//			};
+	//			ID3D11ShaderResourceView* srvs1[] = {            // t4
+	//			this->gbufA.depth.texCopySRV.Get(),             // t5
+	//			};
+	//			pContext->PSSetShaderResources(15, 1, srvs);
+	//			pContext->PSSetShaderResources(10, 1, srvs1);
+	//		}
+	//		
+	//		ctx->VSSetConstantBuffers(1, 1, &buf);
+	//		const UINT instanceCount = (UINT)visibleWorld.size();
+	//		ctx->DrawIndexedInstanced(part.index_count,
+	//			visibleWorld.size(),               // InstanceCount
+	//			part.index_start,   // StartIndexLocation
+	//			0,                           // BaseVertexLocation
+	//			0);
+
+
+
+	//	}//decals
+	//}
+
 
 
 
@@ -538,7 +1129,7 @@ void Graphics::DrawLight(const RenderLight& rl, const View& view)
 	ctx->DrawIndexed(36, 0, 0);
 }
 
-void Graphics::DrawEntity(const RenderEntity& rs, const View& /*view*/, TfxRenderStage renderStage)
+void Graphics::DrawEntity(const RenderEntity& rs, const View& view, TfxRenderStage renderStage)
 {
 	ID3D11DeviceContext* ctx = pContext.Get();
 	wchar_t label[128];
@@ -551,6 +1142,21 @@ void Graphics::DrawEntity(const RenderEntity& rs, const View& /*view*/, TfxRende
 	const XMMATRIX R = XMMatrixRotationQuaternion(qn);
 	const XMMATRIX T = XMMatrixTranslation(rs.pos.x, rs.pos.y, rs.pos.z);
 	std::vector<ObjectVectors> instances;
+	std::vector<ObjectVectors> visibleWorld;
+	if (rs.occlusion_bounds.has_value()) {
+		//printf("Starting Cull");
+		using namespace culldbg;
+		const XMFLOAT4X4& W2P = view.world_to_projective;
+		Frustum fr = Frustum::FromColumnMajor(W2P, true);
+
+		int failed = -1;
+		if (!culldbg::aabb_in_frustum_dbg(fr, *rs.occlusion_bounds, &failed, /*verbose=*/false)) {
+			//printf("Culled Entity");
+			return;
+		}
+				
+	}
+	
 	auto mesh_scale = rs.meshData.model_scale;
 	float instance_scale = rs.pos.w;
 	ObjectVectors ov;
@@ -700,8 +1306,10 @@ void Graphics::RenderFrame()
 	static bool drawrt1 = false, drawrt0 = false, drawrt2 = false, drawLight_diffuse = false,
 		drawLight_specular = false, drawDepth = false, drawShading = false,
 		drawShadingRead = false, drawLight_ibl = false, stageGlobalLighting = false;
-	mainQueue->Drain();
+	//mainQueue->Drain();
 	gTimer.tick();
+	packets_.clear();
+	frameWorlds_.clear();
 	// Per-frame externs
 	externs.SetFrameTimes(float(gTimer.total_game_time()), float(gTimer.delta_game_time()), 4.0f);
 	externs.SetFxaa(float(gTimer.total_game_time()));
@@ -743,28 +1351,37 @@ void Graphics::RenderFrame()
 		externs.EnsureAll(pDevice.Get());
 		externs.UploadAll(pContext.Get());
 	}
-
+	bool sceneEmpty = staticsToDraw.empty() && entitiesToDraw.empty() && lightsToDraw.empty();
 	
+	if (!sceneEmpty) {
+		for (auto& scope : scopes)
+			scope.second.UpdateScopeBuffers(pContext, externs);
+	}
 
-	for (auto& scope : scopes)
-		scope.second.UpdateScopeBuffers(pContext, externs);
+	m_instCursor = 0;
+	D3D11_MAPPED_SUBRESOURCE map{};
+	pContext->Map(m_instanceSB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &map);
+	m_instWritePtr = static_cast<uint8_t*>(map.pData);
+
+	// Bind the SRV once for the VS (slot must match your HLSL register)
+	ID3D11ShaderResourceView* vsSrvs[] = { m_instanceSRV.Get() };
+	pContext->VSSetShaderResources(15, 1, vsSrvs); // t15
 
 	// =========================
 	// generate_gbuffer
 	// =========================
+	
 
-	{
+	if (!sceneEmpty) {
 		ScopedGpuEvent e(anno_.Get(), L"generate_gbuffer");
 
-		// Unbind any SRVs to avoid hazards before writing MRTs
-		{
-			ID3D11ShaderResourceView* null8[8] = {};
-			pContext->VSSetShaderResources(0, 8, null8);
-			pContext->PSSetShaderResources(0, 8, null8);
-		}
-		ID3D11ShaderResourceView* null8[8] = {};
-		pContext->VSSetShaderResources(0, 8, null8);
-		pContext->PSSetShaderResources(0, 8, null8);
+		m_instCursor = 0;
+		D3D11_MAPPED_SUBRESOURCE map{};
+		pContext->Map(m_instanceSB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &map);
+		m_instWritePtr = static_cast<uint8_t*>(map.pData);
+		ID3D11ShaderResourceView* srvs[] = { m_instanceSRV.Get() };
+		pContext->VSSetShaderResources(15, 1, srvs); // t15 (match HLSL)
+
 		ID3D11RenderTargetView* rt_gbuf[3]{
 			gbufA.rt0.rtv.Get(),
 			gbufA.rt1.rtv.Get(),
@@ -801,9 +1418,12 @@ void Graphics::RenderFrame()
 		pContext->RSSetState(rasterizerStateGBuffer.Get());
 
 		pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		pipelineStage = TfxRenderStage::GenerateGbuffer;
 
+		
 		for (auto& rs : staticsToDraw) DrawStaticMesh(rs, viewState, TfxRenderStage::GenerateGbuffer);
+		SubmitPackets(pContext.Get(), packets_,TfxRenderStage::GenerateGbuffer);
+		pContext->Unmap(m_instanceSB.Get(), 0);
+		m_instWritePtr = nullptr;
 		for (auto& re : entitiesToDraw) DrawEntity(re, viewState);
 	}
 	{
@@ -816,15 +1436,13 @@ void Graphics::RenderFrame()
 			pContext->CopyResource(gbufA.depth.texCopy.Get(), gbufA.depth.tex.Get());
 	}
 	{   // decals
-		ID3D11ShaderResourceView* nulls[8] = {};
-		pContext->PSSetShaderResources(0, 8, nulls);
 		for (auto& rs : staticsToDraw) DrawStaticMesh(rs, viewState, TfxRenderStage::Decals);
 	}
 	
 	// =========================
 	// lighting_pass
 	// =========================
-	{
+	if (!sceneEmpty) {
 		ScopedGpuEvent e(anno_.Get(), L"lighting_pass");
 
 		ID3D11RenderTargetView* rts[2] = {
@@ -871,15 +1489,12 @@ void Graphics::RenderFrame()
 
 		for (auto& light : lightsToDraw)
 			DrawLight(light, viewState);
-
-		ID3D11ShaderResourceView* nulls[8] = {};
-		pContext->PSSetShaderResources(0, 8, nulls);
 	}
 
 	// =========================
 	// deferred_shading
 	// =========================
-	{
+	if (!sceneEmpty) {
 		ScopedGpuEvent e(anno_.Get(), L"deferred_shading");
 
 		ID3D11RenderTargetView* rt = gbufA.shading_result.rtv.Get();
@@ -941,7 +1556,8 @@ void Graphics::RenderFrame()
 	// =========================
 	// transparency pass
 	// =========================
-	{
+	if (!sceneEmpty) {
+		// clear per-pass SRVs
 		ID3D11ShaderResourceView* nulls[16] = {};
 		pContext->PSSetShaderResources(0, 16, nulls);
 		pContext->VSSetShaderResources(0, 16, nulls);
@@ -952,20 +1568,33 @@ void Graphics::RenderFrame()
 		ScopedGpuEvent e(anno_.Get(), L"transparency_pass");
 		SetFullViewport(pContext.Get(), float(windowWidth), float(windowHeight));
 
-		float bf[4] = { 1,1,1,1 };
-		pContext->OMSetBlendState(states.blend_states[8].Get(), bf, 0xFFFFFFFF); // alpha blend
-		pContext->OMSetDepthStencilState(depthStencilDecal.Get(), 0); // reversed-Z read-only
-		pContext->RSSetState(states.rasterizer_states[2].Get());
-		pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		// instance buffer mapping once (like the GBuffer pass)
+		m_instCursor = 0;
+		D3D11_MAPPED_SUBRESOURCE map{};
+		pContext->Map(m_instanceSB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &map);
+		m_instWritePtr = static_cast<uint8_t*>(map.pData);
 
+		// VS SRV slot must match HLSL (t15)
+		ID3D11ShaderResourceView* srvs[] = { m_instanceSRV.Get() };
+		pContext->VSSetShaderResources(15, 1, srvs);
+
+		// Build packets for transparent stage (statics +, you can still do entities immediate if needed)
 		for (auto& rs : staticsToDraw) DrawStaticMesh(rs, viewState, TfxRenderStage::Transparents);
-		for (auto& rs : entitiesToDraw)  DrawEntity(rs, viewState, TfxRenderStage::Transparents);
+
+		// Submit with Transparent pass semantics (sorting + states + extra SRVs)
+		SubmitPackets(pContext.Get(), packets_, TfxRenderStage::Transparents);
+
+		pContext->Unmap(m_instanceSB.Get(), 0);
+		m_instWritePtr = nullptr;
+
+		// If you still need dynamic entities here, keep your existing DrawEntity loop afterwards.
+		for (auto& rs : entitiesToDraw) DrawEntity(rs, viewState, TfxRenderStage::Transparents);
 
 		pContext->PSSetShaderResources(0, 16, nulls);
 		pContext->VSSetShaderResources(0, 16, nulls);
 	}
 
-	{
+	if (!sceneEmpty) {
 		ScopedGpuEvent e(anno_.Get(), L"postprocess");
 		RunPostprocessChain();
 	}
@@ -1127,7 +1756,7 @@ void Graphics::RenderFrame()
 	ImGui::Render();
 	ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 
-	pSwapChain->Present(1, 0);
+	pSwapChain->Present(0, 0);
 }
 
 
@@ -1505,8 +2134,10 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 	// Create the camera constant buffer
 
 	CreateScopeViewCB12(pDevice.Get());
+	CreateInstanceBuffer();
 	CreateCB1(pDevice.Get());
 	CreateCB1_FallBack(pDevice.Get());
+
 	PublishGlobalChannelsToExterns(externs, channels);
 	RenderStates::Create(pDevice.Get(), states);
 
@@ -1647,14 +2278,15 @@ bool Graphics::InitializeScene()
 	InitializeScopes();
 	LoadGlobalTextures();
 	CreateLightVolumeResources();
-
+	CreateInstanceBuffer();
 	loadzone = std::make_unique<LoadZone>(*this);
-	loadzone->parentHash = 0x8102B52C; //duality
+	loadzone->parentHash = 0x80EAD61B; //duality
 	loadzone->ProcessMap();
 	this->staticsToDraw = loadzone->statics;
 	this->lightsToDraw = loadzone->lights;
 	this->entitiesToDraw = loadzone->entities;
 	this->staticAO1 = loadzone->AOMap1;
+	EnsureCB1_StaticReusable(pDevice.Get(), g_cb1);
 	printf("Loading Render Engine\n");
 	//exit(1);
 	gTimer.reset();

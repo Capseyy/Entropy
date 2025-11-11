@@ -280,6 +280,7 @@
     <ClCompile Include="src\TigerEngine\Technique\Tfx\tfx_decompiler.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\Renderer\Graphics\Render\RenderPacket.h" />
     <ClInclude Include="src\Renderer\Graphics\Scope\ChannelEditor.h" />
     <ClInclude Include="src\Renderer\Loaders\NewTexture.h" />
     <ClInclude Include="resource.h" />

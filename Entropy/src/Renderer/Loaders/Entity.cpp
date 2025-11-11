@@ -59,7 +59,7 @@ void LoadZone::load_entity_into_scene(TagHash tag, glm::quat quat, glm::vec4 pos
         if (ent_resource.resource18.type != 0x80806D8F) continue;
 
         const auto e = ent_resource.resource18.Parse<Unk_80806D8F>(resource.entity_resource);
-        load_entity_model_into_scene(e.MeshFile, quat, pos, e.entity_material_map, e.materials);
+        load_entity_model_into_scene(e.MeshFile, quat, pos, e.entity_material_map, e.materials, {});
     }
 }
 
@@ -67,7 +67,7 @@ void LoadZone::load_entity_model_into_scene(TagHash sem,
     glm::quat quat,
     glm::vec4 pos,
     std::vector<Unk_808072C5> tech_maps,
-    std::vector<TagHash> ext_techs)
+    std::vector<TagHash> ext_techs, std::optional<Aabb> occlustion_bounds)
 {
     const SEntityModel model = bin::parse<SEntityModel>(sem.data, sem.size);
 
@@ -76,14 +76,14 @@ void LoadZone::load_entity_model_into_scene(TagHash sem,
     re.rot = quat;
     re.id = sem.hash;
     re.meshData = model;
+    if (occlustion_bounds) {
+        re.occlusion_bounds = occlustion_bounds;
+    }
 
     // ---- external materials (keep shared_ptr ownership) ----
     re.external_mats.clear();
     re.external_mats.reserve(ext_techs.size());
     for (const auto& mat : ext_techs) {
-        // (Optional) your validation pass...
-        // const auto technique = bin::parse<STechnique>(mat.data, mat.size, bin::Endian::Little);
-
         auto tech = gfx.assets->EnqueueTechnique(mat);      // returns AssetHandle<...>
         re.external_mats.push_back(tech.get());             // <-- if vector holds shared_ptr
         // If vector holds raw pointers, change the vector type to shared_ptr to avoid dangling.

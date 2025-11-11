@@ -8,15 +8,13 @@
 class Graphics;  
 
 class StaticMap {
-public:
-    explicit StaticMap(Graphics& gfx);     
+public:    
     bool Initialize(uint32_t mapRootHash);
     void LoadAll_Statics();                
 
     const std::vector<RenderStatic>& Statics() const { return statics_; }
     const std::vector<RenderStatic>& GetRenderList() const;
-private:
-    Graphics& gfx_;                        
+private:                       
     uint64_t  rootHash_ = 0;
     std::vector<TagHash> staticTags;
     std::vector<RenderStatic> statics_;
