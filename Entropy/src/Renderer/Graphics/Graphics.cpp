@@ -2280,7 +2280,7 @@ bool Graphics::InitializeScene()
 	CreateLightVolumeResources();
 	CreateInstanceBuffer();
 	loadzone = std::make_unique<LoadZone>(*this);
-	loadzone->parentHash = 0x80EAD61B; //duality
+	loadzone->parentHash = 0x80FEDEDB; //duality
 	loadzone->ProcessMap();
 	this->staticsToDraw = loadzone->statics;
 	this->lightsToDraw = loadzone->lights;

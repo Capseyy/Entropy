@@ -48,7 +48,7 @@ void Engine::Update()
 	if (keyboard.KeyIsPressed(VK_SHIFT))
 	{
 		if (keyboard.KeyIsPressed(VK_SPACE)) {
-			cameraSpeed = gfx.camera.GetSpeed() * 50;
+			cameraSpeed = gfx.camera.GetSpeed() * 100;
 		}
 		else {
 			cameraSpeed = gfx.camera.GetSpeed() * 10;
