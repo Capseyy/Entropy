@@ -19,9 +19,9 @@ std::string ToAsciiString(const std::string& input) {
 }
 
 
-std::unordered_map<int, std::string> GenerateStringMap() {
+std::unordered_map<uint32_t, std::string> GenerateStringMap() {
     auto hashes = GetAllTagsFromReference(0x808099ef);
-    std::vector<std::unordered_map<int, std::string>> parts(hashes.size());
+    std::vector<std::unordered_map<uint32_t, std::string>> parts(hashes.size());
     std::transform(std::execution::par, hashes.begin(), hashes.end(), parts.begin(),
         [](auto h) {
             return ProcessStringContainer(static_cast<int>(h));
@@ -30,7 +30,7 @@ std::unordered_map<int, std::string> GenerateStringMap() {
     std::size_t total = 0;
     for (auto& m : parts) total += m.size();
 
-    std::unordered_map<int, std::string> result;
+    std::unordered_map<uint32_t, std::string> result;
     result.reserve(total);
     for (auto& m : parts) {
         for (auto& kv : m) {
@@ -53,8 +53,8 @@ std::unordered_map<int, std::string> GenerateStringMap() {
     return result;
 }
 
-std::unordered_map<int, std::string> ProcessStringContainer(int Hash) {
-	TagHash tag(static_cast<int>(Hash));
+std::unordered_map<uint32_t, std::string> ProcessStringContainer(int Hash) {
+	TagHash tag(static_cast<uint32_t>(Hash));
     if (tag.success == false) {
         printf("Failed to retrieve tag data for hash: %08X\n", Hash);
         return {};
@@ -63,7 +63,7 @@ std::unordered_map<int, std::string> ProcessStringContainer(int Hash) {
 	auto buffer = tag.data;
     SStringContainer sc = bin::parse<SStringContainer>(tag.data, tag.size);
     SStringBank sb = bin::parse<SStringBank>(sc.Language.data, sc.Language.size);
-	std::unordered_map<int, std::string> StringMap = {};
+	std::unordered_map<uint32_t, std::string> StringMap = {};
 	int stringIndex = 0;
     for (const auto& meta : sb.StringMetadata) {
 		std::string asciiStr;

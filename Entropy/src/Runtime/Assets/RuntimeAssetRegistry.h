@@ -77,6 +77,7 @@ public:
     bool HasCBuffer(uint32_t id) const;
     bool HasTechnique(uint32_t id) const;
     bool Has3DTexture(uint32_t id) const;
+    bool TryGetBuffer(uint32_t id, BufferPayload& out) const noexcept;
 
 private:
     template<class T>

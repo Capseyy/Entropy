@@ -6,6 +6,7 @@
 #include <windows.h>
 #include <cstdio>
 #include "TigerEngine/ClientStartup/RenderGlobals.h"
+#include "TigerEngine/Activity/activity.h"
 
 void EnsureConsole()
 {
@@ -34,12 +35,14 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int)
 	printf("Loaded %zu packages\n", GlobalData::getMap().size());
 	printf("Loaded %zu h64 entries\n", GlobalData::getH64().size());
 	auto start = std::chrono::high_resolution_clock::now();
-	//auto StringMap = GenerateStringMap();
+	auto StringMap = GenerateStringMap();
+	for (auto& entry : StringMap) {
+		GlobalData::globalString().insert(entry);
+	}
+	
 	auto end = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed = end - start;
-	//printf("Loaded String Map with %zu entries in %.3f seconds\n",
-	//	StringMap.size(), elapsed.count());
-	//SearchBungieFiles(0x51520FF1);
+	GenerateTigerActivities();
 	HRESULT hr = CoInitialize(NULL);
 	if (FAILED(hr))
 	{

@@ -326,9 +326,15 @@ bool EntropyAssets::Technique::Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11D
     else {
 
     }*/
+    /*if (this->id == 0x80E2DF12) {
+        prog.Evaluate_With_Channels(externs, cb0, channels, true);
 
-    prog.Evaluate_With_Channels(externs, cb0,channels);
+    }*/
+    {
+        prog.Evaluate_With_Channels(externs, cb0, channels, false);
 
+    }
+    
 
 
     // writes float4s to cb0[..] as dictated by bytecode

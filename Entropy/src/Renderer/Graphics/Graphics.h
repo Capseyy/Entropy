@@ -36,6 +36,9 @@
 #include "Render/RenderPacket.h"
 #include <atomic>
 #include <mutex>
+#include <d3d11.h>
+#include <d3d11_4.h>
+#include "TigerEngine/Activity/activity.h"
 
 enum class StaticBufKind { Index, Vertex, UV, Color };
 
@@ -110,6 +113,14 @@ struct InstanceData
 	float              _pad[3];    // pad to 16B multiple (stride = 48 bytes)
 };
 
+struct GpuMarker {
+	ID3DUserDefinedAnnotation* a{};
+	GpuMarker(ID3D11DeviceContext* ctx, const wchar_t* name) {
+		if (SUCCEEDED(ctx->QueryInterface(IID_PPV_ARGS(&a))) && a) a->BeginEvent(name);
+	}
+	~GpuMarker() { if (a) { a->EndEvent(); a->Release(); } }
+};
+
 class Graphics
 {
 public:
@@ -130,8 +141,6 @@ private:
 	bool InitializeRenderGlobals();
 	void InitializeInputLayouts();
 	void InitAnnotation();
-	void DrawStaticSpecial(const RenderStatic& rs, const View& view);
-	void DrawStaticTransparent(const RenderStatic& rs, const View& view);
 	void DrawEntity(const RenderEntity& rs, const View& view, TfxRenderStage = TfxRenderStage::GenerateGbuffer);
 	void RunPostprocessChain();
 	//Asset Cache
@@ -145,14 +154,7 @@ private:
 		StaticBufKind which,
 		UINT addFlags);
 
-	// build helpers
-	void DrawStaticMeshTo(std::vector<DrawPacket>& outPackets,
-		std::vector<ObjectVectors>& outWorlds,
-		std::vector<InstanceData>& outInstances,
-		const RenderStatic& rs,
-		const View& view,
-		TfxRenderStage renderStage);
-	void DrawStaticMeshParallel(const std::vector<RenderStatic>& staticsToDraw, const View& view, TfxRenderStage renderStage);
+	Microsoft::WRL::ComPtr<ID3D11Multithread> mt;
 
 	std::unordered_map<uint64_t, ResolvedSpecial> specialsCache_;
 	std::array<Microsoft::WRL::ComPtr<ID3D11InputLayout>, 15> tiger_input_layouts;
@@ -193,13 +195,6 @@ private:
 	Microsoft::WRL::ComPtr<ID3D11VertexShader> entity_vs_override;
 	Microsoft::WRL::ComPtr<ID3D11DepthStencilState> dsDepthReadWrite_;
 	Microsoft::WRL::ComPtr<ID3D11RasterizerState>   rsNoCull_;
-	void DrawPostProcessPass(bool enableFXAA, bool fxaaNoise /*unused here*/);
-	void DrawFS(ID3D11DeviceContext* ctx,
-		ID3D11VertexShader* vs, ID3D11PixelShader* ps,
-		ID3D11RenderTargetView* rtv,
-		ID3D11ShaderResourceView* const* srvs, UINT srvCount,
-		ID3D11SamplerState* const* samps, UINT sampCount);
-	void IssueOcclusionQueries(const View& view);
 
 	UINT offset = 0;
 
@@ -252,7 +247,7 @@ private:
 	ComPtr<ID3D11SamplerState> shading2;
 	ComPtr<ID3D11SamplerState> lighting1;
 	ComPtr<ID3D11SamplerState> lighting2;
-
+	void PrewarmVisibleAssets(const View& view);
 	Microsoft::WRL::ComPtr<ID3D11Buffer> g_cb1_fallback;
 
 	Microsoft::WRL::ComPtr<ID3D11BlendState> bsGBufferOpaqueIndependent;
@@ -268,6 +263,8 @@ private:
 	Microsoft::WRL::ComPtr<ID3D11PixelShader>  psSolid;
 
 	Microsoft::WRL::ComPtr<ID3D11BlendState> bsAdditive; // optional, for later draws
+
+	std::vector<TigerActivity> activities;
 
 	int windowWidth = 0;
 	int windowHeight = 0;

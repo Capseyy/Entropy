@@ -68,7 +68,8 @@ void LoadZone::ProcessMap()
 	{
 		load_datatable_into_scene(datatable);
 	}
-
+	//load_datatable_into_scene(TagHash(0x80D4076F));
+	//load_datatable_into_scene(TagHash(0x80D26815));
 	printf("Loaded %d datatables\n", data_tables.size());
 }
 

@@ -227,6 +227,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\Renderer\Graphics\Render\FrustumCulling.h" />
+    <ClCompile Include="src\Renderer\Loaders\ecs\Light.cpp" />
     <ClCompile Include="src\Renderer\Loaders\NewTexture.cpp" />
     <ClCompile Include="src\Renderer\Graphics\RenderStates.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Render\gbuffer.cpp" />
@@ -241,6 +242,7 @@
     <ClCompile Include="src\Runtime\Assets\RuntimeAssetRegistry.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Scope\view.cpp" />
     <ClCompile Include="src\Runtime\Assets\Sampler.cpp" />
+    <ClCompile Include="src\TigerEngine\Activity\activity.cpp" />
     <ClCompile Include="src\TigerEngine\ClientStartup\RenderGlobals.cpp" />
     <ClCompile Include="src\TigerEngine\crypto.cpp" />
     <ClCompile Include="src\TigerEngine\mapped_file.cpp" />
@@ -281,15 +283,16 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\Renderer\Graphics\Render\RenderPacket.h" />
-    <ClInclude Include="src\Renderer\Graphics\Scope\ChannelEditor.h" />
+    <ClInclude Include="src\Renderer\Graphics\UI\ActivityBrowser.h" />
+    <ClInclude Include="src\Renderer\Graphics\UI\ChannelEditor.h" />
     <ClInclude Include="src\Renderer\Loaders\NewTexture.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="src\Renderer\Graphics\GameTimer.h" />
     <ClInclude Include="src\Renderer\Graphics\Render\gbuffer.h" />
     <ClInclude Include="src\Renderer\Graphics\Render\GBufferRT.h" />
-    <ClInclude Include="src\Renderer\Graphics\Scope\AtmosphereExternUI.h" />
-    <ClInclude Include="src\Renderer\Graphics\Scope\FrameGlobalLightingExternUI.h" />
-    <ClInclude Include="src\Renderer\Graphics\Scope\global_channel_ui.h" />
+    <ClInclude Include="src\Renderer\Graphics\UI\AtmosphereExternUI.h" />
+    <ClInclude Include="src\Renderer\Graphics\UI\FrameGlobalLightingExternUI.h" />
+    <ClInclude Include="src\Renderer\Graphics\UI\global_channel_ui.h" />
     <ClInclude Include="src\Renderer\Graphics\Scope\instance.h" />
     <ClInclude Include="src\Renderer\Graphics\RenderStates.h" />
     <ClInclude Include="src\Renderer\Loaders\Map.h" />
@@ -305,6 +308,7 @@
     <ClInclude Include="src\Runtime\Assets\Sampler.h" />
     <ClInclude Include="src\Runtime\Threading\MainThreadQueue.h" />
     <ClInclude Include="src\Renderer\Graphics\Scope\view.h" />
+    <ClInclude Include="src\TigerEngine\Activity\activity.h" />
     <ClInclude Include="src\TigerEngine\ClientStartup\RenderGlobals.h" />
     <ClInclude Include="src\TigerEngine\crypto.h" />
     <ClInclude Include="src\TigerEngine\Entity\entity.h" />

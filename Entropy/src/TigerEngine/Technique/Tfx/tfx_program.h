@@ -20,15 +20,15 @@ public:
     // Evaluate into cb0 (vector<float4>)
     void Evaluate(const ExternStorage& externs, std::vector<Vec4>& cb) const {
         std::array<Vec4, 16> temp{};
-        EvaluateExpressionEoF(ops, externs, cb, constants, temp, {}, nullptr, false);
+        EvaluateExpressionEoF(ops, externs, cb, constants, temp, {}, false);
     }
     void Evaluate_Trace(const ExternStorage& externs, std::vector<Vec4>& cb) const {
         std::array<Vec4, 16> temp{};
-        EvaluateExpressionEoF(ops, externs, cb, constants, temp, {}, nullptr);
+        EvaluateExpressionEoF(ops, externs, cb, constants, temp, {});
     }
-    void Evaluate_With_Channels(const ExternStorage& externs, std::vector<Vec4>& cb, std::unordered_map<uint32_t, float_t> channels) const {
+    void Evaluate_With_Channels(const ExternStorage& externs, std::vector<Vec4>& cb, std::unordered_map<uint32_t, float_t> channels, bool trace = false) const {
         std::array<Vec4, 16> temp{};
-        EvaluateExpressionEoF(ops, externs, cb, constants, temp, channels, nullptr, false);
+        EvaluateExpressionEoF(ops, externs, cb, constants, temp, channels, trace);
     }
 
     std::string DecompilePretty() const {

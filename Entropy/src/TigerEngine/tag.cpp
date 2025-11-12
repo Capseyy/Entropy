@@ -13,6 +13,24 @@ int TagHash::getEntryID() {
 	uint32_t entryId = hash & 0x1FFF;
 	return entryId;
 }
+namespace bin {
+	void read_into(Reader& r, StringHash& q) {
+		q.hash = r.read_arith<uint32_t>();
+		const auto& stringMap = GlobalData::globalString(); // assume unordered_map<uint32_t, std::string>
+		auto it = stringMap.find(q.hash);
+		if (it == stringMap.end()) {
+
+			q.string = std::format("Unk_%08X", q.hash);
+		}
+		else {
+			q.string = it->second;
+		}
+	}
+}
+
+
+
+
 
 std::string TagHash::GetPackageName()
 {

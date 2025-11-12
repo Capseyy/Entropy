@@ -32,6 +32,14 @@ void RuntimeAssetRegistry::RegisterTechnique(uint32_t techId, TechniqueDesc desc
     techniques_[techId] = std::move(desc);
 }
 
+bool RuntimeAssetRegistry::TryGetBuffer(uint32_t id, BufferPayload& out) const noexcept {
+    std::scoped_lock lk(m_);
+    auto it = buffers_.find(id);
+    if (it == buffers_.end()) return false;
+    out = it->second;        // or out = it->second; (copy/move as you wish)
+    return true;
+}
+
 // -------- Get --------
 BufferPayload RuntimeAssetRegistry::GetBuffer(uint32_t id) const {
     std::lock_guard<std::mutex> lk(m_);

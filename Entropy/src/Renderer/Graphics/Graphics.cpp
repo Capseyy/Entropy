@@ -1,23 +1,46 @@
 #include "Graphics.h"
 #include <filesystem>
 #include <d3dcompiler.h>
-#include "Scope/AtmosphereExternUI.h"
-#include "Scope/FrameGlobalLightingExternUI.h"
-#include "Scope/global_channel_ui.h"
-#include "Scope/ChannelEditor.h"
+#include "UI/AtmosphereExternUI.h"
+#include "UI/FrameGlobalLightingExternUI.h"
+#include "UI/global_channel_ui.h"
+#include "UI/ChannelEditor.h"
 #include "TigerEngine/Map/TigerBuffer.h" 
 #include <unordered_set>
+#include "Renderer/Graphics/UI/ActivityBrowser.h"
+
+static int g_activation_budget_per_frame = 8;
+static int g_activations_this_frame = 0;
+
+
 
 #pragma comment(lib, "d3dcompiler.lib")
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
 
-static inline bool FutReady(const std::shared_future<std::shared_ptr<ID3D11Buffer>>& f) {
+template<typename T>
+static inline bool FutReady(const std::shared_future<std::shared_ptr<T>>& f) {
 	using namespace std::chrono_literals;
 	return f.valid() && f.wait_for(0s) == std::future_status::ready;
 }
-static inline bool FutReady(const std::shared_future<std::shared_ptr<EntropyAssets::BufferSRVRes>>& f) {
-	using namespace std::chrono_literals;
-	return f.valid() && f.wait_for(0s) == std::future_status::ready;
+
+template<typename T>
+static bool TryActivateReady(std::shared_future<std::shared_ptr<T>>& fut,
+	std::shared_ptr<T>& out)
+{
+	if (!FutReady(fut)) return false;
+	if (g_activations_this_frame >= g_activation_budget_per_frame) return false;
+
+	try {
+		out = fut.get();            // may rethrow from producer
+	}
+	catch (const std::exception& e) {
+		OutputDebugStringA((std::string("TryActivateReady: ") + e.what() + "\n").c_str());
+		out.reset();                // treat as “not available”
+		// Do NOT increment activation here, or do so if you want it to count.
+		return false;
+	}
+	++g_activations_this_frame;
+	return true;
 }
 
 bool Graphics::ResolveSpecialOnce(const SStaticSpecial& sp, ResolvedSpecial& out)
@@ -69,11 +92,13 @@ bool Graphics::ResolveSpecialOnce(const SStaticSpecial& sp, ResolvedSpecial& out
 	BufferPayload pVC{};
 	if (out.vCol) pVC = registry->GetBuffer(sp.VertexColourBuffer.hash);
 
+	// NEW: choose index format from index-buffer stride
+	out.idxFmt = (pIB.stride == 2) ? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT;
+
 	out.indexStart = sp.index_start;
 	out.indexCount = sp.index_count;
 	out.stride1 = pVB1.stride;
 	out.stride2 = out.vb2 ? pVB2.stride : 0;
-
 
 	if (out.vCol) {
 		out.vColFmt = (pVC.stride == 1) ? DXGI_FORMAT_R8_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -97,14 +122,6 @@ static inline TagHash GetBufTag(const SStaticMeshData& mesh,
 	}
 	return {};
 }
-
-struct GpuMarker {
-	ID3DUserDefinedAnnotation* a{};
-	GpuMarker(ID3D11DeviceContext* ctx, const wchar_t* name) {
-		if (SUCCEEDED(ctx->QueryInterface(IID_PPV_ARGS(&a))) && a) a->BeginEvent(name);
-	}
-	~GpuMarker() { if (a) { a->EndEvent(); a->Release(); } }
-};
 
 void Graphics::SubmitPackets(ID3D11DeviceContext* ctx,
 	std::vector<DrawPacket>& packets,
@@ -247,7 +264,7 @@ bool Graphics::ResolveStaticPartOnce(
 		}
 		catch (const std::exception& e) {
 			// log once and continue without vertex color
-			printf("Color SRV load failed: %\n " , std::string(e.what()));
+			printf("Color SRV load failed: %s\n", e.what());
 			out.vCol = nullptr;
 		}
 	}
@@ -411,8 +428,9 @@ void Graphics::EnsureSpecialBufferRegistered(const SStaticSpecial& sp,
 void Graphics::EnsureBufferBind(uint32_t id, UINT addFlags)
 {
 	if (id == 0 || id == 0xFFFFFFFFu) return;
-	auto payload = registry->GetBuffer(id);               // throws if missing
-	const UINT merged = payload.desc.BindFlags | addFlags;
+	BufferPayload payload{};
+	if (!registry->TryGetBuffer(id, payload)) return; // not registered yet; leave it
+	UINT merged = payload.desc.BindFlags | addFlags;
 	if (merged != payload.desc.BindFlags) {
 		payload.desc.BindFlags = merged;
 		registry->RegisterBuffer(id, std::move(payload));
@@ -434,18 +452,14 @@ Graphics::GetOrEnqueueBuffer(uint32_t id, UINT addFlags)
 std::shared_future<std::shared_ptr<EntropyAssets::BufferSRVRes>>&
 Graphics::GetOrEnqueueBufferSRV(uint32_t id)
 {
-	// Build the SRV meta from the registry’s payload (stride + element count)
-	auto payload = registry->GetBuffer(id);
+	BufferPayload payload{};
+	if (!registry->TryGetBuffer(id, payload)) return bufferSrvFut_[id]; // nothing to do yet
 	BufferSRVMeta meta{};
 	meta.kind = BufferSRVMeta::Kind::Structured;
 	meta.structureByteStride = payload.stride;
 	meta.typedFormat = (payload.stride == 1) ? DXGI_FORMAT_R8_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM;
-	const UINT bytes = payload.desc.ByteWidth;
 	meta.bytesPerElement = payload.stride;
-
-	// Ensure SRV bind flag for creation
 	EnsureBufferBind(id, D3D11_BIND_SHADER_RESOURCE);
-
 	auto it = bufferSrvFut_.find(id);
 	if (it == bufferSrvFut_.end())
 		it = bufferSrvFut_.emplace(id, assets->EnqueueBufferSRV(id, meta).future).first;
@@ -561,9 +575,6 @@ void Graphics::Create1x1SRV(UINT color, ComPtr<ID3D11ShaderResourceView>& addres
 
 	pDevice->CreateShaderResourceView(tex.Get(), &svd, address.GetAddressOf());
 }
-
-struct CBLightSimpleGeometry { DirectX::XMFLOAT4X4 transform; };
-Microsoft::WRL::ComPtr<ID3D11Buffer> cbLightSimpleGeometry;
 
 
 static void DrawFullscreenTriangle(ID3D11DeviceContext* ctx) {
@@ -1041,94 +1052,6 @@ void Graphics::RunPostprocessChain()
 	}
 }
 
-void Graphics::DrawLight(const RenderLight& rl, const View& view)
-{
-	ID3D11DeviceContext* ctx = pContext.Get();
-	wchar_t label[128];
-	swprintf(label, 128, L"Light Render %08X %d", rl.parent, rl.idx);
-	GpuMarker mark(ctx, label);
-	//printf("Light Render %08X %d  at pos x %f %f %f\n", rl.parent, rl.idx, rl.pos.x, rl.pos.y, rl.pos.z);
-	// ------------------- Bind light MRTs + scene depth -------------------
-	ID3D11RenderTargetView* rts[] = {
-		gbufA.light_diffuse.rtv.Get(),
-		gbufA.light_specular.rtv.Get()
-	};
-	ctx->OMSetRenderTargets(2, rts, nullptr);
-
-	using namespace DirectX;
-
-	// Node transform (local_to_world)
-	const XMVECTOR qn = XMQuaternionNormalize(XMVectorSet(rl.rot.w, rl.rot.x, rl.rot.y, rl.rot.z));
-	const XMMATRIX R = XMMatrixRotationQuaternion(qn);
-	const XMMATRIX T = XMMatrixTranslation(rl.pos.x, rl.pos.y, rl.pos.z);
-	const XMMATRIX NodeL2W = R * T;
-	const XMMATRIX LightL2W = XMLoadFloat4x4((const XMFLOAT4X4*)&rl.light_matrix);
-
-	// Rust:   Node * Light   (column-vectors)  =>  apply Light then Node
-	// C++:    Light * Node   (row-vectors)     =>  same effect
-	const XMMATRIX L2W_scaled = LightL2W * NodeL2W;
-
-	// final SG = (world_to_projective * transform_mat_scaled) in Rust
-	// For row-vectors, multiply on the right:
-	const XMMATRIX W2P = XMLoadFloat4x4(&view.world_to_projective);
-	const XMMATRIX SG = L2W_scaled * W2P;
-
-	Mat4 sgM; XMStoreFloat4x4((XMFLOAT4X4*)&sgM, SG);
-	externs.SetSimpleGeometryTransform(sgM);
-
-
-	const XMMATRIX Trel = XMMatrixTranslation(rl.pos.x - view.position.x,
-		rl.pos.y - view.position.y,
-		rl.pos.z - view.position.z);
-	const XMMATRIX L2W_rel_xm = R * Trel;
-
-	// convert XMMATRIX -> Mat4
-	const Mat4 l2wRel = M4(L2W_rel_xm);
-
-	// camT as Mat4 (you can also make it via M4(XMMatrixTranslation(...)))
-	Mat4 camT = Mat4::identity();
-	{
-		float* p = reinterpret_cast<float*>(&camT);
-		p[12] = view.position.x; p[13] = view.position.y; p[14] = view.position.z; p[15] = 1.0f;
-	}
-
-	// set externs
-	externs.SetDeferredLight(camT, l2wRel, rl.unk50);
-
-	// ------------------- SRVs (order matters!) -------------------
-	ID3D11ShaderResourceView* srvs[] = {
-	gbufA.rt1_read.srv.Get(),
-	gbufA.depth.texCopySRV.Get(),// t0 : MATERIAL/PARAMS  (RT2)
-	gbufA.rt2.srv.Get(),     // t1 : NORMAL+ROUGHNESS (RT1 clone)
-	// t2 : DEPTH            (R32_FLOAT)
-   // (t3, t4, t5 can be bound by the technique if used)
-	};
-	ctx->PSSetShaderResources(0, (UINT)std::size(srvs), srvs);
-
-	// ------------------- States for light volumes -------------------
-	if (rl.technique) rl.technique->Bind(pDevice, pContext, externs, states, scopes);
-
-	float bf[4] = { 1,1,1,1 };
-	ctx->OMSetBlendState(bsAdditive2RT.Get(), bf, 0xFFFFFFFF);
-	ctx->OMSetDepthStencilState(depthStencilLightVolume.Get(), 0);
-	ctx->RSSetState(rasterizerStateBiased.Get());
-
-	// Samplers: s0 = point-clamp (GBuffer), s1 = linear (gathers/LUTs)
-	ID3D11SamplerState* sams[] = { lighting1.Get(), lighting2.Get() };
-	ctx->PSSetSamplers(0, (UINT)std::size(sams), sams);
-
-
-
-	// ------------------- Draw the light volume -------------------
-	ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	UINT stride = sizeof(float) * 3, offset = 0;
-	ID3D11Buffer* vb = lightCubeVB.Get();
-	ctx->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
-	ctx->IASetIndexBuffer(lightCubeIB.Get(), DXGI_FORMAT_R16_UINT, 0);
-	ctx->IASetInputLayout(tiger_input_layouts[0].Get());
-	ctx->DrawIndexed(36, 0, 0);
-}
-
 void Graphics::DrawEntity(const RenderEntity& rs, const View& view, TfxRenderStage renderStage)
 {
 	ID3D11DeviceContext* ctx = pContext.Get();
@@ -1301,13 +1224,142 @@ void Graphics::DrawEntity(const RenderEntity& rs, const View& view, TfxRenderSta
 	}
 }
 
+void Graphics::PrewarmVisibleAssets(const View& view)
+{
+	// 1) Statics
+	for (auto& rs : staticsToDraw)
+	{
+		// Cheap cull like you already do in DrawStaticMesh
+		using namespace culldbg;
+		const XMFLOAT4X4& W2P = view.world_to_projective;
+		Frustum fr = Frustum::FromColumnMajor(W2P, true);
+		bool anyVisible = false;
+		for (uint32_t i = 0; i < rs.world.size(); ++i) {
+			if (culldbg::aabb_in_frustum_dbg(fr, rs.bounds[i], nullptr, false)) { anyVisible = true; break; }
+		}
+		if (!anyVisible) continue;
+
+		// Touch techniques that’ll be used
+		for (int gi = 0; gi < (int)rs.mesh.mesh_groups.size(); ++gi)
+		{
+			const auto& mg = rs.mesh.mesh_groups[gi];
+			if (mg.TfxRenderStage != (UINT)TfxRenderStage::GenerateGbuffer) continue;
+
+			// Enqueue tech, and if ready, consume budget to pull it into RAM/driver now
+			std::shared_ptr<EntropyAssets::Technique> tech{};
+			if (gi >= 0 && gi < (int)rs.techniques.size()) {
+				auto it = TechCache_.find(rs.techniques[gi]);
+				if (it == TechCache_.end()) {
+					TagHash th(rs.techniques[gi]);
+					it = TechCache_.emplace(rs.techniques[gi], assets->EnqueueTechnique(th)).first;
+				}
+				if (IsReady(it->second) && g_activations_this_frame < g_activation_budget_per_frame) {
+					tech = it->second.get(); // counts as activation conceptually
+					++g_activations_this_frame;
+				}
+			}
+
+			// Enqueue buffers (no blocking) and, if READY, activate a few this frame
+			const auto& part = rs.mesh.parts[mg.part_index];
+			const auto& sb = rs.mesh.buffers[part.buffer_index];
+
+			EnsureStaticBufferRegistered(rs.mesh, part, StaticBufKind::Index, D3D11_BIND_INDEX_BUFFER);
+			EnsureStaticBufferRegistered(rs.mesh, part, StaticBufKind::Vertex, D3D11_BIND_VERTEX_BUFFER);
+			if (sb.UVBuffer.hash && sb.UVBuffer.hash != 0xFFFFFFFFu)
+				EnsureStaticBufferRegistered(rs.mesh, part, StaticBufKind::UV, D3D11_BIND_VERTEX_BUFFER);
+			if (sb.VertexColourBuffer.hash && sb.VertexColourBuffer.hash != 0xFFFFFFFFu)
+				EnsureStaticBufferRegistered(rs.mesh, part, StaticBufKind::Color, D3D11_BIND_SHADER_RESOURCE);
+
+			auto& fIB = GetOrEnqueueBuffer(sb.IndexBuffer.hash, D3D11_BIND_INDEX_BUFFER);
+			auto& fVB = GetOrEnqueueBuffer(sb.VertexBuffer.hash, D3D11_BIND_VERTEX_BUFFER);
+			std::shared_ptr<ID3D11Buffer> tmp;
+			TryActivateReady(fIB, tmp);
+			TryActivateReady(fVB, tmp);
+
+			if (sb.UVBuffer.hash && sb.UVBuffer.hash != 0xFFFFFFFFu) {
+				auto& fUV = GetOrEnqueueBuffer(sb.UVBuffer.hash, D3D11_BIND_VERTEX_BUFFER);
+				TryActivateReady(fUV, tmp);
+			}
+			if (sb.VertexColourBuffer.hash && sb.VertexColourBuffer.hash != 0xFFFFFFFFu) {
+				auto& fCol = GetOrEnqueueBufferSRV(sb.VertexColourBuffer.hash);
+				std::shared_ptr<EntropyAssets::BufferSRVRes> tmpSRV;
+				TryActivateReady(fCol, tmpSRV);
+			}
+
+			if (g_activations_this_frame >= g_activation_budget_per_frame) return;
+		}
+
+		if (g_activations_this_frame >= g_activation_budget_per_frame) return;
+	}
+
+	// 2) Specials (same idea, trimmed)
+	for (auto& rs : staticsToDraw)
+	{
+		if (rs.specials.empty()) continue;
+		using namespace culldbg;
+		const XMFLOAT4X4& W2P = view.world_to_projective;
+		Frustum fr = Frustum::FromColumnMajor(W2P, true);
+		bool anyVisible = false;
+		for (uint32_t i = 0; i < rs.world.size(); ++i) {
+			if (culldbg::aabb_in_frustum_dbg(fr, rs.bounds[i], nullptr, false)) { anyVisible = true; break; }
+		}
+		if (!anyVisible) continue;
+
+		for (const auto& specialPtr : rs.specials)
+		{
+			const SStaticSpecial& sp = specialPtr.part;
+			if (sp.TfxRenderStage != (uint8_t)TfxRenderStage::GenerateGbuffer) continue;
+
+			// technique
+			uint32_t techId = (specialPtr.techniqueId ? specialPtr.techniqueId : sp.technique);
+			auto it = TechCache_.find(techId);
+			if (it == TechCache_.end()) {
+				TagHash th(techId);
+				it = TechCache_.emplace(techId, assets->EnqueueTechnique(th)).first;
+			}
+			if (IsReady(it->second) && g_activations_this_frame < g_activation_budget_per_frame) {
+				auto t = it->second.get();
+				++g_activations_this_frame;
+			}
+
+			EnsureSpecialBufferRegistered(sp, StaticBufKind::Index, D3D11_BIND_INDEX_BUFFER);
+			EnsureSpecialBufferRegistered(sp, StaticBufKind::Vertex, D3D11_BIND_VERTEX_BUFFER);
+			if (sp.VertexBuffer2.hash && sp.VertexBuffer2.hash != 0xFFFFFFFFu)
+				EnsureSpecialBufferRegistered(sp, StaticBufKind::UV, D3D11_BIND_VERTEX_BUFFER);
+			if (sp.VertexColourBuffer.hash && sp.VertexColourBuffer.hash != 0xFFFFFFFFu)
+				EnsureSpecialBufferRegistered(sp, StaticBufKind::Color, D3D11_BIND_SHADER_RESOURCE);
+			// buffers
+			auto& fIB = GetOrEnqueueBuffer(sp.IndexBuffer.hash, D3D11_BIND_INDEX_BUFFER);
+			auto& fVB1 = GetOrEnqueueBuffer(sp.VertexBuffer1.hash, D3D11_BIND_VERTEX_BUFFER);
+			std::shared_ptr<ID3D11Buffer> tmpBuf;
+			TryActivateReady(fIB, tmpBuf);
+			TryActivateReady(fVB1, tmpBuf);
+			if (sp.VertexBuffer2.hash && sp.VertexBuffer2.hash != 0xFFFFFFFFu) {
+				auto& fVB2 = GetOrEnqueueBuffer(sp.VertexBuffer2.hash, D3D11_BIND_VERTEX_BUFFER);
+				TryActivateReady(fVB2, tmpBuf);
+			}
+			if (sp.VertexColourBuffer.hash && sp.VertexColourBuffer.hash != 0xFFFFFFFFu) {
+				auto& fCol = GetOrEnqueueBufferSRV(sp.VertexColourBuffer.hash);
+				std::shared_ptr<EntropyAssets::BufferSRVRes> tmpSRV;
+				TryActivateReady(fCol, tmpSRV);
+			}
+
+			if (g_activations_this_frame >= g_activation_budget_per_frame) return;
+		}
+		if (g_activations_this_frame >= g_activation_budget_per_frame) return;
+	}
+}
+
 void Graphics::RenderFrame()
 {
 	static bool drawrt1 = false, drawrt0 = false, drawrt2 = false, drawLight_diffuse = false,
 		drawLight_specular = false, drawDepth = false, drawShading = false,
 		drawShadingRead = false, drawLight_ibl = false, stageGlobalLighting = false;
+	
 	//mainQueue->Drain();
+	mainQueue->RunSlice(8, 1);
 	gTimer.tick();
+	g_activations_this_frame = 0;
 	packets_.clear();
 	frameWorlds_.clear();
 	// Per-frame externs
@@ -1315,10 +1367,9 @@ void Graphics::RenderFrame()
 	externs.SetFxaa(float(gTimer.total_game_time()));
 
 	View viewState{};
-	XMStoreFloat4x4(&viewState.world_to_camera, camera.GetViewMatrix());
 
-	// Projection (LH, infinite far, fovY = 90°, non-reversed)
-	const float fovY = DirectX::XMConvertToRadians(90.0f);  // <= gives m22 = 1.0
+	XMStoreFloat4x4(&viewState.world_to_camera, camera.GetViewMatrix());
+	const float fovY = DirectX::XMConvertToRadians(90.0f);
 	const float aspect = float(windowWidth) / float(windowHeight);
 	const float zn = std::max(0.001f, camera.GetNearZ());
 
@@ -1358,10 +1409,12 @@ void Graphics::RenderFrame()
 			scope.second.UpdateScopeBuffers(pContext, externs);
 	}
 
-	m_instCursor = 0;
+	PrewarmVisibleAssets(viewState);
+
+	/*m_instCursor = 0;
 	D3D11_MAPPED_SUBRESOURCE map{};
 	pContext->Map(m_instanceSB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &map);
-	m_instWritePtr = static_cast<uint8_t*>(map.pData);
+	m_instWritePtr = static_cast<uint8_t*>(map.pData);*/
 
 	// Bind the SRV once for the VS (slot must match your HLSL register)
 	ID3D11ShaderResourceView* vsSrvs[] = { m_instanceSRV.Get() };
@@ -1640,11 +1693,6 @@ void Graphics::RenderFrame()
 		pContext->PSSetShaderResources(0, 1, nullSRV);
 	}
 
-	// =========================
-	// DEBUG PREVIEW (linear RTV like Alkahest)
-	// =========================
-
-
 	const bool wantDebugPreview =
 		drawrt0 || drawrt1 || drawrt2 || drawLight_diffuse || drawLight_specular ||
 		drawLight_ibl || drawShading || drawShadingRead;
@@ -1715,7 +1763,7 @@ void Graphics::RenderFrame()
 			ImGui::TextDisabled("ViewExtern not set.");
 		}
 	}
-	// In your ImGui debug window:
+	
 	if (ImGui::CollapsingHeader("Atmosphere"))
 	{
 		if (ImGui::Button("Ensure + Defaults (once)")) {
@@ -1724,11 +1772,10 @@ void Graphics::RenderFrame()
 		}
 		bool changed = ShowAtmosphereExternEditor(externs);
 
-		// If you want changes to take effect immediately this frame:
+		
 		if (changed) {
-			// If you already call externs.UploadAll() before the passes next frame,
-			// you can skip this; otherwise do it now with the current context.
-			externs.Upload(/*ID3D11DeviceContext* */ pContext.Get(), TfxExtern::Atmosphere);
+			
+			externs.Upload(pContext.Get(), TfxExtern::Atmosphere);
 		}
 	}
 	if (ImGui::CollapsingHeader("Frame")) {
@@ -1744,19 +1791,88 @@ void Graphics::RenderFrame()
 	}
 	if (ImGui::CollapsingHeader("Global Channels"))
 	{
-		bool changed = ShowGlobalChannelsEditor(channels, externs, /*autoPublish*/true);
+		bool changed = ShowGlobalChannelsEditor(channels, externs, true);
 		if (changed) {
-			// If you don’t already call UploadAll later, do a targeted upload here:
 			externs.Upload(pContext.Get(), TfxExtern::Generic);
 		}
 	}
-	// ... (rest of your ImGui panes unchanged)
 	ShowEntityChannelEditorUI(entitiesToDraw, camera.GetPositionFloat3());
+	ImGui::End();
+	ImGui::Begin("Activity Selector");
+	if (ImGui::CollapsingHeader("Activities & Maps"))
+	{
+		/*static std::vector<ActivityDef> demoData;
+
+		if (demoData.empty()) {
+			demoData.push_back({
+				"Strike: Arms Dealer", 0x1001u,
+				{ {"EDZ / Sunken Isles", 0x80BB30D2u}, {"EDZ / The Sludge", 0x80E250C8u} }
+				});
+			demoData.push_back({
+				"Raid: Last Wish", 0x2001u,
+				{ {"Dreaming City / Kalli", 0x90AABBCCu}, {"Dreaming City / Shuro Chi", 0x90AABBCD} }
+				});
+		}*/
+
+		ActivityProvider provider = [&]() -> const std::vector<ActivityDef>&{
+			// IMPORTANT: return storage that stays alive between frames.
+			// We keep a static cache and rebuild it each call (cheap).
+			static std::vector<ActivityDef> cache;
+			cache.clear();
+			cache.reserve(this->activities.size());
+
+			for (const TigerActivity& ta : this->activities) {
+				ActivityDef a{};
+				a.display_name = ta.dev_name;
+				a.activity_id = ta.id;
+				a.maps.reserve(ta.bubbles.size());
+				for (const auto& tm : ta.bubbles) {
+					a.maps.push_back(MapDef{ tm.first.c_str(), tm.second});
+				}
+				cache.emplace_back(std::move(a));
+			}
+			return cache;
+			};
+
+		// Callbacks
+		ActivityBrowserCallbacks cbs;
+
+		// FIX: use act.display_name and proper hex formatting for map hash.
+		cbs.on_map_chosen = [&](const ActivityDef& act, const MapDef& map) {
+			char buf[256];
+			std::snprintf(buf, sizeof(buf),
+				"Chosen map from '%s': %s (0x%08X)\n",
+				act.display_name.c_str(),
+				map.display_name.c_str(),
+				map.map_hash);
+			OutputDebugStringA(buf);
+
+			this->staticsToDraw.clear();
+			this->lightsToDraw.clear();
+			this->entitiesToDraw.clear();
+			loadzone = std::make_unique<LoadZone>(*this);
+			loadzone->parentHash = map.map_hash; //duality
+			loadzone->ProcessMap();
+			this->staticsToDraw = loadzone->statics;
+			this->lightsToDraw = loadzone->lights;
+			this->entitiesToDraw = loadzone->entities;
+			this->staticAO1 = loadzone->AOMap1;
+			};
+
+		cbs.on_activity_selected = [&](const ActivityDef& act) {
+			// Optional: prewarm or log
+			// PrewarmActivity(act.activity_id);
+			};
+
+		// Draw it in your Debug Menu block
+		DrawActivityBrowser(provider, cbs);
+	}
+
 	ImGui::End();
 	ImGui::Render();
 	ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 
-	pSwapChain->Present(0, 0);
+	pSwapChain->Present(1, 0);
 }
 
 
@@ -2137,7 +2253,7 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 	CreateInstanceBuffer();
 	CreateCB1(pDevice.Get());
 	CreateCB1_FallBack(pDevice.Get());
-
+	if (SUCCEEDED(pContext.As(&mt)) && mt) mt->SetMultithreadProtected(TRUE);
 	PublishGlobalChannelsToExterns(externs, channels);
 	RenderStates::Create(pDevice.Get(), states);
 
@@ -2178,69 +2294,6 @@ void Graphics::InitializeScopes()
 	}
 }
 
-void Graphics::CreateLightVolumeResources()
-{
-	// --- Unit cube ([-1,+1]^3), POSITION-only float3
-	static const float verts[24][3] = {
-	{ 1,1,-1 },
-	{ 1,1,1 },
-	{ 1,-1,1 },
-	{ 1,-1,-1 },
-	{ -1,-1,-1 },
-	{ -1,-1,1 },
-	{ -1,1,1 },
-	{ -1,1,-1 },
-	{ -1,1,1 },
-	{ 1,1,1 },
-	{ 1,1,-1 },
-	{ -1,1,-1 },
-	{ 1,-1,-1 },
-	{ 1,-1,1 },
-	{ -1,-1,1 },
-	{ -1,-1,-1 },
-	{ 1,-1,1 },
-	{ 1,1,1 },
-	{ -1,1,1 },
-	{ -1,-1,1 },
-	{ -1,-1,-1 },
-	{ -1,1,-1 },
-	{ 1,1,-1 },
-	{ 1,-1,-1 }
-	};
-	static const uint16_t idx[36] = {
-	0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4,
-	8, 9, 10, 10, 11, 8, 12, 13, 14, 14, 15, 12,
-	16, 17, 18, 18, 19, 16, 20, 21, 22, 22, 23, 20
-	};
-	lightCubeIndexCount = (UINT)std::size(idx);
-
-	// VB
-	D3D11_BUFFER_DESC vbd{};
-	vbd.ByteWidth = UINT(sizeof(verts));
-	vbd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-	vbd.Usage = D3D11_USAGE_IMMUTABLE;
-	D3D11_SUBRESOURCE_DATA vinit{ verts, 0, 0 };
-	pDevice->CreateBuffer(&vbd, &vinit, lightCubeVB.GetAddressOf());
-
-	// IB
-	D3D11_BUFFER_DESC ibd{};
-	ibd.ByteWidth = UINT(sizeof(idx));
-	ibd.BindFlags = D3D11_BIND_INDEX_BUFFER;
-	ibd.Usage = D3D11_USAGE_IMMUTABLE;
-	D3D11_SUBRESOURCE_DATA iinit{ idx, 0, 0 };
-	pDevice->CreateBuffer(&ibd, &iinit, lightCubeIB.GetAddressOf());
-
-	// Per-light VS CB (SimpleGeometry.transform)
-	D3D11_BUFFER_DESC cbd{};
-	cbd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-	cbd.ByteWidth = sizeof(CBLightSimpleGeometry);
-	cbd.Usage = D3D11_USAGE_DYNAMIC;
-	cbd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-	CBLightSimpleGeometry zero{};
-	D3D11_SUBRESOURCE_DATA cinit{ &zero, 0, 0 };
-	pDevice->CreateBuffer(&cbd, &cinit, cbLightSimpleGeometry.GetAddressOf());
-}
-
 void Graphics::LoadGlobalTextures() {
 	auto GlobalTex = GlobalData::getGlobalTextures();
 	for (auto tex : GlobalTex) {
@@ -2279,13 +2332,14 @@ bool Graphics::InitializeScene()
 	LoadGlobalTextures();
 	CreateLightVolumeResources();
 	CreateInstanceBuffer();
-	loadzone = std::make_unique<LoadZone>(*this);
-	loadzone->parentHash = 0x80FEDEDB; //duality
-	loadzone->ProcessMap();
-	this->staticsToDraw = loadzone->statics;
-	this->lightsToDraw = loadzone->lights;
-	this->entitiesToDraw = loadzone->entities;
-	this->staticAO1 = loadzone->AOMap1;
+	this->activities = GlobalData::globalActivities();
+	//loadzone = std::make_unique<LoadZone>(*this);
+	//loadzone->parentHash = 0x8112FC9E; //duality
+	//loadzone->ProcessMap();
+	//this->staticsToDraw = loadzone->statics;
+	//this->lightsToDraw = loadzone->lights;
+	//this->entitiesToDraw = loadzone->entities;
+	//this->staticAO1 = loadzone->AOMap1;
 	EnsureCB1_StaticReusable(pDevice.Get(), g_cb1);
 	printf("Loading Render Engine\n");
 	//exit(1);

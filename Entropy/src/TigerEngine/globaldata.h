@@ -1,6 +1,7 @@
 #include <unordered_map>
 #include <cstdint>
 #include "TigerEngine/tag.h"
+#include "TigerEngine/Activity/activity.h"
 
 
 struct namedTagEntry
@@ -40,6 +41,14 @@ public:
     static std::vector<std::pair<std::string, TagHash>>& getGlobalTextures() {
         static std::vector<std::pair<std::string, TagHash>> globaltex;
         return globaltex;
+    }
+    static std::vector<TigerActivity>& globalActivities() {
+        static std::vector<TigerActivity> tigerActivities;
+        return tigerActivities;
+    }
+    static std::unordered_map<uint32_t,std::string>& globalString() {
+        static std::unordered_map<uint32_t, std::string> globalStrings;
+        return globalStrings;
     }
 };
 

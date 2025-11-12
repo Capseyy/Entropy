@@ -22,6 +22,13 @@
 #include <glm/gtc/type_ptr.hpp> 
 #include "d3d11.h"
 
+
+
+struct StringHash {
+    uint32_t hash;
+    std::string string;
+};
+
 class WideHashData {
 public:
     uint32_t Unk0{ 0 };
@@ -193,6 +200,9 @@ namespace bin {
     inline void read_into(Reader& r, glm::quat& q) { 
         q.w = r.read_arith<float>(); q.x = r.read_arith<float>(); q.y = r.read_arith<float>(); q.z = r.read_arith<float>(); 
     }
+
+    void read_into(Reader& r, StringHash& q);
+
     inline void read_into(Reader& r, RawStringPointer64& q) {
         int base = r.pos;
         q.offset = r.read_arith<uint64_t>();

@@ -12,6 +12,92 @@
 #define TFX_EVAL_HELPERS_DEFINED
 namespace tfx_eval_detail {
 
+    // --- Extra math helpers (drop inside tfx_eval_detail) ---
+
+    inline Vec4 abs4(const Vec4& a) { return Vec4(std::fabs(a.x), std::fabs(a.y), std::fabs(a.z), std::fabs(a.w)); }
+
+    inline Vec4 round4(const Vec4& a) { return Vec4(std::round(a.x), std::round(a.y), std::round(a.z), std::round(a.w)); }
+
+    inline Vec4 wrap_to_half(const Vec4& a) { // wrap to [-0.5, 0.5]
+        return a - round4(a);
+    }
+
+    inline Vec4 sin_rot_est_clamped(const Vec4& a) {
+        // y = a * (-16|a| + 8); then a better approx: y * (0.225|y| + 0.775)
+        Vec4 y = a * (abs4(a) * Vec4::splat(-16.0f) + Vec4::splat(8.0f));
+        return y * (abs4(y) * Vec4::splat(0.225f) + Vec4::splat(0.775f));
+    }
+    inline Vec4 sin_rot_est(const Vec4& a) { return sin_rot_est_clamped(wrap_to_half(a)); }
+    inline Vec4 cos_rot_est(const Vec4& a) { return sin_rot_est(a + Vec4(0.25f, 0.25f, 0.25f, 0.25f)); }
+    inline Vec4 sin_cos_rot_est(const Vec4& a) {
+        // match rust: a + (0, .25, 0, .25)
+        return sin_rot_est(a + Vec4(0.0f, 0.25f, 0.0f, 0.25f));
+    }
+
+
+    inline float hsum4(const Vec4& v) { return v.x + v.y + v.z + v.w; }
+
+    // Convenience swizzle used by the spline logic: .yzww
+    inline Vec4 yzww(const Vec4& v) { return Vec4(v.y, v.z, v.w, v.w); }
+
+    // triangle wave: 2 * abs(wrap_to_half(x))
+    inline Vec4 triangle4(const Vec4& x) { return abs4(wrap_to_half(x)) * Vec4::splat(2.0f); }
+
+    // XOR for masks is already provided by xor01()
+
+    inline float hermite_smooth(float v) { // 3v^2 - 2v^3
+        float v2 = v * v;
+        return (-2.0f * v + 3.0f) * v2;
+    }
+
+    // Jitter: optimized scaled-sum-of-sines then Hermite smooth
+    inline Vec4 jitter4(const Vec4& x) {
+        Vec4 rotations = Vec4::splat(x.x) * Vec4(4.67f, 2.99f, 1.08f, 1.35f)
+            + Vec4(0.52f, 0.37f, 0.16f, 0.79f);
+        Vec4 a = wrap_to_half(rotations);
+        Vec4 ma = abs4(a) * Vec4::splat(-16.0f) + Vec4::splat(8.0f);
+        Vec4 sa = a * Vec4::splat(0.25f);
+        float v = hsum4(sa * ma) + 0.5f;
+        return Vec4::splat(hermite_smooth(v));
+    }
+
+    inline Vec4 wander4(const Vec4& x) {
+        Vec4 rot0 = Vec4::splat(x.x) * Vec4(4.08f, 1.02f, 3.0f / 5.37f, 3.0f / 9.67f)
+            + Vec4(0.92f, 0.33f, 0.26f, 0.54f);
+        Vec4 rot1 = Vec4::splat(x.x) * Vec4(1.83f, 3.09f, 0.39f, 0.87f)
+            + Vec4(0.12f, 0.37f, 0.16f, 0.79f);
+        Vec4 s0 = sin_rot_est(rot0);
+        Vec4 s1 = sin_rot_est(rot1) * Vec4(0.02f, 0.02f, 0.28f, 0.28f);
+        return Vec4::splat(0.5f + hsum4(s0 * s1));
+    }
+
+    inline Vec4 rand4(const Vec4& x) {
+        float v0 = std::floor(x.x);
+        // magic constants 1/(prime/1e6)
+        Vec4 primes(1.0f / 1.043501f, 1.0f / 0.794471f, 1.0f / 0.113777f, 1.0f / 0.015101f);
+        float val0 = std::fmod(v0 * hsum4(primes), 1.0f);
+        val0 = std::fmod(val0 * val0 * 251.0f, 1.0f);
+        return Vec4::splat(val0);
+    }
+
+    inline Vec4 rand_smooth4(const Vec4& x) {
+        float v = x.x;
+        float v0 = std::round(v);
+        float v1 = v0 + 1.0f;
+        float f = v - v0;
+        float smooth_f = hermite_smooth(f);
+
+        Vec4 primes(1.0f / 1.043501f, 1.0f / 0.794471f, 1.0f / 0.113777f, 1.0f / 0.015101f);
+        auto rnd = [&](float base)->float {
+            float t = std::fmod(base * hsum4(primes), 1.0f);
+            t = std::fmod(t * t * 251.0f, 1.0f);
+            return t;
+            };
+        float a = rnd(v0), b = rnd(v1);
+        return Vec4::splat(a + (b - a) * smooth_f);
+    }
+
+
     inline std::string to_str(const Vec4& v) {
         char b[128];
         std::snprintf(b, sizeof(b), "float4(%g,%g,%g,%g)", v.x, v.y, v.z, v.w);
@@ -31,10 +117,10 @@ namespace tfx_eval_detail {
         return Vec4(f(a.x), f(a.y), f(a.z), f(a.w));
     }
     inline Vec4 saturate4(const Vec4& a) { return clamp4(a, Vec4::zero(), Vec4::one()); }
-    inline Vec4 abs4(const Vec4& a) { return Vec4(std::fabs(a.x), std::fabs(a.y), std::fabs(a.z), std::fabs(a.w)); }
+    
     inline Vec4 floor4(const Vec4& a) { return Vec4(std::floor(a.x), std::floor(a.y), std::floor(a.z), std::floor(a.w)); }
     inline Vec4 ceil4(const Vec4& a) { return Vec4(std::ceil(a.x), std::ceil(a.y), std::ceil(a.z), std::ceil(a.w)); }
-    inline Vec4 round4(const Vec4& a) { return Vec4(std::round(a.x), std::round(a.y), std::round(a.z), std::round(a.w)); }
+   
     inline Vec4 sign4(const Vec4& a) {
         auto s = [](float x) { return (x > 0) - (x < 0); };
         return Vec4((float)s(a.x), (float)s(a.y), (float)s(a.z), (float)s(a.w));
@@ -76,37 +162,33 @@ namespace tfx_eval_detail {
             v.x * m.x_axis.z + v.y * m.y_axis.z + v.z * m.z_axis.z + v.w * m.w_axis.z,
             v.x * m.x_axis.w + v.y * m.y_axis.w + v.z * m.z_axis.w + v.w * m.w_axis.w);
     }
+    inline Vec4 step4(const Vec4& edge, const Vec4& x) {
+        return Vec4(
+            x.x >= edge.x ? 1.f : 0.f,
+            x.y >= edge.y ? 1.f : 0.f,
+            x.z >= edge.z ? 1.f : 0.f,
+            x.w >= edge.w ? 1.f : 0.f
+        );
+    }
+
+    // XOR for {0,1} masks: a ? b = a + b - 2ab
+    inline Vec4 xor01(const Vec4& a, const Vec4& b) {
+        return Vec4(
+            a.x + b.x - 2.f * a.x * b.x,
+            a.y + b.y - 2.f * a.y * b.y,
+            a.z + b.z - 2.f * a.z * b.z,
+            a.w + b.w - 2.f * a.w * b.w
+        );
+    }
+
+
+    
+
 
 } // namespace tfx_eval_detail
 #endif 
 
-
-inline Vec4 step4(const Vec4& edge, const Vec4& x) {
-    return Vec4(
-        x.x >= edge.x ? 1.f : 0.f,
-        x.y >= edge.y ? 1.f : 0.f,
-        x.z >= edge.z ? 1.f : 0.f,
-        x.w >= edge.w ? 1.f : 0.f
-    );
-}
-
-// XOR for {0,1} masks: a ? b = a + b - 2ab
-inline Vec4 xor01(const Vec4& a, const Vec4& b) {
-    return Vec4(
-        a.x + b.x - 2.f * a.x * b.x,
-        a.y + b.y - 2.f * a.y * b.y,
-        a.z + b.z - 2.f * a.z * b.z,
-        a.w + b.w - 2.f * a.w * b.w
-    );
-}
-
-inline float hsum4(const Vec4& v) { return v.x + v.y + v.z + v.w; }
-
-// Convenience swizzle used by the spline logic: .yzww
-inline Vec4 yzww(const Vec4& v) { return Vec4(v.y, v.z, v.w, v.w); }
-
 inline const char* OpName(TfxBytecode);
-
 
 static inline std::string DescribePayload(const TfxData& i) {
     char b[64]; b[0] = 0;
@@ -186,7 +268,6 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
     const std::vector<Vec4>& constants,
     std::array<Vec4, 16>& temp,
 	std::unordered_map<uint32_t, float_t> channel_floats,
-    void*  /*user_samp_hook*/ = nullptr,
     bool trace = true)
 {
     using namespace tfx_eval_detail;
@@ -361,6 +442,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             if (trace) std::printf("    -> cb[%u] = %s\n", d.element, to_str(v).c_str());
             cb[d.element] = v; break;
         }
+
         case TfxBytecode::Spline8Const: {
             auto d = std::get<SplineConstData>(i.data);
             // x comes from stack top
@@ -411,6 +493,204 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             }
 
             push(result);
+            break;
+        }
+                                      // --- Spline4Const (cubic over 4 channels) ---
+        case TfxBytecode::Spline4Const: {
+            auto d = std::get<SplineConstData>(i.data);
+            Vec4 X = pop1(ip, "Spline4Const");
+
+            auto load = [&](size_t rel)->Vec4 {
+                size_t k = size_t(d.constant_start) + rel;
+                return (k < constants.size()) ? constants[k] : Vec4::zero();
+                };
+
+            Vec4 C3 = load(0), C2 = load(1), C1 = load(2), C0 = load(3);
+            Vec4 Th = load(4);
+
+            Vec4 X2 = X * X;
+            Vec4 high = C3 * X + C2;
+            Vec4 low = C1 * X + C0;
+            Vec4 eval = high * X2 + low;
+
+            Vec4 tmask = step4(Th, X);
+            Vec4 xorm = xor01(tmask, yzww(tmask));
+            Vec4 chan = Vec4(xorm.x, xorm.y, xorm.z, tmask.w);
+
+            float sum = hsum4(eval * chan);
+            if (trace) std::printf("    Spline4: sum=%g\n", sum);
+            push(Vec4::splat(sum));
+            break;
+        }
+
+                                      // --- Spline8ConstChain (two-bank cubic with recursion passthrough) ---
+        case TfxBytecode::Spline8ConstChain: {
+            auto d = std::get<SplineConstData>(i.data);
+
+            // pop Recursion then X (top-first). If your producer pushes in the other order,
+            // swap these two pop lines.
+            Vec4 Rec = pop1(ip, "Spline8Chain Rec");
+            Vec4 X = pop1(ip, "Spline8Chain X");
+
+            auto load = [&](size_t rel)->Vec4 {
+                size_t k = size_t(d.constant_start) + rel;
+                return (k < constants.size()) ? constants[k] : Vec4::zero();
+                };
+
+            Vec4 C3 = load(0), C2 = load(1), C1 = load(2), C0 = load(3);
+            Vec4 D3 = load(4), D2 = load(5), D1 = load(6), D0 = load(7);
+            Vec4 Cth = load(8), Dth = load(9);
+
+            Vec4 X2 = X * X;
+
+            Vec4 Chigh = C3 * X + C2, Clow = C1 * X + C0;
+            Vec4 Ceval = Chigh * X2 + Clow;
+
+            Vec4 Dhigh = D3 * X + D2, Dlow = D1 * X + D0;
+            Vec4 Deval = Dhigh * X2 + Dlow;
+
+            Vec4 Cmask = step4(Cth, X);
+            Vec4 Dmask = step4(Dth, X);
+
+            Vec4 Cchan = Vec4(xor01(Cmask, yzww(Cmask)).x,
+                xor01(Cmask, yzww(Cmask)).y,
+                xor01(Cmask, yzww(Cmask)).z,
+                Cmask.w);
+            Vec4 Dchan = Vec4(xor01(Dmask, yzww(Dmask)).x,
+                xor01(Dmask, yzww(Dmask)).y,
+                xor01(Dmask, yzww(Dmask)).z,
+                Dmask.w);
+
+            float Csum = hsum4(Ceval * Cchan);
+            float Dsum = hsum4(Deval * Dchan);
+
+            float inter = (Cmask.x > 0.f) ? Csum : Rec.x;
+            float spline = (Dmask.x > 0.f) ? Dsum : inter;
+
+            if (trace) {
+                std::printf("    Spline8Chain: Csum=%g Dsum=%g inter=%g use=%s\n",
+                    Csum, Dsum, inter, (Dmask.x > 0.f ? "D" : (Cmask.x > 0.f ? "C" : "Rec")));
+            }
+
+            push(Vec4::splat(spline));
+            break;
+        }
+
+                                           // --- Gradient4Const ---
+        case TfxBytecode::Gradient4Const: {
+            auto d = std::get<GradientConstData>(i.data); // same payload shape (start index)
+            Vec4 X = pop1(ip, "Gradient4Const");
+
+            auto load = [&](size_t rel)->Vec4 {
+                size_t k = size_t(d.constant_start) + rel;
+                return (k < constants.size()) ? constants[k] : Vec4::zero();
+                };
+
+            Vec4 base = load(0);
+            Vec4 cred = load(1);
+            Vec4 cgreen = load(2);
+            Vec4 cblue = load(3);
+            Vec4 calpha = load(4);
+            Vec4 Th = load(5);
+
+            // segment intervals: (Th.y, Th.z, Th.w, 1) - (Th.x, Th.y, Th.z, Th.w)
+            Vec4 seg = Vec4(Th.y, Th.z, Th.w, 1.0f) - Th;
+            Vec4 off = X - Th;
+
+            // Per-component safe divide + saturate
+            auto safe_div = [&](float num, float den)->float {
+                if (std::fabs(den) > 1e-6f) return num / den;
+                // fallback: matches rust logic using sign of numerator
+                return (num >= 0.0f) ? 1.0f : 0.0f;
+                };
+
+            Vec4 div(
+                safe_div(off.x, seg.x),
+                safe_div(off.y, seg.y),
+                safe_div(off.z, seg.z),
+                safe_div(off.w, seg.w)
+            );
+            Vec4 pct = saturate4(div);
+
+            // influences
+            Vec4 Xinfl = cred * pct;
+            Vec4 Yinfl = cgreen * pct;
+            Vec4 Zinfl = cblue * pct;
+            Vec4 Winfl = calpha * pct;
+
+            Vec4 ones = Vec4::one();
+            Vec4 added(
+                hsum4(Xinfl * ones),
+                hsum4(Yinfl * ones),
+                hsum4(Zinfl * ones),
+                hsum4(Winfl * ones)
+            );
+
+            Vec4 result = base + added;
+            push(result);
+            break;
+        }
+
+                                        // --- Triangle / Jitter / Wander / Rand / RandSmooth ---
+        case TfxBytecode::Triangle: {
+            auto a = pop1(ip, "Triangle");
+            push(triangle4(a));
+            break;
+        }
+        case TfxBytecode::Jitter: {
+            auto a = pop1(ip, "Jitter");
+            push(jitter4(a));
+            break;
+        }
+        case TfxBytecode::Wander: {
+            auto a = pop1(ip, "Wander");
+            push(wander4(a));
+            break;
+        }
+        case TfxBytecode::Rand: {
+            auto a = pop1(ip, "Rand");
+            push(rand4(a));
+            break;
+        }
+        case TfxBytecode::RandSmooth: {
+            auto a = pop1(ip, "RandSmooth");
+            push(rand_smooth4(a));
+            break;
+        }
+
+                                    // --- VectorRotations* ---
+        case TfxBytecode::VecRotSin: {
+            auto a = pop1(ip, "VRSin");
+            push(sin_rot_est(a));
+            break;
+        }
+        case TfxBytecode::VecRotCos: {
+            auto a = pop1(ip, "VRCos");
+            push(cos_rot_est(a));
+            break;
+        }
+        case TfxBytecode::VecRotSinCos: {
+            auto a = pop1(ip, "VRSinCos");
+            push(sin_cos_rot_est(a));
+            break;
+        }
+        case TfxBytecode::Cubic: {
+            // Stack (top -> bottom): coefficients, x   (same order as Rust)
+            auto coefficients = pop1(ip, "Cubic coeffs");
+            auto x = pop1(ip, "Cubic x");
+
+            // high = coefficients.x * x + coefficients.yyyy()
+            Vec4 high = Vec4::splat(coefficients.x) * x
+                + Vec4(coefficients.y, coefficients.y, coefficients.y, coefficients.y);
+
+            // low  = coefficients.z * x + coefficients.wwww()
+            Vec4 low = Vec4::splat(coefficients.z) * x
+                + Vec4(coefficients.w, coefficients.w, coefficients.w, coefficients.w);
+
+            Vec4 x2 = x * x;
+            Vec4 out = high * x2 + low;
+
+            push(out);
             break;
         }
         case TfxBytecode::PopOutputMat4: {

@@ -8,8 +8,8 @@
 #include <execution>
 
 
-std::unordered_map<int, std::string> GenerateStringMap();
-std::unordered_map<int, std::string> ProcessStringContainer(int Hash);
+std::unordered_map<uint32_t, std::string> GenerateStringMap();
+std::unordered_map<uint32_t, std::string> ProcessStringContainer(int Hash);
 
 struct Unk_0x70008080 {
     uint32_t hash{};

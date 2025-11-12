@@ -22,6 +22,22 @@ public:
 			fn();
 		}
 	}
+	void RunSlice(size_t maxJobs, int maxMillis) {
+		using clock = std::chrono::steady_clock;
+		const auto deadline = clock::now() + std::chrono::milliseconds(maxMillis);
+		size_t done = 0;
+		for (;;) {
+			std::function<void()> job;
+			{
+				std::lock_guard<std::mutex> lk(m_);
+				if (q_.empty()) break;
+				job = std::move(q_.front()); q_.pop();
+			}
+			job();                       // do one creation on the *main thread*
+			if (++done >= maxJobs) break;
+			if (clock::now() >= deadline) break;
+		}
+	}
 private:
 	std::mutex m_;
 	std::queue<std::function<void()>> q_;

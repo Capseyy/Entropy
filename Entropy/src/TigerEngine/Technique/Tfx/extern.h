@@ -303,8 +303,8 @@ struct FrameExtern
     uint8_t _pad198[0x1A0 - 0x198]{};        // 0x198..0x19F
 
     // --- vectors with known defaults ---
-    Vec4    unk1a0 = Vec4::zero();                 // 0x1A0 default ZERO
-    Vec4    unk1b0 = Vec4::zero();                 // 0x1B0
+    Vec4    unk1a0 = Vec4::one();                 // 0x1A0 default ZERO
+    Vec4    unk1b0 = Vec4::one();                 // 0x1B0
     Vec4    unk1c0 = Vec4(1.0f, 1.0f, 0.0f, 1.0f); // 0x1C0 default (1,1,0,1)
 
     uint8_t _pad1D0[0x1E0 - 0x1D0]{};        // 0x1D0..0x1DF
