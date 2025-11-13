@@ -67,127 +67,41 @@ void LoadZone::load_entity_model_into_scene(TagHash sem,
     glm::quat quat,
     glm::vec4 pos,
     std::vector<Unk_808072C5> tech_maps,
-    std::vector<TagHash> ext_techs, std::optional<Aabb> occlustion_bounds)
+    std::vector<uint32_t> ext_techs, std::optional<Aabb> occlustion_bounds)
 {
     const SEntityModel model = bin::parse<SEntityModel>(sem.data, sem.size);
 
     RenderEntity re{};
+    re.external_mats = ext_techs;
+    re.occlusion_bounds = occlustion_bounds;
+    re.external_material_mapping = tech_maps;
+    re.meshData = model;
     re.pos = pos;
     re.rot = quat;
     re.id = sem.hash;
-    re.meshData = model;
-    if (occlustion_bounds) {
-        re.occlusion_bounds = occlustion_bounds;
-    }
-
-    // ---- external materials (keep shared_ptr ownership) ----
-    re.external_mats.clear();
-    re.external_mats.reserve(ext_techs.size());
-    for (const auto& mat : ext_techs) {
-        auto tech = gfx.assets->EnqueueTechnique(mat);      // returns AssetHandle<...>
-        re.external_mats.push_back(tech.get());             // <-- if vector holds shared_ptr
-        // If vector holds raw pointers, change the vector type to shared_ptr to avoid dangling.
-    }
-
-    // ---- meshes ----
-    re.meshs.clear();
-    re.meshs.reserve(model.parts.size());
-    re.external_material_mapping = std::move(tech_maps);
-
-    for (const auto& meshes : model.parts)
-    {
-        struct GroupRef {
-            uint32_t v1Id{}, idxId{}, v2Id{}, colId{}, v3Id{}, v0Id{}, skinid{};
-            uint32_t v0Stride{}, v1Stride{}, v2Stride{}, v3Stride{}, skinStride{}, colStride{};
-            uint32_t indexCount{}; DXGI_FORMAT indexFormat{ DXGI_FORMAT_UNKNOWN }; bool idx32{};
-        } gr{};
-
-        DynamicMesh dm{};
-
-        // ---- Register buffers once & derive metadata from headers (no registry lookups) ----
-        if (meshes.index_buffer.hash != 0xFFFFFFFFu) {
-            const auto ibh = bin::parse<IndexBufferHeader>(meshes.index_buffer.data, meshes.index_buffer.size, bin::Endian::Little);
-            const void* ibBytes = TagHash(meshes.index_buffer.reference).data;
-            gr.idxId = RegisterBufferBlob(ibBytes, ibh.dataSize, meshes.index_buffer.hash, D3D11_BIND_INDEX_BUFFER, 0);
-            gr.idx32 = (ibh.is32 != 0);
-            gr.indexFormat = gr.idx32 ? DXGI_FORMAT_R32_UINT : DXGI_FORMAT_R16_UINT;
-            gr.indexCount = gr.idx32 ? (ibh.dataSize / 4u) : (ibh.dataSize / 2u);
-        }
-        auto regVB = [&](const auto& buf, uint32_t& idOut, uint32_t& strideOut, UINT extraBind = 0u)
-            {
-                if (buf.hash == 0xFFFFFFFFu) return;
-                const auto vbh = bin::parse<VertexBufferHeader>(buf.data, buf.size, bin::Endian::Little);
-                const void* vbBytes = TagHash(buf.reference).data;
-                idOut = RegisterBufferBlob(vbBytes, vbh.dataSize, buf.hash,
-                    D3D11_BIND_VERTEX_BUFFER | extraBind, vbh.stride);
-                strideOut = vbh.stride;
-            };
-        regVB(meshes.vertex0_buffer, gr.v0Id, gr.v0Stride);
-        regVB(meshes.vertex1_buffer, gr.v1Id, gr.v1Stride);
-        regVB(meshes.buffer2, gr.v2Id, gr.v2Stride);
-        regVB(meshes.buffer3, gr.v3Id, gr.v3Stride);
-        regVB(meshes.skinning_buffer, gr.skinid, gr.skinStride);
-        // Colour buffer needs SRV later ? add SRV bind up-front
-        regVB(meshes.colour_buffer, gr.colId, gr.colStride, D3D11_BIND_SHADER_RESOURCE);
-
-        // pipeline ranges
-        dm.input_layout_per_render_stage = meshes.input_layout_per_render_stage;
-        dm.part_range_per_render_stage = meshes.part_range_per_render_stage;
-
-        // ---- Build BufferGroupDynamic ----
-        auto grp = std::make_shared<BufferGroupDynamic>();
-
-        if (gr.v0Id) { grp->vertex0_buffer = gfx.assets->EnqueueBuffer(gr.v0Id).future.get(); grp->vertex0Stride = gr.v0Stride; }
-        if (gr.idxId) { grp->index_buffer = gfx.assets->EnqueueBuffer(gr.idxId).future.get(); grp->indexFormat = gr.indexFormat; grp->indexCount = gr.indexCount; }
-        if (gr.v1Id) { grp->vertex1_buffer = gfx.assets->EnqueueBuffer(gr.v1Id).future.get(); grp->vertex1Stride = gr.v1Stride; }
-        if (gr.v2Id) { grp->buffer2 = gfx.assets->EnqueueBuffer(gr.v2Id).future.get(); grp->buffer2Stride = gr.v2Stride; }
-        if (gr.v3Id) { grp->buffer3 = gfx.assets->EnqueueBuffer(gr.v3Id).future.get(); grp->buffer3Stride = gr.v3Stride; }
-        if (gr.skinid) { grp->skinning_buffer = gfx.assets->EnqueueBuffer(gr.skinid).future.get(); grp->skinningStride = gr.skinStride; }
-
-        if (gr.colId) {
-            BufferSRVMeta meta{};
-            meta.typedFormat = (gr.colStride == 1) ? DXGI_FORMAT_R8_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM;
-            meta.bytesPerElement = gr.colStride;
-
-            auto res = gfx.assets->EnqueueBufferSRV(gr.colId, meta).future.get();   // returns BufferSRVRes with ComPtrs
-            // store SRV without extra AddRef/Release churn
-            grp->color = std::move(res->srv);
-            grp->colorStride = gr.colStride;
-        }
-
-        // ---- DynamicMesh & parts ----
-        auto meshPtr = std::make_shared<DynamicMesh>();
-        meshPtr->buffers = grp;
-        meshPtr->input_layout_per_render_stage = meshes.input_layout_per_render_stage;
-        meshPtr->part_range_per_render_stage = meshes.part_range_per_render_stage;
-
-        meshPtr->parts.reserve(meshes.parts.size());
-        for (const auto& p : meshes.parts)
-        {
-            auto dmp = std::make_shared<DynamicMeshPart>();
-            dmp->meshpartinfo = p;
-
-            if (p.varient_shader_index == 65535) {
-                auto tech = gfx.assets->EnqueueTechnique(p.technique);
-                dmp->technique = tech.get();
-
-                // Optional: expensive decode; keep if necessary
-                if (p.technique.hash != 0xFFFFFFFFu) {
-                    const auto technique = bin::parse<STechnique>(p.technique.data, p.technique.size, bin::Endian::Little);
-                    const TfxProgram prog = TfxProgram::FromBytecode(technique.PixelShader.TFX_Bytecode,
-                        technique.PixelShader.TFX_Constants);
-                    for (const auto ch : prog.channels) re.channels[ch] = 1.0f;
-                }
+    for (const auto& part_group : model.parts) {
+        re.meshs.push_back(part_group);
+        for (const auto& part : part_group.parts) {
+            if (part.varient_shader_index == 0xFFFF) {
+                const auto technique = bin::parse<STechnique>(part.technique.data, part.technique.size, bin::Endian::Little);
+                TfxProgram prog = TfxProgram::FromBytecode(technique.PixelShader.TFX_Bytecode,
+                    technique.PixelShader.TFX_Constants);
+                for (const auto ch : prog.channels) re.channels[ch] = 1.0f;
+                prog = TfxProgram::FromBytecode(technique.VertexShader.TFX_Bytecode,
+                    technique.VertexShader.TFX_Constants);
+                for (const auto ch : prog.channels) re.channels[ch] = 1.0f;
             }
             else {
-                dmp->techniqueId = 0;
-                dmp->technique = nullptr;
+                const auto tech_tag = TagHash(ext_techs[tech_maps[part.varient_shader_index].technique_start]);
+                const auto technique = bin::parse<STechnique>(tech_tag.data, tech_tag.size, bin::Endian::Little);//+(gt % rs.external_material_mapping.size())];
+                TfxProgram prog = TfxProgram::FromBytecode(technique.PixelShader.TFX_Bytecode,
+                    technique.PixelShader.TFX_Constants);
+                for (const auto ch : prog.channels) re.channels[ch] = 1.0f;
+                prog = TfxProgram::FromBytecode(technique.VertexShader.TFX_Bytecode,
+                    technique.VertexShader.TFX_Constants);
+                for (const auto ch : prog.channels) re.channels[ch] = 1.0f;
             }
-
-            meshPtr->parts.emplace_back(std::move(dmp));
         }
-
-        re.meshs.emplace_back(std::move(meshPtr));
     }
 
     entities.emplace_back(std::move(re));

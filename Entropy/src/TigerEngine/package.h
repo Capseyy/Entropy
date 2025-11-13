@@ -252,7 +252,7 @@ void GetAllNamedTags();
 
 const std::string PackagePath = "C:/Program Files (x86)/Steam/steamapps/common/Destiny 2/packages";
 
-//const std::string PackagePath = "D:/SteamLibrary/steamapps/common/Destiny 2/packages";
+//const std::string PackagePath = "G:/Steam/steamapps/common/Destiny 2/packages";
 
 #pragma once
 

@@ -22,7 +22,6 @@
 #include "TigerEngine/globaldata.h"
 #include <dxgi.h>    
 #include <dxgiformat.h> 
-//#include "Renderer/Graphics/Render/gbuffer.h"
 #include "GameTimer.h"
 #include "TigerEngine/Technique/rasterizer_states.h"
 #include "RenderStates.h"
@@ -39,6 +38,8 @@
 #include <d3d11.h>
 #include <d3d11_4.h>
 #include "TigerEngine/Activity/activity.h"
+#include "Renderer/Loaders/ecs/Entity.h"
+#include "TigerEngine/Entity/entity.h"
 
 enum class StaticBufKind { Index, Vertex, UV, Color };
 
@@ -69,6 +70,11 @@ enum class TfxRenderStage : uint8_t {
 	ComputeSkinning = 23,
 };
 
+template<typename T>
+static inline bool FutReady(const std::shared_future<std::shared_ptr<T>>& f) {
+	using namespace std::chrono_literals;
+	return f.valid() && f.wait_for(0s) == std::future_status::ready;
+}
 
 struct ResolvedSpecial {
 	std::shared_ptr<ID3D11Buffer> ib;
@@ -105,6 +111,26 @@ struct ResolvedStaticPart
 	uint8_t  lastIL = 0xFF;               // to reduce IL rebinds
 };
 
+// Graphics.cpp (or a small header)
+static inline const wchar_t* StageName(TfxRenderStage s) {
+	switch (s) {
+	case TfxRenderStage::GenerateGbuffer: return L"GenerateGBuffer";
+	case TfxRenderStage::Decals:          return L"Decals";
+	case TfxRenderStage::Transparents:    return L"Transparents";
+	default:                               return L"UnknownStage";
+	}
+}
+
+// Put near ResolveStaticPartOnce/ResolveSpecialOnce
+struct ResolvedDynamicPart {
+	std::shared_ptr<ID3D11Buffer> ib, vb0, vb1, vb2;
+	std::shared_ptr<EntropyAssets::BufferSRVRes> vCol; // optional vertex-color SRV
+	UINT stride0 = 0, stride1 = 0, stride2 = 0;
+	DXGI_FORMAT idxFmt = DXGI_FORMAT_R16_UINT;
+	uint32_t indexStart = 0, indexCount = 0;
+	bool ready = false;
+};
+
 struct InstanceData
 {
 	DirectX::XMFLOAT4 translation; // xyz + maybe w (leave as 4 floats for alignment)
@@ -121,6 +147,8 @@ struct GpuMarker {
 	~GpuMarker() { if (a) { a->EndEvent(); a->Release(); } }
 };
 
+BufferPayload BuildBufferPayloadFromTag(TagHash tag, StaticBufKind which);
+
 class Graphics
 {
 public:
@@ -133,6 +161,7 @@ public:
 	std::unique_ptr<MainThreadQueue>       mainQueue;
 	std::unique_ptr<RuntimeAssetRegistry>  registry;
 	std::unique_ptr<AssetSystem>           assets;
+
 
 private:
 	bool InitializeDirectX(HWND hWnd);
@@ -148,6 +177,8 @@ private:
 	std::unordered_map<uint32_t, std::shared_future<std::shared_ptr<EntropyAssets::BufferSRVRes>>> bufferSrvFut_; // color SRV
 	std::shared_ptr<EntropyAssets::Technique> GetStaticTechniqueOrEnqueue(uint32_t techId);
 
+	std::unordered_map<uint64_t, ResolvedEntityPart> entityPartCache_;
+
 	std::mutex bufferCacheMutex_;
 	std::mutex bufferSrvCacheMutex_;
 	void EnsureSpecialBufferRegistered(const SStaticSpecial& sp,
@@ -155,6 +186,8 @@ private:
 		UINT addFlags);
 
 	Microsoft::WRL::ComPtr<ID3D11Multithread> mt;
+
+	std::unordered_map<uint64_t, ResolvedDynamicPart> dynamicPartCache_;
 
 	std::unordered_map<uint64_t, ResolvedSpecial> specialsCache_;
 	std::array<Microsoft::WRL::ComPtr<ID3D11InputLayout>, 15> tiger_input_layouts;
@@ -169,6 +202,14 @@ private:
 		const SStaticMeshPart& part,
 		StaticBufKind which,
 		UINT addFlags);
+
+	void EnsureEntityBufferRegistered(const SDynamicMesh& mesh,
+		DynamicBufKind which,
+		UINT addFlags);
+	bool ResolveDynamicPartOnce(
+		const SDynamicMesh& dm,
+		const SDynamicMeshPart& part,
+		ResolvedDynamicPart& out);
 	uint8_t* m_instWritePtr = nullptr;
 	std::atomic<UINT> m_instCursor{ 0 };   // in elements (not bytes)
 	std::atomic<UINT> m_worldCursor{ 0 };
@@ -204,6 +245,13 @@ private:
 
 	Model model;
 
+
+	bool ResolveEntityPartOnce(
+		const SDynamicMesh& dm,
+		const DynamicMeshPart& part,
+		const BufferGroupDynamic& grp,
+		ResolvedEntityPart& out);
+
 	CD3D11_VIEWPORT viewport;
 	ComPtr<ID3D11DepthStencilState> dsLightRO_Greater;
 
@@ -230,7 +278,7 @@ private:
 
 	Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerState;
 	Microsoft::WRL::ComPtr<ID3D11BlendState> blendState;
-
+	bool IsEntityFullyReady(const RenderEntity& rs, TfxRenderStage stage);
 	std::unique_ptr<DirectX::SpriteBatch> spriteBatch;
 	std::unique_ptr<DirectX::SpriteFont> spriteFont;
 

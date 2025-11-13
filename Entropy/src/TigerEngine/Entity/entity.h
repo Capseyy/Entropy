@@ -73,7 +73,7 @@ struct Unk_80806D8F  // Entity Mesh Resource
 	SkipTo<0x3E0> Unk334;
     std::vector<Unk_808072C5> entity_material_map;  
 	SkipTo<0x420> Unk3f0;                     // 0x3F0..0x3FF
-    std::vector<TagHash> materials;           // 0x400..0x40F                    // 0x410..0x477  pad to total 0x478
+    std::vector<uint32_t> materials;           // 0x400..0x40F                    // 0x410..0x477  pad to total 0x478
 };
 
 struct SEntityResource

@@ -5,23 +5,39 @@
 #include "UI/FrameGlobalLightingExternUI.h"
 #include "UI/global_channel_ui.h"
 #include "UI/ChannelEditor.h"
-#include "TigerEngine/Map/TigerBuffer.h" 
 #include <unordered_set>
 #include "Renderer/Graphics/UI/ActivityBrowser.h"
+#include "TigerEngine/Map/TigerBuffer.h"
 
 static int g_activation_budget_per_frame = 8;
 static int g_activations_this_frame = 0;
 
 
 
+
 #pragma comment(lib, "d3dcompiler.lib")
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
 
-template<typename T>
-static inline bool FutReady(const std::shared_future<std::shared_ptr<T>>& f) {
-	using namespace std::chrono_literals;
-	return f.valid() && f.wait_for(0s) == std::future_status::ready;
+Microsoft::WRL::ComPtr<ID3DUserDefinedAnnotation> anno_;
+void Graphics::InitAnnotation() {
+	pContext->QueryInterface(IID_PPV_ARGS(anno_.GetAddressOf())); // may be null
 }
+
+// RAII scope marker
+struct ScopedGpuEvent {
+	ID3DUserDefinedAnnotation* a{};
+	ScopedGpuEvent(ID3DUserDefinedAnnotation* anno, const wchar_t* name) : a(anno) {
+		if (a) a->BeginEvent(name);
+	}
+	template<typename... Args>
+	ScopedGpuEvent(ID3DUserDefinedAnnotation* anno, const wchar_t* fmt, Args... args) : a(anno) {
+		if (!a) return;
+		wchar_t buf[256];
+		_snwprintf_s(buf, _TRUNCATE, fmt, args...);
+		a->BeginEvent(buf);
+	}
+	~ScopedGpuEvent() { if (a) a->EndEvent(); }
+};
 
 template<typename T>
 static bool TryActivateReady(std::shared_future<std::shared_ptr<T>>& fut,
@@ -41,6 +57,106 @@ static bool TryActivateReady(std::shared_future<std::shared_ptr<T>>& fut,
 	}
 	++g_activations_this_frame;
 	return true;
+}
+
+static inline CB1Payload_override BuildCB1FromEntity(const RenderEntity& rs)
+{
+	using namespace DirectX;
+
+	CB1Payload_override cb{};
+
+	// Old parameters:
+	//   model_offset, model_scale, instance_scale, texScale, texOffX, texOffY, rot, pos
+	const auto& model_offset = rs.meshData.model_offset;  // glm::vec4
+	const auto& model_scale = rs.meshData.model_scale;   // glm::vec4
+	const float instance_scale = rs.pos.w;
+
+	const float texScale = rs.meshData.texcoord_scale.x;
+	const float texOffX = rs.meshData.texcoord_offset.x;
+	const float texOffY = rs.meshData.texcoord_offset.y;
+
+	const glm::quat& rot = rs.rot;
+	const glm::vec3  pos(rs.pos.x, rs.pos.y, rs.pos.z);
+
+	// === EXACTLY like your old UpdateCB1_Single ===
+	const XMVECTOR q = XMVectorSet(rot.w, rot.x, rot.y, rot.z);
+	const XMMATRIX R = XMMatrixRotationQuaternion(q);
+	const XMMATRIX T = XMMatrixTranslation(pos.x, pos.y, pos.z);
+
+	const float s = instance_scale;
+	const XMMATRIX S = XMMatrixScaling(s, s, s);
+
+	const XMMATRIX M = S * R * T;
+	XMStoreFloat4x4(&cb.mesh_to_world, M);
+
+	cb.position_scale = XMFLOAT4(model_scale.x, model_scale.y, model_scale.z, model_scale.w);
+	cb.position_offset = XMFLOAT4(model_offset.x, model_offset.y, model_offset.z, model_offset.w);
+
+	cb.texcoord0_scale_offset = XMFLOAT4(texScale, texScale, texOffX, texOffY);
+	cb.dynamic_sh_ao_values = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f);
+
+	return cb;
+}
+
+BufferPayload BuildBufferPayloadFromTag(TagHash tag, StaticBufKind which)
+{
+	BufferPayload p{};
+	p.id = tag.hash;
+
+	if (!tag.data || tag.size == 0)
+		throw std::runtime_error("BuildBufferPayloadFromTag: header tag is empty");
+
+	// All headers are little-endian in your codebase
+	if (which == StaticBufKind::Index) {
+		// Parse header from THIS tag
+		const IndexBufferHeader ibh = bin::parse<IndexBufferHeader>(tag.data, tag.size, bin::Endian::Little);
+
+		// Actual bytes come from the *referenced* tag
+		TagHash dataTag(tag.reference);
+		if (!dataTag.data || dataTag.size == 0)
+			throw std::runtime_error("BuildBufferPayloadFromTag: index data tag empty");
+
+		const size_t want = static_cast<size_t>(ibh.dataSize);
+		if (dataTag.size < want)
+			throw std::runtime_error("BuildBufferPayloadFromTag: index data smaller than header declared size");
+
+		p.desc.Usage = D3D11_USAGE_IMMUTABLE;
+		p.desc.BindFlags = D3D11_BIND_INDEX_BUFFER;   // SRV will be added by Ensure... if needed
+		p.desc.ByteWidth = static_cast<UINT>(want);
+		p.desc.CPUAccessFlags = 0;
+		p.desc.MiscFlags = 0;
+
+		p.stride = (ibh.is32 != 0) ? 4u : 2u;        // store “index stride” in payload.stride
+		const auto* bytes = static_cast<const uint8_t*>(dataTag.data);
+		p.data.assign(bytes, bytes + want);
+	}
+	else {
+		// Vertex / UV / Colour share the same header
+		const VertexBufferHeader vbh = bin::parse<VertexBufferHeader>(tag.data, tag.size, bin::Endian::Little);
+
+		TagHash dataTag(tag.reference);
+		if (!dataTag.data || dataTag.size == 0)
+			throw std::runtime_error("BuildBufferPayloadFromTag: vertex data tag empty");
+
+		const size_t want = static_cast<size_t>(vbh.dataSize);
+		if (dataTag.size < want)
+			throw std::runtime_error("BuildBufferPayloadFromTag: vertex data smaller than header declared size");
+
+		p.desc.Usage = D3D11_USAGE_IMMUTABLE;
+		p.desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+		if (which == StaticBufKind::Color) {
+			// We’ll read this as a structured SRV later
+			p.desc.BindFlags |= D3D11_BIND_SHADER_RESOURCE;
+		}
+		p.desc.ByteWidth = static_cast<UINT>(want);
+		p.desc.CPUAccessFlags = 0;
+		p.desc.MiscFlags = 0;
+
+		p.stride = vbh.stride;                       // real vertex element stride
+		const auto* bytes = static_cast<const uint8_t*>(dataTag.data);
+		p.data.assign(bytes, bytes + want);
+	}
+	return p;
 }
 
 bool Graphics::ResolveSpecialOnce(const SStaticSpecial& sp, ResolvedSpecial& out)
@@ -108,7 +224,6 @@ bool Graphics::ResolveSpecialOnce(const SStaticSpecial& sp, ResolvedSpecial& out
 	return true;
 }
 
-
 static inline TagHash GetBufTag(const SStaticMeshData& mesh,
 	const SStaticMeshPart& part,
 	StaticBufKind which)
@@ -127,6 +242,9 @@ void Graphics::SubmitPackets(ID3D11DeviceContext* ctx,
 	std::vector<DrawPacket>& packets,
 	TfxRenderStage stage)
 {
+	wchar_t label[128];
+	_snwprintf_s(label, _TRUNCATE, L"SubmitPackets [%ls]", StageName(stage));
+	ScopedGpuEvent _stage(anno_.Get(), label);
 	struct Item { uint64_t key; uint32_t low; DrawPacket* p; };
 	static std::vector<Item> order;
 	order.clear(); order.reserve(packets.size());
@@ -197,12 +315,19 @@ void Graphics::SubmitPackets(ID3D11DeviceContext* ctx,
 
 			if (d.topo != curTopo) { ctx->IASetPrimitiveTopology(d.topo); curTopo = d.topo; }
 
-			if (d.tech != curTech) { d.tech->Bind(pDevice, pContext, externs, states, scopes); curTech = d.tech; }
+			if (d.tech != curTech) 
+			{ 
+				d.tech->Bind(pDevice, pContext, externs, states, scopes);
+				
+				
+				curTech = d.tech; 
+			}
 
 			curKey = it.key;
 		}
 
-		// VS CB1
+			
+			
 		UpdateCB1_StaticReusable(ctx, d.cb1,
 			d.worldCount ? &frameWorlds_[d.worldOffset] : nullptr,
 			d.worldCount, g_cb1.Get());
@@ -295,68 +420,6 @@ bool Graphics::ResolveStaticPartOnce(
 
 	out.ready = true;
 	return true;
-}
-
-
-static BufferPayload BuildBufferPayloadFromTag(TagHash tag, StaticBufKind which)
-{
-	BufferPayload p{};
-	p.id = tag.hash;
-
-	if (!tag.data || tag.size == 0)
-		throw std::runtime_error("BuildBufferPayloadFromTag: header tag is empty");
-
-	// All headers are little-endian in your codebase
-	if (which == StaticBufKind::Index) {
-		// Parse header from THIS tag
-		const IndexBufferHeader ibh = bin::parse<IndexBufferHeader>(tag.data, tag.size, bin::Endian::Little);
-
-		// Actual bytes come from the *referenced* tag
-		TagHash dataTag(tag.reference);
-		if (!dataTag.data || dataTag.size == 0)
-			throw std::runtime_error("BuildBufferPayloadFromTag: index data tag empty");
-
-		const size_t want = static_cast<size_t>(ibh.dataSize);
-		if (dataTag.size < want)
-			throw std::runtime_error("BuildBufferPayloadFromTag: index data smaller than header declared size");
-
-		p.desc.Usage = D3D11_USAGE_IMMUTABLE;
-		p.desc.BindFlags = D3D11_BIND_INDEX_BUFFER;   // SRV will be added by Ensure... if needed
-		p.desc.ByteWidth = static_cast<UINT>(want);
-		p.desc.CPUAccessFlags = 0;
-		p.desc.MiscFlags = 0;
-
-		p.stride = (ibh.is32 != 0) ? 4u : 2u;        // store “index stride” in payload.stride
-		const auto* bytes = static_cast<const uint8_t*>(dataTag.data);
-		p.data.assign(bytes, bytes + want);
-	}
-	else {
-		// Vertex / UV / Colour share the same header
-		const VertexBufferHeader vbh = bin::parse<VertexBufferHeader>(tag.data, tag.size, bin::Endian::Little);
-
-		TagHash dataTag(tag.reference);
-		if (!dataTag.data || dataTag.size == 0)
-			throw std::runtime_error("BuildBufferPayloadFromTag: vertex data tag empty");
-
-		const size_t want = static_cast<size_t>(vbh.dataSize);
-		if (dataTag.size < want)
-			throw std::runtime_error("BuildBufferPayloadFromTag: vertex data smaller than header declared size");
-
-		p.desc.Usage = D3D11_USAGE_IMMUTABLE;
-		p.desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-		if (which == StaticBufKind::Color) {
-			// We’ll read this as a structured SRV later
-			p.desc.BindFlags |= D3D11_BIND_SHADER_RESOURCE;
-		}
-		p.desc.ByteWidth = static_cast<UINT>(want);
-		p.desc.CPUAccessFlags = 0;
-		p.desc.MiscFlags = 0;
-
-		p.stride = vbh.stride;                       // real vertex element stride
-		const auto* bytes = static_cast<const uint8_t*>(dataTag.data);
-		p.data.assign(bytes, bytes + want);
-	}
-	return p;
 }
 
 void Graphics::EnsureStaticBufferRegistered(const SStaticMeshData& mesh,
@@ -583,29 +646,6 @@ static void DrawFullscreenTriangle(ID3D11DeviceContext* ctx) {
 	ctx->Draw(4, 0);
 }
 
-
-
-Microsoft::WRL::ComPtr<ID3DUserDefinedAnnotation> anno_;
-void Graphics::InitAnnotation() {
-	pContext->QueryInterface(IID_PPV_ARGS(anno_.GetAddressOf())); // may be null
-}
-
-// RAII scope marker
-struct ScopedGpuEvent {
-	ID3DUserDefinedAnnotation* a{};
-	ScopedGpuEvent(ID3DUserDefinedAnnotation* anno, const wchar_t* name) : a(anno) {
-		if (a) a->BeginEvent(name);
-	}
-	template<typename... Args>
-	ScopedGpuEvent(ID3DUserDefinedAnnotation* anno, const wchar_t* fmt, Args... args) : a(anno) {
-		if (!a) return;
-		wchar_t buf[256];
-		_snwprintf_s(buf, _TRUNCATE, fmt, args...);
-		a->BeginEvent(buf);
-	}
-	~ScopedGpuEvent() { if (a) a->EndEvent(); }
-};
-
 static constexpr UINT kCB1ByteCapacity = 64 * 1024;
 
 void CreateCB1(ID3D11Device* dev) {
@@ -619,7 +659,6 @@ void CreateCB1(ID3D11Device* dev) {
 	D3D11_SUBRESOURCE_DATA init{ nullptr, 0, 0 };
 	dev->CreateBuffer(&bd, &init, g_cb1.GetAddressOf());
 }
-
 
 void CreateCB1_FallBack(ID3D11Device* dev) {
 	D3D11_BUFFER_DESC bd{};
@@ -868,9 +907,6 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view, TfxRende
 			dp.layout = (ilIdx < tiger_input_layouts.size() && tiger_input_layouts[ilIdx])
 				? tiger_input_layouts[ilIdx].Get()
 				: nullptr;
-
-			// Buffers & strides
-			
 			dp.vb0 = resolved.vb1.get();
 			dp.stride0 = resolved.stride1;
 			dp.vb1 = resolved.vb2 ? resolved.vb2.get() : nullptr;
@@ -918,68 +954,38 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view, TfxRende
 	}
 }
 
+bool Graphics::IsEntityFullyReady(const RenderEntity& rs, TfxRenderStage stage)
+{
+	for (const SDynamicMesh& dm : rs.meshs)
+	{
+		size_t start = dm.part_range_per_render_stage[(int)stage];
+		size_t end = dm.part_range_per_render_stage[(int)stage + 1];
 
-	// NOTE: No binds, no Draw* here.
-	// Call SubmitPackets(pContext.Get(), packets_); once per pass in RenderFrame().
+		for (size_t i = start; i < end; ++i)
+		{
+			const SDynamicMeshPart& part = dm.parts[i];
+			if (part.LodCatagory > 2) continue;
 
+			uint32_t techId =
+				(part.varient_shader_index == 0xFFFF)
+				? part.technique.hash
+				: rs.external_mats[
+					rs.external_material_mapping[part.varient_shader_index].technique_start];
 
-	//for (const auto& special : rs.specials) {
-	//	// If technique is shared_ptr:
-	//	auto tech = special->technique;
-	//	if (special->part.TfxRenderStage == static_cast<UINT>(renderStage)) {
-	//		auto& part = special->part;
-	//		auto tech = special->technique.get();
-	//		ctx->IASetInputLayout(tiger_input_layouts[special->input_layout_index].Get());
-	//		ID3D11Buffer* vbs[3];
-	//		UINT          strides[3];
-	//		UINT          offsets[3] = { 0,0,0 };
-	//		UINT          vbCount = 0;
-	//		if (special->group->vertex) { vbs[vbCount] = special->group->vertex.get(); strides[vbCount] = special->group->vertexStride; ++vbCount; }
-	//		if (special->group->uv) { vbs[vbCount] = special->group->uv.get();     strides[vbCount] = special->group->uvStride;     ++vbCount; }
+			auto itTech = TechCache_.find(techId);
+			if (itTech == TechCache_.end())
+				return false;
+			if (!IsReady(itTech->second))
+				return false;
 
-	//		ctx->IASetVertexBuffers(0, vbCount, vbs, strides, offsets);
-	//		ctx->IASetIndexBuffer(special->group->index.get(), special->group->indexFormat, 0);
-	//		if (special->part.VertexColourBuffer.hash != 0xffffffff) {
-	//			ID3D11ShaderResourceView* s = special->group->color.Get();
-	//			//ctx->VSSetShaderResources(1, 1, &s);
-	//			ctx->VSSetShaderResources(0, 1, &s);
-	//		}
-	//		tech->Bind(pDevice, pContext, externs, states, scopes);
-	//		if (renderStage == TfxRenderStage::Decals) {
-	//			pContext->OMSetDepthStencilState(depthStencilDecal.Get(), 0);
-	//		} else if (renderStage == TfxRenderStage::Transparents) {
-	//			float bf[4] = { 1,1,1,1 };
-	//			pContext->OMSetBlendState(states.blend_states[8].Get(), bf, 0xFFFFFFFF); // alpha blend
-	//			pContext->OMSetDepthStencilState(depthStencilDecal.Get(), 0); // reversed-Z read-only
-	//			pContext->RSSetState(states.rasterizer_states[2].Get());
-	//			pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	//			pContext->OMSetDepthStencilState(depthStencilDecal.Get(), 0);
-	//			pContext->RSSetState(rasterizerStateNoCull.Get());
-	//			ID3D11ShaderResourceView* srvs[] = {            // t4
-	//			this->temp_angle_lookup.Get(),             // t5
-	//			};
-	//			ID3D11ShaderResourceView* srvs1[] = {            // t4
-	//			this->gbufA.depth.texCopySRV.Get(),             // t5
-	//			};
-	//			pContext->PSSetShaderResources(15, 1, srvs);
-	//			pContext->PSSetShaderResources(10, 1, srvs1);
-	//		}
-	//		
-	//		ctx->VSSetConstantBuffers(1, 1, &buf);
-	//		const UINT instanceCount = (UINT)visibleWorld.size();
-	//		ctx->DrawIndexedInstanced(part.index_count,
-	//			visibleWorld.size(),               // InstanceCount
-	//			part.index_start,   // StartIndexLocation
-	//			0,                           // BaseVertexLocation
-	//			0);
-
-
-
-	//	}//decals
-	//}
-
-
-
+			const uint64_t key = (uint64_t(rs.id) << 32) | uint32_t(i);
+			auto itDyn = dynamicPartCache_.find(key);
+			if (itDyn == dynamicPartCache_.end() || !itDyn->second.ready)
+				return false;
+		}
+	}
+	return true;
+}
 
 // Graphics.cpp
 void Graphics::RunPostprocessChain()
@@ -1052,174 +1058,211 @@ void Graphics::RunPostprocessChain()
 	}
 }
 
-void Graphics::DrawEntity(const RenderEntity& rs, const View& view, TfxRenderStage renderStage)
+bool Graphics::ResolveDynamicPartOnce(
+	const SDynamicMesh& dm,
+	const SDynamicMeshPart& part,
+	ResolvedDynamicPart& out)
 {
-	ID3D11DeviceContext* ctx = pContext.Get();
-	wchar_t label[128];
-	swprintf(label, 128, L"Dynamic Object %08X ", rs.id);
-	GpuMarker mark(ctx, label);
-	// Build a single world matrix from the entity's pos/rot (glm -> XM)
-	using namespace DirectX;
-	const XMVECTOR q = XMVectorSet(rs.rot.x, rs.rot.y, rs.rot.z, rs.rot.w);
-	const XMVECTOR qn = XMQuaternionNormalize(q);
-	const XMMATRIX R = XMMatrixRotationQuaternion(qn);
-	const XMMATRIX T = XMMatrixTranslation(rs.pos.x, rs.pos.y, rs.pos.z);
-	std::vector<ObjectVectors> instances;
-	std::vector<ObjectVectors> visibleWorld;
-	if (rs.occlusion_bounds.has_value()) {
-		//printf("Starting Cull");
+	// Register bind flags the first time we see this mesh’ streams
+	EnsureEntityBufferRegistered(dm, DynamicBufKind::Index, D3D11_BIND_INDEX_BUFFER);
+	EnsureEntityBufferRegistered(dm, DynamicBufKind::Vertex0, D3D11_BIND_VERTEX_BUFFER);
+	if (dm.vertex1_buffer.hash && dm.vertex1_buffer.hash != 0xFFFFFFFFu)
+		EnsureEntityBufferRegistered(dm, DynamicBufKind::Vertex1, D3D11_BIND_VERTEX_BUFFER);
+	if (dm.buffer2.hash && dm.buffer2.hash != 0xFFFFFFFFu)
+		EnsureEntityBufferRegistered(dm, DynamicBufKind::Buffer2, D3D11_BIND_VERTEX_BUFFER);
+	if (dm.buffer3.hash && dm.buffer3.hash != 0xFFFFFFFFu)
+		EnsureEntityBufferRegistered(dm, DynamicBufKind::Buffer3, D3D11_BIND_VERTEX_BUFFER);
+	if (dm.colour_buffer.hash && dm.colour_buffer.hash != 0xFFFFFFFFu)
+		EnsureEntityBufferRegistered(dm, DynamicBufKind::Color,
+			D3D11_BIND_VERTEX_BUFFER | D3D11_BIND_SHADER_RESOURCE);
+
+	// Enqueue futures
+	auto& fIB = GetOrEnqueueBuffer(dm.index_buffer.hash, D3D11_BIND_INDEX_BUFFER);
+	auto& fVB0 = GetOrEnqueueBuffer(dm.vertex0_buffer.hash, D3D11_BIND_VERTEX_BUFFER);
+
+	std::shared_future<std::shared_ptr<ID3D11Buffer>>* fVB1 = nullptr, * fVB2 = nullptr;
+	if (dm.vertex1_buffer.hash && dm.vertex1_buffer.hash != 0xFFFFFFFFu)
+		fVB1 = &GetOrEnqueueBuffer(dm.vertex1_buffer.hash, D3D11_BIND_VERTEX_BUFFER);
+	if (dm.buffer2.hash && dm.buffer2.hash != 0xFFFFFFFFu)
+		fVB2 = &GetOrEnqueueBuffer(dm.buffer2.hash, D3D11_BIND_VERTEX_BUFFER);
+
+	std::shared_future<std::shared_ptr<EntropyAssets::BufferSRVRes>>* fCol = nullptr;
+	const bool hasCol = (dm.colour_buffer.hash && dm.colour_buffer.hash != 0xFFFFFFFFu);
+	if (hasCol) fCol = &GetOrEnqueueBufferSRV(dm.colour_buffer.hash);
+
+	// Ready?
+	if (!FutReady(fIB) || !FutReady(fVB0) ||
+		(fVB1 && !FutReady(*fVB1)) ||
+		(fVB2 && !FutReady(*fVB2)) ||
+		(hasCol && (!fCol || !FutReady(*fCol))))
+		return false;
+
+	// Resolve
+	out.ib = fIB.get();
+	out.vb0 = fVB0.get();
+	out.vb1 = (fVB1 ? fVB1->get() : nullptr);
+	out.vb2 = (fVB2 ? fVB2->get() : nullptr);
+	out.vCol = (hasCol ? fCol->get() : nullptr);
+
+	// Strides + index fmt come from registry payloads
+	const auto pIB = registry->GetBuffer(dm.index_buffer.hash);
+	const auto pVB0 = registry->GetBuffer(dm.vertex0_buffer.hash);
+	out.stride0 = pVB0.stride;
+	if (out.vb1) { auto p = registry->GetBuffer(dm.vertex1_buffer.hash); out.stride1 = p.stride; }
+	if (out.vb2) { auto p = registry->GetBuffer(dm.buffer2.hash);        out.stride2 = p.stride; }
+	out.idxFmt = (pIB.stride == 2) ? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT;
+
+	out.indexStart = part.index_start;
+	out.indexCount = part.index_count;
+	out.ready = true;
+	return true;
+}
+
+
+void Graphics::DrawEntity(const RenderEntity& rs,
+	const View& view,
+	TfxRenderStage stage)
+{
+	// --- CULL ---
+	if (rs.occlusion_bounds)
+	{
 		using namespace culldbg;
-		const XMFLOAT4X4& W2P = view.world_to_projective;
-		Frustum fr = Frustum::FromColumnMajor(W2P, true);
-
-		int failed = -1;
-		if (!culldbg::aabb_in_frustum_dbg(fr, *rs.occlusion_bounds, &failed, /*verbose=*/false)) {
-			//printf("Culled Entity");
+		const auto fr = Frustum::FromColumnMajor(view.world_to_projective, true);
+		int dummy = 0;
+		if (!aabb_in_frustum_dbg(fr, *rs.occlusion_bounds, &dummy, false))
 			return;
-		}
-				
 	}
-	
-	auto mesh_scale = rs.meshData.model_scale;
-	float instance_scale = rs.pos.w;
-	ObjectVectors ov;
-	ov.scale = rs.pos.w;
-	ov.rotation = rs.rot;
-	ov.translation = rs.pos;
-	auto channels = rs.channels;
-	instances.push_back(ov);
-	instances.push_back(ov);
-	XMFLOAT4X4 worldXM;
-	XMStoreFloat4x4(&worldXM, R * T);
 
-	// CB1: mesh/model params from SEntityModel (fallbacks are sane if authoring data is odd)
-	XMFLOAT3 mesh_offset{
-		rs.meshData.model_offset.x,
-		rs.meshData.model_offset.y,
-		rs.meshData.model_offset.z
+	// --- ASSET READINESS ---
+	if (!IsEntityFullyReady(rs, stage))
+		return; // show later when ready
+
+	// --- INSTANCE WRITE ---
+	if (!m_instWritePtr) return;
+	if (m_instCursor >= m_instanceCapacity) return;
+
+	UINT baseInstance = m_instCursor;
+
+	ObjectVectors ov{};
+	ov.translation = rs.pos;
+	ov.rotation = rs.rot;
+	ov.scale = rs.pos.w;
+
+	*reinterpret_cast<InstanceData*>(m_instWritePtr +
+		size_t(m_instCursor) * m_instanceStride) =
+		InstanceData{
+			{ov.translation.x, ov.translation.y, ov.translation.z, 0},
+			{ov.rotation.x, ov.rotation.y, ov.rotation.z, ov.rotation.w},
+			ov.scale
 	};
 
-	// uniform; use .x
-	const float texScale = rs.meshData.texcoord_scale.x;               // if non-uniform you can split
-	const float texOffX = rs.meshData.texcoord_offset.x;
-	const float texOffY = rs.meshData.texcoord_offset.y;
-	const uint32_t maxColourIndex = 0;                                   // no field on SEntityModel; keep 0
+	m_instCursor++;
 
+	uint32_t worldOffset = (uint32_t)frameWorlds_.size();
+	frameWorlds_.push_back(ov);
+
+	// --- CB1 OVERRIDE ---
+	CB1Payload_override cb1o = BuildCB1FromEntity(rs);
+
+	// --- LOOP EACH MESH / PART ---
+	wchar_t label[128];
+	_snwprintf_s(label, _TRUNCATE, L"Draw Dynamic %08X [%ls]",rs.id, StageName(stage));
+	ScopedGpuEvent _object(anno_.Get(), label);
+	for (const SDynamicMesh& dm : rs.meshs)
 	{
-		UpdateCB1_Single(ctx,
-			rs.meshData.model_offset,
-			rs.meshData.model_scale,
-			instance_scale,
-			texScale,
-			texOffX,
-			texOffY,
-			rs.rot,
-			rs.pos);
-	}
-	// Draw each mesh and its parts
-	for (const auto& meshPtr : rs.meshs)
-	{
+		size_t start = dm.part_range_per_render_stage[(int)stage];
+		size_t end = dm.part_range_per_render_stage[(int)stage + 1];
 
-		if (!meshPtr) continue;
-		const DynamicMesh& mesh = *meshPtr;
+		const uint8_t ilIdx = dm.input_layout_per_render_stage[(int)stage];
+		ID3D11InputLayout* il =
+			(ilIdx < tiger_input_layouts.size() && tiger_input_layouts[ilIdx])
+			? tiger_input_layouts[ilIdx].Get() : nullptr;
 
-		// Pick input layout for the current pipeline stage (GBuffer)
-		const uint8_t ilIndex = mesh.input_layout_per_render_stage[static_cast<int>(TfxRenderStage::GenerateGbuffer)];
-		if (ilIndex < tiger_input_layouts.size() && tiger_input_layouts[ilIndex])
-			ctx->IASetInputLayout(tiger_input_layouts[ilIndex].Get());
-		else
-			ctx->IASetInputLayout(nullptr);
-
-		// Buffers group
-		const auto& grp = mesh.buffers;
-		if (!grp || !grp->index_buffer) continue;
-
-		// Set VBs (slot0 = vertex0 / slot1 = vertex1)
-		ID3D11Buffer* vbs[4]{};
-		UINT          strides[4]{};
-		UINT          offsets[4]{ 0,0,0,0 };
-		UINT          vbCount = 0;
-
-		if (grp->vertex0_buffer) { vbs[vbCount] = grp->vertex0_buffer.get(); strides[vbCount] = grp->vertex0Stride; ++vbCount; }
-		if (grp->vertex1_buffer) { vbs[vbCount] = grp->vertex1_buffer.get(); strides[vbCount] = grp->vertex1Stride; ++vbCount; }
-		if (grp->buffer2) { vbs[vbCount] = grp->buffer2.get();        strides[vbCount] = grp->buffer2Stride; ++vbCount; }
-		if (grp->buffer3) { vbs[vbCount] = grp->buffer3.get();        strides[vbCount] = grp->buffer3Stride; ++vbCount; }
-
-		ctx->IASetVertexBuffers(0, vbCount, vbs, strides, offsets);
-		ctx->IASetIndexBuffer(grp->index_buffer.get(), grp->indexFormat, 0);
-
-		// Optional vertex colour SRV (matches how you handled statics)
-		if (grp->color) {
-			ID3D11ShaderResourceView* s = grp->color.Get();
-			ID3D11Buffer* b = g_cb1.Get();
-			ctx->VSSetShaderResources(0, 1, &s);
-			ctx->VSSetConstantBuffers(1, 1, &b);
-		}
-
-		// Draw each part with its technique
-		auto start = mesh.part_range_per_render_stage[static_cast<int>(renderStage)];
-		auto end = mesh.part_range_per_render_stage[static_cast<int>(renderStage) + 1];
-		for (size_t i = start; i < end; i += 1)
+		for (size_t i = start; i < end; ++i)
 		{
-			const auto& partPtr = mesh.parts[i];
-			//if (!partPtr) continue;
-			if (renderStage == TfxRenderStage::Transparents) {
-				pContext->RSSetState(states.rasterizer_states[2].Get());
-			}
-			const DynamicMeshPart& part = *partPtr;
-			if (part.meshpartinfo.LodCatagory > 3) continue;
+			const SDynamicMeshPart& part = dm.parts[i];
+			if (part.LodCatagory > 2) continue;
+			const bool hasSkinning =
+				(dm.skinning_buffer.hash != 0u &&
+					dm.skinning_buffer.hash != 0xFFFFFFFFu);
+			// 1) resolve part buffers
+			const uint64_t key = (uint64_t(rs.id) << 32) | uint32_t(i);
+			auto& resolved = dynamicPartCache_[key];
 
-			// Primitive type
-			if (part.meshpartinfo.PrimitiveType == 5)
-				ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+			// 2) technique
+			std::shared_ptr<EntropyAssets::Technique> tech;
+
+			if (part.varient_shader_index == 0xFFFF)
+			{
+				auto it = TechCache_.find(part.technique.hash);
+				tech = it->second.get();
+			}
 			else
-				ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			// Set constant buffer
-			ID3D11Buffer* b1_ovd = g_cb1.Get();
-			ID3D11Buffer* b1 = g_cb1_fallback.Get();
-			// Technique binding
-			//ctx->PSSetConstantBuffers(1, 1, &b1);
-			if (part.meshpartinfo.varient_shader_index == 0xFFFF) {
-				part.technique->Bind_With_Channels(pDevice, pContext, externs, states, scopes,channels);
+			{
+				uint32_t techId =
+					rs.external_mats[
+						rs.external_material_mapping[part.varient_shader_index].technique_start];
+
+				tech = TechCache_[techId].get();
 			}
-			else {
-				auto gt = static_cast<UINT>(externs.getFloat(TfxExtern::Frame, 0));
-				auto tech = rs.external_mats[rs.external_material_mapping[part.meshpartinfo.varient_shader_index].technique_start];//+(gt % rs.external_material_mapping.size())];
-				if (tech)
-					tech->Bind_With_Channels(pDevice, pContext, externs, states, scopes, channels);
+
+			// 3) bind technique (entity channels supported)
+			tech->Bind_With_Channels(pDevice, pContext,
+				externs, states, scopes,
+				rs.channels);
+
+			// 4) set VB/IB
+			UINT offset = 0;
+			pContext->IASetInputLayout(il);
+			pContext->IASetPrimitiveTopology(
+				(part.PrimitiveType == 5) ?
+				D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP :
+				D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+			if (resolved.vb1)
+			{
+				ID3D11Buffer* vbs[2] = { resolved.vb0.get(), resolved.vb1.get() };
+				UINT strides[2] = { resolved.stride0, resolved.stride1 };
+				UINT offs[2] = { 0,0 };
+				pContext->IASetVertexBuffers(0, 2, vbs, strides, offs);
 			}
-			/*if (rs.id == 0x80E250C8) {
-				for (auto& channal : rs.channels) {
-					printf("channel id %d value %f\n", channal.first, channal.second);
-										
-				}
-			}*/
+			else
+			{
+				ID3D11Buffer* vb = resolved.vb0.get();
+				UINT str = resolved.stride0;
+				pContext->IASetVertexBuffers(0, 1, &vb, &str, &offset);
+			}
 
-
-
-			// Optional skinning VS override
-			if (mesh.buffers->skinning_buffer.get()) {
+			if (hasSkinning && entity_vs_override)
+			{
 				pContext->VSSetShader(entity_vs_override.Get(), nullptr, 0);
-
-			}
-			ctx->VSSetConstantBuffers(1, 1, &b1_ovd);
-			if (renderStage == TfxRenderStage::Transparents) {
-				ID3D11ShaderResourceView* srvs[] = {            // t4
-			this->temp_angle_lookup.Get(),             // t5
-				};
-				ID3D11ShaderResourceView* srvs1[] = {            // t4
-				this->gbufA.depth.texCopySRV.Get(),             // t5
-				};
-				pContext->PSSetShaderResources(15, 1, srvs);
-				pContext->PSSetShaderResources(10, 1, srvs1);
 			}
 
-			// Draw call
-			ctx->DrawIndexed(
-				part.meshpartinfo.index_count,
-				part.meshpartinfo.index_start,
-				0
-			);
+			pContext->IASetIndexBuffer(resolved.ib.get(), resolved.idxFmt, 0);
+
+			// 5) bind vertex colors
+			if (resolved.vCol)
+				pContext->VSSetShaderResources(0, 1, resolved.vCol->srv.GetAddressOf());
+
+			// 6) update CB1 override
+			{
+				D3D11_MAPPED_SUBRESOURCE m{};
+				if (SUCCEEDED(pContext->Map(g_cb1.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &m)))
+				{
+					memcpy(m.pData, &cb1o, sizeof(cb1o));
+					pContext->Unmap(g_cb1.Get(), 0);
+				}
+				ID3D11Buffer* c1 = g_cb1.Get();
+				pContext->VSSetConstantBuffers(1, 1, &c1);
+			}
+
+			// 7) draw
+			pContext->DrawIndexedInstanced(
+				resolved.indexCount,
+				1,
+				resolved.indexStart,
+				0,
+				baseInstance);
 		}
 	}
 }
@@ -1286,10 +1329,10 @@ void Graphics::PrewarmVisibleAssets(const View& view)
 				TryActivateReady(fCol, tmpSRV);
 			}
 
-			if (g_activations_this_frame >= g_activation_budget_per_frame) return;
+			if (g_activations_this_frame >= g_activation_budget_per_frame) break;
 		}
 
-		if (g_activations_this_frame >= g_activation_budget_per_frame) return;
+		if (g_activations_this_frame >= g_activation_budget_per_frame) break;
 	}
 
 	// 2) Specials (same idea, trimmed)
@@ -1344,17 +1387,167 @@ void Graphics::PrewarmVisibleAssets(const View& view)
 				TryActivateReady(fCol, tmpSRV);
 			}
 
-			if (g_activations_this_frame >= g_activation_budget_per_frame) return;
+			if (g_activations_this_frame >= g_activation_budget_per_frame) break;
 		}
-		if (g_activations_this_frame >= g_activation_budget_per_frame) return;
+		if (g_activations_this_frame >= g_activation_budget_per_frame) break;
+	}
+	// 3) ENTITIES — MUST resolve buffers + techniques exactly like statics
+// 3) ENTITIES — MUST resolve buffers + techniques exactly like statics
+	for (auto& ent : entitiesToDraw) {
+		{
+			if (g_activations_this_frame >= g_activation_budget_per_frame)
+				break;
+
+			using namespace culldbg;
+			const XMFLOAT4X4& W2P = view.world_to_projective;
+			Frustum fr = Frustum::FromColumnMajor(W2P, true);
+
+			bool visible = false;
+			if (ent.occlusion_bounds) {
+				visible = aabb_in_frustum_dbg(fr, *ent.occlusion_bounds, nullptr, false);
+				if (!visible)
+					continue;
+			}
+			
+
+			for (const SDynamicMesh& dm : ent.meshs)
+			{
+				// --- Register all buffers (same as before)
+				EnsureEntityBufferRegistered(dm, DynamicBufKind::Index, D3D11_BIND_INDEX_BUFFER);
+				EnsureEntityBufferRegistered(dm, DynamicBufKind::Vertex0, D3D11_BIND_VERTEX_BUFFER);
+				if (dm.vertex1_buffer.hash) EnsureEntityBufferRegistered(dm, DynamicBufKind::Vertex1, D3D11_BIND_VERTEX_BUFFER);
+				if (dm.buffer2.hash)        EnsureEntityBufferRegistered(dm, DynamicBufKind::Buffer2, D3D11_BIND_VERTEX_BUFFER);
+				if (dm.buffer3.hash)        EnsureEntityBufferRegistered(dm, DynamicBufKind::Buffer3, D3D11_BIND_VERTEX_BUFFER);
+				if (dm.colour_buffer.hash)  EnsureEntityBufferRegistered(dm, DynamicBufKind::Color, D3D11_BIND_SHADER_RESOURCE);
+				if (dm.skinning_buffer.hash)EnsureEntityBufferRegistered(dm, DynamicBufKind::Skin, D3D11_BIND_SHADER_RESOURCE);
+
+				// --- Stage ranges we care about
+				size_t starts[2] = {
+					dm.part_range_per_render_stage[(int)TfxRenderStage::GenerateGbuffer],
+					dm.part_range_per_render_stage[(int)TfxRenderStage::Transparents]
+				};
+				size_t ends[2] = {
+					dm.part_range_per_render_stage[(int)TfxRenderStage::GenerateGbuffer + 1],
+					dm.part_range_per_render_stage[(int)TfxRenderStage::Transparents + 1]
+				};
+
+				// --- Loop both GBuffer and Transparency parts
+				for (int s = 0; s < 2; s++)
+				{
+					for (size_t i = starts[s]; i < ends[s]; i++)
+					{
+						const auto& part = dm.parts[i];
+						if (part.LodCatagory > 2)
+							continue;
+
+						// --- 1. Enqueue technique
+						uint32_t techId;
+						if (part.varient_shader_index == 0xFFFF) {
+							techId = part.technique.hash;
+						}
+						else {
+							techId = ent.external_mats[ent.external_material_mapping[part.varient_shader_index].technique_start];
+								
+						}
+
+						auto it = TechCache_.find(techId);
+						if (it == TechCache_.end())
+							it = TechCache_.emplace(techId, assets->EnqueueTechnique(TagHash(techId))).first;
+
+						// --- 2. Activate technique if ready
+						if (IsReady(it->second) && g_activations_this_frame < g_activation_budget_per_frame)
+						{
+							(void)it->second.get();
+							g_activations_this_frame++;
+						}
+
+						// --- 3. Activate buffers
+						auto tryVB = [&](TagHash h, UINT flags)
+							{
+								if (!h.hash || h.hash == 0xFFFFFFFFu) return;
+								auto& f = GetOrEnqueueBuffer(h.hash, flags);
+								std::shared_ptr<ID3D11Buffer> tmp;
+								TryActivateReady(f, tmp);
+							};
+
+						tryVB(dm.vertex0_buffer, D3D11_BIND_VERTEX_BUFFER);
+						tryVB(dm.vertex1_buffer, D3D11_BIND_VERTEX_BUFFER);
+						tryVB(dm.buffer2, D3D11_BIND_VERTEX_BUFFER);
+						tryVB(dm.buffer3, D3D11_BIND_VERTEX_BUFFER);
+
+						// color or skin SRVs
+						auto trySRV = [&](TagHash h)
+							{
+								if (!h.hash || h.hash == 0xFFFFFFFFu) return;
+								auto& f = GetOrEnqueueBufferSRV(h.hash);
+								std::shared_ptr<EntropyAssets::BufferSRVRes> tmp;
+								TryActivateReady(f, tmp);
+							};
+
+						trySRV(dm.colour_buffer);
+						trySRV(dm.skinning_buffer);
+
+						// --- 4. Resolve dynamic geometry (CRITICAL)
+						const uint64_t key = ((uint64_t)ent.id << 32) | uint32_t(i);
+						auto& resolved = dynamicPartCache_[key];
+
+						if (!resolved.ready)
+							ResolveDynamicPartOnce(dm, part, resolved);
+					}
+				}
+			}
+		}
 	}
 }
+
+		
+				
+
+		
+
+void Graphics::EnsureEntityBufferRegistered(const SDynamicMesh& mesh,
+	DynamicBufKind which,
+	UINT addFlags)
+{
+	TagHash tag = GetEntityBufTag(mesh, which);
+	const uint32_t id = tag.hash;
+	if (id == 0u || id == 0xFFFFFFFFu) return;
+
+	if (!registry->HasBuffer(id)) {
+		// Map to your static parse rules:
+		//   Index    -> StaticBufKind::Index (uses IndexBufferHeader)
+		//   Color    -> StaticBufKind::Color (adds SRV bind + uses VertexBufferHeader)
+		//   Others   -> StaticBufKind::Vertex (uses VertexBufferHeader)
+		StaticBufKind parseAs =
+			(which == DynamicBufKind::Index) ? StaticBufKind::Index :
+			(which == DynamicBufKind::Color) ? StaticBufKind::Color :
+			StaticBufKind::Vertex;
+
+		auto payload = BuildBufferPayloadFromTag(tag, parseAs);
+
+		// Ensure requested usage is permitted (e.g., IB/VB/SRV).
+		payload.desc.BindFlags |= addFlags;
+
+		registry->RegisterBuffer(id, std::move(payload));
+		return;
+	}
+
+	// Already present: merge bind flags so subsequent creation of SRV/VB/IB is legal.
+	auto payload = registry->GetBuffer(id);
+	const UINT merged = payload.desc.BindFlags | addFlags;
+	if (merged != payload.desc.BindFlags) {
+		payload.desc.BindFlags = merged;
+		registry->RegisterBuffer(id, std::move(payload));
+	}
+}
+
+
 
 void Graphics::RenderFrame()
 {
 	static bool drawrt1 = false, drawrt0 = false, drawrt2 = false, drawLight_diffuse = false,
 		drawLight_specular = false, drawDepth = false, drawShading = false,
-		drawShadingRead = false, drawLight_ibl = false, stageGlobalLighting = false;
+		drawShadingRead = false, drawLight_ibl = false, stageGlobalLighting = true;
 	
 	//mainQueue->Drain();
 	mainQueue->RunSlice(8, 1);
@@ -1474,10 +1667,11 @@ void Graphics::RenderFrame()
 
 		
 		for (auto& rs : staticsToDraw) DrawStaticMesh(rs, viewState, TfxRenderStage::GenerateGbuffer);
+		for (auto& re : entitiesToDraw)
+			DrawEntity(re, viewState, TfxRenderStage::GenerateGbuffer);
 		SubmitPackets(pContext.Get(), packets_,TfxRenderStage::GenerateGbuffer);
 		pContext->Unmap(m_instanceSB.Get(), 0);
 		m_instWritePtr = nullptr;
-		for (auto& re : entitiesToDraw) DrawEntity(re, viewState);
 	}
 	{
 		ScopedGpuEvent e(anno_.Get(), L"copy (RT1->RT1_Clone)");
@@ -1633,15 +1827,13 @@ void Graphics::RenderFrame()
 
 		// Build packets for transparent stage (statics +, you can still do entities immediate if needed)
 		for (auto& rs : staticsToDraw) DrawStaticMesh(rs, viewState, TfxRenderStage::Transparents);
-
+		for (auto& re : entitiesToDraw)
+			DrawEntity(re, viewState, TfxRenderStage::Transparents);
 		// Submit with Transparent pass semantics (sorting + states + extra SRVs)
 		SubmitPackets(pContext.Get(), packets_, TfxRenderStage::Transparents);
 
 		pContext->Unmap(m_instanceSB.Get(), 0);
 		m_instWritePtr = nullptr;
-
-		// If you still need dynamic entities here, keep your existing DrawEntity loop afterwards.
-		for (auto& rs : entitiesToDraw) DrawEntity(rs, viewState, TfxRenderStage::Transparents);
 
 		pContext->PSSetShaderResources(0, 16, nulls);
 		pContext->VSSetShaderResources(0, 16, nulls);
@@ -1801,22 +1993,7 @@ void Graphics::RenderFrame()
 	ImGui::Begin("Activity Selector");
 	if (ImGui::CollapsingHeader("Activities & Maps"))
 	{
-		/*static std::vector<ActivityDef> demoData;
-
-		if (demoData.empty()) {
-			demoData.push_back({
-				"Strike: Arms Dealer", 0x1001u,
-				{ {"EDZ / Sunken Isles", 0x80BB30D2u}, {"EDZ / The Sludge", 0x80E250C8u} }
-				});
-			demoData.push_back({
-				"Raid: Last Wish", 0x2001u,
-				{ {"Dreaming City / Kalli", 0x90AABBCCu}, {"Dreaming City / Shuro Chi", 0x90AABBCD} }
-				});
-		}*/
-
 		ActivityProvider provider = [&]() -> const std::vector<ActivityDef>&{
-			// IMPORTANT: return storage that stays alive between frames.
-			// We keep a static cache and rebuild it each call (cheap).
 			static std::vector<ActivityDef> cache;
 			cache.clear();
 			cache.reserve(this->activities.size());
@@ -1834,10 +2011,7 @@ void Graphics::RenderFrame()
 			return cache;
 			};
 
-		// Callbacks
 		ActivityBrowserCallbacks cbs;
-
-		// FIX: use act.display_name and proper hex formatting for map hash.
 		cbs.on_map_chosen = [&](const ActivityDef& act, const MapDef& map) {
 			char buf[256];
 			std::snprintf(buf, sizeof(buf),
@@ -1860,11 +2034,8 @@ void Graphics::RenderFrame()
 			};
 
 		cbs.on_activity_selected = [&](const ActivityDef& act) {
-			// Optional: prewarm or log
-			// PrewarmActivity(act.activity_id);
 			};
 
-		// Draw it in your Debug Menu block
 		DrawActivityBrowser(provider, cbs);
 	}
 
@@ -2332,14 +2503,23 @@ bool Graphics::InitializeScene()
 	LoadGlobalTextures();
 	CreateLightVolumeResources();
 	CreateInstanceBuffer();
+	InitAnnotation();
 	this->activities = GlobalData::globalActivities();
-	//loadzone = std::make_unique<LoadZone>(*this);
+	loadzone = std::make_unique<LoadZone>(*this);
 	//loadzone->parentHash = 0x8112FC9E; //duality
 	//loadzone->ProcessMap();
 	//this->staticsToDraw = loadzone->statics;
 	//this->lightsToDraw = loadzone->lights;
 	//this->entitiesToDraw = loadzone->entities;
 	//this->staticAO1 = loadzone->AOMap1;
+	//loadzone->load_datatable_into_scene(TagHash(0x80D4076F));
+	loadzone->load_datatable_into_scene(TagHash(0x80D26815));
+	if (loadzone) {
+		this->staticsToDraw = loadzone->statics;
+		this->lightsToDraw = loadzone->lights;
+		this->entitiesToDraw = loadzone->entities;
+		this->staticAO1 = loadzone->AOMap1;
+	}
 	EnsureCB1_StaticReusable(pDevice.Get(), g_cb1);
 	printf("Loading Render Engine\n");
 	//exit(1);

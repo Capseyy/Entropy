@@ -8,6 +8,8 @@ struct MeshParams {
     float uv_scale = 1.0f, uv_off_x = 0.0f, uv_off_y = 0.0f, max_colour = 0.0f;
 };
 
+enum class DrawPacketType { Static, Entity, Light, Terrian };
+
 static inline float asfloat_u321(std::uint32_t u) {
     float f; std::memcpy(&f, &u, sizeof(u)); return f;
 }
@@ -158,7 +160,6 @@ struct DrawPacket {
     std::uint32_t     flags_or_maxColorBits; // packed bits, sent as float in cb1[1].w
     uint32_t worldOffset = 0;
     uint32_t worldCount = 0;
-
 };
 
 

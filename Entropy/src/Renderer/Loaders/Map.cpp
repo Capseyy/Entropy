@@ -68,12 +68,10 @@ void LoadZone::ProcessMap()
 	{
 		load_datatable_into_scene(datatable);
 	}
-	//load_datatable_into_scene(TagHash(0x80D4076F));
-	//load_datatable_into_scene(TagHash(0x80D26815));
 	printf("Loaded %d datatables\n", data_tables.size());
 }
 
-void LoadZone::load_datatable_into_scene(TagHash table) {
+inline void LoadZone::load_datatable_into_scene(TagHash table) {
 	//printf("Starting parse for %08x \n", table.hash);
 	const auto datatable = bin::parse<SMapDataTable>(table.data, table.size);
 
@@ -91,7 +89,7 @@ void LoadZone::load_datatable_into_scene(TagHash table) {
 			}
 			break;
 		}
-		case 0x80806a63: {
+		/*case 0x80806a63: {
 			printf("Found light placement\n");
 			auto const resource = entry.resource.Parse<Unk_80806A63>(table);
 			const auto light_parent = bin::parse<SLightCollection>(resource.light_collection.data, resource.light_collection.size);
@@ -112,7 +110,7 @@ void LoadZone::load_datatable_into_scene(TagHash table) {
 			}
 			break;
 
-		}
+		}*/
 		//case 0x80806a40: {// Ambient OCclusion placementP
 		//	printf("Found AO placement\n");
 		//	auto const resource = entry.resource.Parse<Unk_80806A40>(table);

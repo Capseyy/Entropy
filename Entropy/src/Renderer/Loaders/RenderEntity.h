@@ -31,23 +31,15 @@ struct BufferGroupDynamic {
     UINT        indexCount = 0;
     DXGI_FORMAT indexFormat = DXGI_FORMAT_R32_UINT; // or R16 if your data is 16-bit
     uint16_t input_layout_index;
-};
-
-struct DynamicMesh {
-    std::shared_ptr<BufferGroupDynamic> buffers;
-    std::array<uint16_t, 25> part_range_per_render_stage;
-    std::array<uint8_t, 24> input_layout_per_render_stage;
-    std::vector<std::shared_ptr<DynamicMeshPart>> parts;
-    
 
 };
 
 struct RenderEntity {
-    std::vector<std::shared_ptr<DynamicMesh>> meshs;     // geometry + techniques (built by StaticRenderer)
+    std::vector<SDynamicMesh> meshs;     // geometry + techniques (built by StaticRenderer)
     SEntityModel meshData;          // raw mesh data (for LOD or other purposes)
     glm::quat rot;    // per-object transform (if you have one)
     glm::vec4 pos;
-    std::vector<std::shared_ptr<EntropyAssets::Technique>> external_mats;
+    std::vector<uint32_t> external_mats;
     uint32_t id;
     std::vector<Unk_808072C5> external_material_mapping;
     std::unordered_map<uint32_t, float_t> channels;
