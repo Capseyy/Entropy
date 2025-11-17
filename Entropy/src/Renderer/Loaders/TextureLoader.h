@@ -198,6 +198,115 @@ BuildTexture3DPayloadFromTag(TagHash textureTag)
 }
 
 
+static std::optional<Texture2DPayload>
+BuildTextureCubePayloadFromTag(TagHash textureTag)
+{
+    const auto header = bin::parse<STextureHeader>(textureTag.data, textureTag.size, bin::Endian::Little);
+    if (!header.width || !header.height) return std::nullopt;
+
+    const DXGI_FORMAT fileFmt = static_cast<DXGI_FORMAT>(header.dxgiFormat);
+    const DXGI_FORMAT texFmt = TypelessToTypedSRV(fileFmt);
+
+    // Pull bytes: same rule as BuildTexturePayloadFromTag
+    std::vector<uint8_t> bytes;
+    if (header.large_buffer.data && header.large_buffer.size)
+    {
+        bytes.insert(bytes.end(),
+            (const uint8_t*)header.large_buffer.data,
+            (const uint8_t*)header.large_buffer.data + header.large_buffer.size);
+
+        TagHash ref(textureTag.reference);
+        if (ref.data && ref.size)
+            bytes.insert(bytes.end(), (const uint8_t*)ref.data, (const uint8_t*)ref.data + ref.size);
+    }
+    else
+    {
+        TagHash ref(textureTag.reference);
+        if (!ref.data || !ref.size) return std::nullopt;
+        bytes.insert(bytes.end(), (const uint8_t*)ref.data, (const uint8_t*)ref.data + ref.size);
+    }
+
+    const bool haveLarge = (header.large_buffer.data && header.large_buffer.size);
+    const UINT targetMips = haveLarge ? std::max<UINT>(1, header.mipCount) : 1;
+
+    UINT storedMips = 0;
+    size_t off = 0;
+    UINT w = header.width, h = header.height;
+
+    for (UINT mip = 0; mip < targetMips; ++mip)
+    {
+        UINT rowPitch = 0, slicePitch = 0;
+        if (!ComputePitch2D(texFmt, w, h, rowPitch, slicePitch))
+            break;
+
+        const size_t oneFaceBytes = slicePitch;
+        const size_t mipBytes = oneFaceBytes * 6;
+
+        if (off + mipBytes > bytes.size())
+            break;
+
+        off += mipBytes;
+        ++storedMips;
+
+        w = std::max(1u, w >> 1u);
+        h = std::max(1u, h >> 1u);
+    }
+
+    if (!storedMips)
+        return std::nullopt;
+
+    // --- Build payload ---
+    Texture2DPayload tp{};
+    tp.data = std::move(bytes);
+
+    D3D11_TEXTURE2D_DESC& d = tp.desc;
+    ZeroMemory(&d, sizeof(d));
+    d.Width = header.width;
+    d.Height = header.height;
+    d.MipLevels = storedMips;
+    d.ArraySize = 6;                      
+    d.Format = texFmt;
+    d.SampleDesc.Count = 1;
+    d.Usage = D3D11_USAGE_DEFAULT;
+    d.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    d.CPUAccessFlags = 0;
+    d.MiscFlags = D3D11_RESOURCE_MISC_TEXTURECUBE;
+
+    // --- Subresources: [mip][face] ---
+    tp.subresources.reserve(storedMips * 6);
+
+    const uint8_t* base = tp.data.data();
+    size_t cursor = 0;
+    w = header.width;
+    h = header.height;
+
+    for (UINT mip = 0; mip < storedMips; ++mip)
+    {
+        UINT rowPitch = 0, slicePitch = 0;
+        ComputePitch2D(texFmt, w, h, rowPitch, slicePitch);
+
+        for (UINT face = 0; face < 6; ++face)
+        {
+            if (cursor + slicePitch > tp.data.size())
+                break;
+
+            D3D11_SUBRESOURCE_DATA s{};
+            s.pSysMem = base + cursor;
+            s.SysMemPitch = rowPitch;
+            s.SysMemSlicePitch = 0;
+            tp.subresources.push_back(s);
+
+            cursor += slicePitch;
+        }
+
+        w = std::max(1u, w >> 1);
+        h = std::max(1u, h >> 1);
+    }
+
+    return tp;
+}
+
+
 // =====================================================================================
 static std::optional<Texture2DPayload>
 BuildTexturePayloadFromTag(TagHash textureTag)
@@ -208,7 +317,6 @@ BuildTexturePayloadFromTag(TagHash textureTag)
     const DXGI_FORMAT fileFmt = static_cast<DXGI_FORMAT>(header.dxgiFormat);
     const DXGI_FORMAT texFmt = TypelessToTypedSRV(fileFmt);
 
-    // pull bytes (Rust: large_buffer first, then append header.ref when load_full_mip)
     std::vector<uint8_t> bytes;
     if (header.large_buffer.data && header.large_buffer.size) {
         bytes.insert(bytes.end(),
@@ -225,11 +333,9 @@ BuildTexturePayloadFromTag(TagHash textureTag)
         bytes.insert(bytes.end(), (const uint8_t*)ref.data, (const uint8_t*)ref.data + ref.size);
     }
 
-    // Rust rule: if NO large_buffer -> trust only mip0; else walk header.mipCount
     const bool haveLarge = (header.large_buffer.data && header.large_buffer.size);
     const UINT targetMips = haveLarge ? std::max<UINT>(1, header.mipCount) : 1;
 
-    // walk the blob mips
     UINT w = header.width, h = header.height;
     size_t off = 0; UINT stored = 0;
     for (UINT i = 0; i < targetMips; ++i) {
@@ -240,7 +346,6 @@ BuildTexturePayloadFromTag(TagHash textureTag)
         w = std::max(1u, w >> 1);
         h = std::max(1u, h >> 1);
     }
-    //if (!stored) return std::nullopt;
 
     Texture2DPayload tp{};
     tp.data = std::move(bytes);
@@ -258,7 +363,6 @@ BuildTexturePayloadFromTag(TagHash textureTag)
     d.CPUAccessFlags = 0;
     d.MiscFlags = 0;
 
-    // subresources only for the bytes we proved to exist
     tp.subresources.reserve(stored);
     const uint8_t* base = tp.data.data();
     size_t cursor = 0; w = header.width; h = header.height;

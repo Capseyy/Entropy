@@ -787,7 +787,8 @@
             "c:\\users\\sam-pc\\source\\repos\\entropy\\entropy\\src\\tigerengine\\technique\\tfx\\tfx_eval.h",
             "c:\\program files\\microsoft visual studio\\2022\\community\\vc\\tools\\msvc\\14.44.35207\\include\\numbers",
             "c:\\users\\sam-pc\\source\\repos\\entropy\\entropy\\src\\tigerengine\\technique\\tfx\\tfx_program.h",
-            "c:\\users\\sam-pc\\source\\repos\\entropy\\entropy\\src\\tigerengine\\technique\\tfx\\tfx_decompiler.h"
+            "c:\\users\\sam-pc\\source\\repos\\entropy\\entropy\\src\\tigerengine\\technique\\tfx\\tfx_decompiler.h",
+            "c:\\users\\sam-pc\\source\\repos\\entropy\\entropy\\src\\renderer\\graphics\\scope\\instance.h"
         ],
         "ImportedModules": [],
         "ImportedHeaderUnits": []

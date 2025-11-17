@@ -17,32 +17,26 @@ MapStaticAO LoadZone::LoadAmbAO(SAmbientOcclusionBuffer tag)
 	const uint32_t h = tag.buffer.hash;
 	if (h == 0u || h == 0xFFFFFFFFu) return out; // no AO buffer
 
-	// parse header
 	const auto vcbh = bin::parse<VertexBufferHeader>(tag.buffer.data, tag.buffer.size, bin::Endian::Little);
 	const void* vcRef = TagHash(tag.buffer.reference).data;
 
-	// IMPORTANT: add SRV bind (VB | SRV)
 	const uint32_t colId = RegisterBufferBlob(
 		vcRef, vcbh.dataSize, h,
 		D3D11_BIND_VERTEX_BUFFER | D3D11_BIND_SHADER_RESOURCE,
 		vcbh.stride
 	);
 
-	// stride straight from header; no registry round-trip needed
 	const UINT stride = vcbh.stride;
 
 	BufferSRVMeta meta{};
 	meta.typedFormat = (stride == 1) ? DXGI_FORMAT_R8_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM;
 	meta.bytesPerElement = stride;
 
-	// create / fetch SRV
 	auto srvRes = gfx.assets->EnqueueBufferSRV(colId, meta).future.get();
 
-	// Store the SRV properly (ComPtr move). Adjust type if yours differs.
 	out.ao_buffer = std::move(srvRes->srv);
 	out.AO_stride = stride;
 
-	// Build id->offset map
 	out.offsets.reserve(tag.offset_mappings.size());
 	for (const auto& m : tag.offset_mappings)
 		out.offsets.try_emplace(m.identifier, m.offset);
@@ -89,7 +83,7 @@ inline void LoadZone::load_datatable_into_scene(TagHash table) {
 			}
 			break;
 		}
-		/*case 0x80806a63: {
+		case 0x80806a63: {
 			printf("Found light placement\n");
 			auto const resource = entry.resource.Parse<Unk_80806A63>(table);
 			const auto light_parent = bin::parse<SLightCollection>(resource.light_collection.data, resource.light_collection.size);
@@ -110,7 +104,7 @@ inline void LoadZone::load_datatable_into_scene(TagHash table) {
 			}
 			break;
 
-		}*/
+		}
 		//case 0x80806a40: {// Ambient OCclusion placementP
 		//	printf("Found AO placement\n");
 		//	auto const resource = entry.resource.Parse<Unk_80806A40>(table);

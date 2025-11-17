@@ -50,7 +50,7 @@ static bool TryActivateReady(std::shared_future<std::shared_ptr<T>>& fut,
 		out = fut.get();            // may rethrow from producer
 	}
 	catch (const std::exception& e) {
-		OutputDebugStringA((std::string("TryActivateReady: ") + e.what() + "\n").c_str());
+		//outputdebugstringA((std::string("TryActivateReady: ") + e.what() + "\n").c_str());
 		out.reset();                // treat as “not available”
 		// Do NOT increment activation here, or do so if you want it to count.
 		return false;
@@ -345,9 +345,11 @@ bool Graphics::ResolveStaticPartOnce(
 	const SStaticMeshPart& part,
 	ResolvedStaticPart& out)
 {
+	if (out.ready) {
+		return true;
+	}
 	const auto& sb = mesh.buffers[part.buffer_index];
 
-	// register once if needed (cheap if already present)
 	EnsureStaticBufferRegistered(mesh, part, StaticBufKind::Index, D3D11_BIND_INDEX_BUFFER);
 	EnsureStaticBufferRegistered(mesh, part, StaticBufKind::Vertex, D3D11_BIND_VERTEX_BUFFER);
 	if (sb.UVBuffer.hash && sb.UVBuffer.hash != 0xFFFFFFFFu)
@@ -368,33 +370,28 @@ bool Graphics::ResolveStaticPartOnce(
 	if (hasColorId) {
 		fColorSRVPtr = &GetOrEnqueueBufferSRV(sb.VertexColourBuffer.hash);
 	}
-
-	// wait until everything present is ready
 	if (!FutReady(fIB) ||
 		!FutReady(fVB0) ||
 		(fVB1 && !FutReady(*fVB1)) ||
 		(hasColorId && (!fColorSRVPtr || !FutReady(*fColorSRVPtr))))
 	{
-		return false; // not ready this frame
+		return false;
 	}
 
-	// resolve buffers
 	out.ib = fIB.get();
 	out.vb0 = fVB0.get();
 	out.vb1 = (fVB1 ? fVB1->get() : nullptr);
 	out.vCol = nullptr;
 	if (hasColorId && fColorSRVPtr) {
 		try {
-			out.vCol = fColorSRVPtr->get();   // may throw if asset load failed
+			out.vCol = fColorSRVPtr->get(); 
 		}
 		catch (const std::exception& e) {
-			// log once and continue without vertex color
 			printf("Color SRV load failed: %s\n", e.what());
 			out.vCol = nullptr;
 		}
 	}
 
-	// read strides (use const ref getter to avoid copies if you have one)
 	const auto pIB = registry->GetBuffer(sb.IndexBuffer.hash);
 	const auto pVB0 = registry->GetBuffer(sb.VertexBuffer.hash);
 	BufferPayload pVB1{};
@@ -487,12 +484,11 @@ void Graphics::EnsureSpecialBufferRegistered(const SStaticSpecial& sp,
 	}
 }
 
-// Merge bind flags into the registry payload so creation (VB/IB/SRV) is legal
 void Graphics::EnsureBufferBind(uint32_t id, UINT addFlags)
 {
 	if (id == 0 || id == 0xFFFFFFFFu) return;
 	BufferPayload payload{};
-	if (!registry->TryGetBuffer(id, payload)) return; // not registered yet; leave it
+	if (!registry->TryGetBuffer(id, payload)) return;
 	UINT merged = payload.desc.BindFlags | addFlags;
 	if (merged != payload.desc.BindFlags) {
 		payload.desc.BindFlags = merged;
@@ -500,7 +496,6 @@ void Graphics::EnsureBufferBind(uint32_t id, UINT addFlags)
 	}
 }
 
-// Enqueue or get VB/UV/IB buffer future
 std::shared_future<std::shared_ptr<ID3D11Buffer>>&
 Graphics::GetOrEnqueueBuffer(uint32_t id, UINT addFlags)
 {
@@ -511,7 +506,7 @@ Graphics::GetOrEnqueueBuffer(uint32_t id, UINT addFlags)
 	return it->second;
 }
 
-// Enqueue or get SRV for a structured vertex-colour buffer
+
 std::shared_future<std::shared_ptr<EntropyAssets::BufferSRVRes>>&
 Graphics::GetOrEnqueueBufferSRV(uint32_t id)
 {
@@ -529,7 +524,6 @@ Graphics::GetOrEnqueueBufferSRV(uint32_t id)
 	return it->second;
 }
 
-// Extract the 4 buffer ids for a static mesh part
 struct StaticBuffersIDs {
 	uint32_t ib = 0xFFFFFFFFu, vb = 0xFFFFFFFFu, uv = 0xFFFFFFFFu, color = 0xFFFFFFFFu;
 };
@@ -555,7 +549,7 @@ static inline void BindGBufferForWriting(ID3D11DeviceContext* ctx, const GBuffer
 	};
 	ctx->OMSetRenderTargets(3, rts, gbuf.depth.dsv.Get()); // ? DSV for depth
 
-	D3D11_TEXTURE2D_DESC d{}; gbuf.rt0.tex->GetDesc(&d);   // ? tex, not texture
+	D3D11_TEXTURE2D_DESC d{}; gbuf.rt0.tex->GetDesc(&d); 
 	D3D11_VIEWPORT vp{ 0,0, float(d.Width), float(d.Height), 0.0f, 1.0f };
 	ctx->RSSetViewports(1, &vp);
 }
@@ -597,7 +591,6 @@ static inline bool IsReady(const std::shared_future<std::shared_ptr<EntropyAsset
 	return f.valid() && f.wait_for(0s) == std::future_status::ready;
 }
 
-// Returns ready technique or nullptr; enqueues once if unseen.
 std::shared_ptr<EntropyAssets::Technique>
 Graphics::GetStaticTechniqueOrEnqueue(uint32_t techId)
 {
@@ -605,14 +598,13 @@ Graphics::GetStaticTechniqueOrEnqueue(uint32_t techId)
 
 	auto it = TechCache_.find(techId);
 	if (it == TechCache_.end()) {
-		// First sighting this frame: enqueue via your AssetSystem.
 		TagHash th(techId);
-		auto fut = assets->EnqueueTechnique(th);        // std::shared_future<shared_ptr<Technique>>
+		auto fut = assets->EnqueueTechnique(th);       
 		it = TechCache_.emplace(techId, fut).first;
 	}
 
 	if (IsReady(it->second)) {
-		return it->second.get(); // EntropyAssets::Technique is fully constructed w/ shaders+SRVs+samplers+CBs
+		return it->second.get(); 
 	}
 	return nullptr;
 }
@@ -642,7 +634,7 @@ void Graphics::Create1x1SRV(UINT color, ComPtr<ID3D11ShaderResourceView>& addres
 
 static void DrawFullscreenTriangle(ID3D11DeviceContext* ctx) {
 	ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-	ctx->IASetInputLayout(nullptr);   // shader must be VS that generates a triangle or uses no inputs
+	ctx->IASetInputLayout(nullptr);  
 	ctx->Draw(4, 0);
 }
 
@@ -651,11 +643,11 @@ static constexpr UINT kCB1ByteCapacity = 64 * 1024;
 void CreateCB1(ID3D11Device* dev) {
 	D3D11_BUFFER_DESC bd{};
 	bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-	bd.ByteWidth = kCB1ByteCapacity;            // full 64 KB
+	bd.ByteWidth = kCB1ByteCapacity;            
 	bd.Usage = D3D11_USAGE_DYNAMIC;
 	bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 
-	std::array<uint8_t, 64> zero{};             // tiny init ok
+	std::array<uint8_t, 64> zero{};            
 	D3D11_SUBRESOURCE_DATA init{ nullptr, 0, 0 };
 	dev->CreateBuffer(&bd, &init, g_cb1.GetAddressOf());
 }
@@ -681,7 +673,7 @@ void Graphics::InitializeInputLayouts()
 		if (FAILED(hr) || !il) {
 			char msg[256];
 			sprintf_s(msg, "Tiger IL[%zu] creation failed (hr=0x%08X)\n", i, (unsigned)hr);
-			OutputDebugStringA(msg);
+			
 		}
 		else {
 			tiger_input_layouts[i] = std::move(il);
@@ -729,12 +721,9 @@ void Graphics::CreateInstanceBuffer()
 
 void BuildViewAndProj(View& viewState, const Camera& camera, int windowWidth, int windowHeight)
 {
-	// --- View (world -> camera) ---
-	// Whatever you already use to get the camera's view matrix:
-	XMMATRIX V = camera.GetViewMatrix();             // LH, row-major
+	XMMATRIX V = camera.GetViewMatrix();             
 	XMStoreFloat4x4(&viewState.world_to_camera, V);
 
-	// --- Projection (camera -> projective) ---
 	const float fovY = XMConvertToRadians(90.0f);
 	const float aspect = float(windowWidth) / float(windowHeight);
 	const float zn = std::max(0.001f, camera.GetNearZ());
@@ -763,7 +752,6 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view, TfxRende
 	ID3D11DeviceContext* ctx = pContext.Get();
 	const auto& mesh = rs.mesh;
 
-	// --------- CPU visibility ----------
 	std::vector<ObjectVectors> visibleWorld;
 	{
 		using namespace culldbg;
@@ -784,10 +772,7 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view, TfxRende
 	const UINT count = (UINT)visibleWorld.size();
 	if (!m_instWritePtr) return; 
 
-	// capacity guard (optional: grow if needed)
 	if (m_instCursor + count > m_instanceCapacity) {
-		// clamp, grow, or just skip for now
-		// here we clamp to what's left
 		if (m_instCursor >= m_instanceCapacity) return;
 	}
 
@@ -822,13 +807,11 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view, TfxRende
 		const auto& part = mesh.parts[mg.part_index];
 		if (part.LodCatagory > 2) continue;
 
-		// Technique (lazy/async)
+
 		std::shared_ptr<EntropyAssets::Technique> tech = nullptr;
 		if (gi >= 0 && gi < (int)rs.techniques.size())
 			tech = GetStaticTechniqueOrEnqueue(rs.techniques[gi]);
 		if (!tech) continue;
-
-		// Resolve buffers once per (meshId, part)
 		const uint64_t cacheKey = (uint64_t(rs.id) << 32) | uint32_t(mg.part_index);
 		auto& resolved = staticPartCache_[cacheKey];
 		if (!resolved.ready && !ResolveStaticPartOnce(mesh, part, resolved))
@@ -858,13 +841,13 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view, TfxRende
 		dp.ib = resolved.ib.get();
 		dp.idxFmt = resolved.idxFmt;
 		dp.worldOffset = worldOffset;
-		dp.worldCount = worldCount;   // keep in sync
+		dp.worldCount = worldCount;   
 		dp.baseInstance = 0;
 		dp.tech = tech.get();
 		dp.topo = part.PrimitiveType == 3 ? D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST : D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP;
 		dp.indexCount = resolved.indexCount;
 		dp.firstIndex = resolved.indexStart;
-		// NEW: instancing via global StructuredBuffer
+		
 		dp.instanceCount = (UINT)visibleWorld.size();
 		dp.baseInstance = base;
 		dp.flags_or_maxColorBits = mesh.max_colour_index;
@@ -886,14 +869,14 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view, TfxRende
 
 			if (sp.TfxRenderStage != (uint8_t)renderStage) continue;
 
-			// Technique: prefer wrapper.techniqueId, else part.technique
+			
 			uint32_t techId = (spWrap.techniqueId ? spWrap.techniqueId : sp.technique);
 			auto tech = GetStaticTechniqueOrEnqueue(techId);
 			if (!tech) continue;
 
-			// Resolve (cached by key to avoid rework this frame)
+		
 			const uint64_t cacheKey = (uint64_t(spWrap.id ? spWrap.id : rs.id) << 32) | uint32_t(sp.index_start);
-			auto& resolved = specialsCache_[cacheKey]; // add unordered_map<uint64_t, ResolvedSpecial> specialsCache_;
+			auto& resolved = specialsCache_[cacheKey];
 			if (!resolved.ready && !ResolveSpecialOnce(sp, resolved))
 				continue;
 
@@ -915,38 +898,31 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view, TfxRende
 			dp.ib = resolved.ib.get();
 			dp.idxFmt = resolved.idxFmt;
 
-			// Optional vertex color SRV to VS t0 (matches your SubmitPackets)
+			
 			dp.bVol = (resolved.vCol ? resolved.vCol->srv.Get() : nullptr);
 
-			// Mesh/UV constants (same as statics)
 			dp.cb1.mesh_offset = { rs.mesh.mesh_offset[0], rs.mesh.mesh_offset[1], rs.mesh.mesh_offset[2] };
 			dp.cb1.mesh_scale = rs.mesh.mesh_scale;
 			dp.cb1.uv_scale = rs.mesh.texture_coordinate_scale;
 			dp.cb1.uv_off_x = rs.mesh.texture_coordinate_offset[0];
 			dp.cb1.uv_off_y = rs.mesh.texture_coordinate_offset[1];
 			dp.cb1.max_colour = rs.mesh.max_colour_index;
-
-			// Instancing slice
 			dp.worldOffset = spWorldOffset;
 			dp.worldCount = spWorldCount;
 			dp.instanceCount = (UINT)visibleWorld.size();
 			dp.baseInstance = base;
 
-			// Technique/topology
 			dp.tech = tech.get();
 			dp.topo = (sp.PrimitiveType == 3)
 				? D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST
 				: D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP;
-
-			// Indices
 			dp.indexCount = resolved.indexCount;
 			dp.firstIndex = resolved.indexStart;
 
 			dp.flags_or_maxColorBits = rs.mesh.max_colour_index;
 
-			// Optional: sort transparents
 			dp.sortKeyLow = (renderStage == TfxRenderStage::Transparents)
-				? /*EncodeDepthKey(...)*/ 0u
+				? 0u
 				: 0u;
 
 			packets_.push_back(std::move(dp));
@@ -974,30 +950,30 @@ bool Graphics::IsEntityFullyReady(const RenderEntity& rs, TfxRenderStage stage)
 
 			auto itTech = TechCache_.find(techId);
 			if (itTech == TechCache_.end())
-				return false;
+				return false;              
 			if (!IsReady(itTech->second))
-				return false;
+				return false;            
 
 			const uint64_t key = (uint64_t(rs.id) << 32) | uint32_t(i);
 			auto itDyn = dynamicPartCache_.find(key);
 			if (itDyn == dynamicPartCache_.end() || !itDyn->second.ready)
-				return false;
+				return false;            
 		}
 	}
 	return true;
 }
 
-// Graphics.cpp
+
 void Graphics::RunPostprocessChain()
 {
 	ID3D11DeviceContext* ctx = pContext.Get();
 	ScopedGpuEvent G(anno_.Get(), L"postprocess");
 
-	// Pass 0: blit_texture_alphaluminance  (HDR shading_result -> post_ping/pong)
+	
 	{
 		ScopedGpuEvent e(anno_.Get(), L"blit_texture_alphaluminance");
 		RenderTarget* src; RenderTarget* dst;
-		gbufA.GetPostRT(src, dst, /*swapAfterUse=*/true);
+		gbufA.GetPostRT(src, dst, true);
 
 		ID3D11RenderTargetView* rtv = dst->rtv.Get();
 		ctx->OMSetRenderTargets(1, &rtv, nullptr);
@@ -1017,11 +993,10 @@ void Graphics::RunPostprocessChain()
 		UnbindAllSRVs(ctx);
 	}
 
-	// Pass 1: blit_texture  (post A -> post B)
 	{
 		ScopedGpuEvent e(anno_.Get(), L"debug_overlay_blit_texture");
 		RenderTarget* src; RenderTarget* dst;
-		gbufA.GetPostRT(src, dst, /*swapAfterUse=*/true);
+		gbufA.GetPostRT(src, dst, true);
 
 		ID3D11RenderTargetView* rtv = dst->rtv.Get();
 		ctx->OMSetRenderTargets(1, &rtv, nullptr);
@@ -1032,7 +1007,7 @@ void Graphics::RunPostprocessChain()
 			it != globalTechniques.end())
 			it->second.get()->Bind(pDevice, pContext, externs, states, scopes);
 
-		ID3D11ShaderResourceView* s[] = { src->srv.Get() }; // note: SRGB SRV
+		ID3D11ShaderResourceView* s[] = { src->srv.Get() }; 
 		ctx->PSSetShaderResources(0, 1, s);
 		ID3D11SamplerState* samp[] = { samplerLinearClamp.Get() };
 		ctx->PSSetSamplers(0, 1, samp);
@@ -1063,7 +1038,7 @@ bool Graphics::ResolveDynamicPartOnce(
 	const SDynamicMeshPart& part,
 	ResolvedDynamicPart& out)
 {
-	// Register bind flags the first time we see this mesh’ streams
+
 	EnsureEntityBufferRegistered(dm, DynamicBufKind::Index, D3D11_BIND_INDEX_BUFFER);
 	EnsureEntityBufferRegistered(dm, DynamicBufKind::Vertex0, D3D11_BIND_VERTEX_BUFFER);
 	if (dm.vertex1_buffer.hash && dm.vertex1_buffer.hash != 0xFFFFFFFFu)
@@ -1076,7 +1051,6 @@ bool Graphics::ResolveDynamicPartOnce(
 		EnsureEntityBufferRegistered(dm, DynamicBufKind::Color,
 			D3D11_BIND_VERTEX_BUFFER | D3D11_BIND_SHADER_RESOURCE);
 
-	// Enqueue futures
 	auto& fIB = GetOrEnqueueBuffer(dm.index_buffer.hash, D3D11_BIND_INDEX_BUFFER);
 	auto& fVB0 = GetOrEnqueueBuffer(dm.vertex0_buffer.hash, D3D11_BIND_VERTEX_BUFFER);
 
@@ -1090,21 +1064,18 @@ bool Graphics::ResolveDynamicPartOnce(
 	const bool hasCol = (dm.colour_buffer.hash && dm.colour_buffer.hash != 0xFFFFFFFFu);
 	if (hasCol) fCol = &GetOrEnqueueBufferSRV(dm.colour_buffer.hash);
 
-	// Ready?
 	if (!FutReady(fIB) || !FutReady(fVB0) ||
 		(fVB1 && !FutReady(*fVB1)) ||
 		(fVB2 && !FutReady(*fVB2)) ||
 		(hasCol && (!fCol || !FutReady(*fCol))))
 		return false;
 
-	// Resolve
 	out.ib = fIB.get();
 	out.vb0 = fVB0.get();
 	out.vb1 = (fVB1 ? fVB1->get() : nullptr);
 	out.vb2 = (fVB2 ? fVB2->get() : nullptr);
 	out.vCol = (hasCol ? fCol->get() : nullptr);
 
-	// Strides + index fmt come from registry payloads
 	const auto pIB = registry->GetBuffer(dm.index_buffer.hash);
 	const auto pVB0 = registry->GetBuffer(dm.vertex0_buffer.hash);
 	out.stride0 = pVB0.stride;
@@ -1118,11 +1089,12 @@ bool Graphics::ResolveDynamicPartOnce(
 	return true;
 }
 
-
 void Graphics::DrawEntity(const RenderEntity& rs,
 	const View& view,
 	TfxRenderStage stage)
 {
+	char buf[256];
+
 	// --- CULL ---
 	if (rs.occlusion_bounds)
 	{
@@ -1130,16 +1102,26 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 		const auto fr = Frustum::FromColumnMajor(view.world_to_projective, true);
 		int dummy = 0;
 		if (!aabb_in_frustum_dbg(fr, *rs.occlusion_bounds, &dummy, false))
+		{
+			
 			return;
+		}
 	}
 
-	// --- ASSET READINESS ---
-	if (!IsEntityFullyReady(rs, stage))
-		return; // show later when ready
+	
 
-	// --- INSTANCE WRITE ---
-	if (!m_instWritePtr) return;
-	if (m_instCursor >= m_instanceCapacity) return;
+	if (!m_instWritePtr)
+	{
+		
+		return;
+	}
+
+	if (m_instCursor >= m_instanceCapacity)
+	{
+		
+		return;
+	}
+
 
 	UINT baseInstance = m_instCursor;
 
@@ -1151,8 +1133,8 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 	*reinterpret_cast<InstanceData*>(m_instWritePtr +
 		size_t(m_instCursor) * m_instanceStride) =
 		InstanceData{
-			{ov.translation.x, ov.translation.y, ov.translation.z, 0},
-			{ov.rotation.x, ov.rotation.y, ov.rotation.z, ov.rotation.w},
+			{ ov.translation.x, ov.translation.y, ov.translation.z, 0.0f },
+			{ ov.rotation.x,    ov.rotation.y,    ov.rotation.z,    ov.rotation.w },
 			ov.scale
 	};
 
@@ -1161,91 +1143,141 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 	uint32_t worldOffset = (uint32_t)frameWorlds_.size();
 	frameWorlds_.push_back(ov);
 
-	// --- CB1 OVERRIDE ---
 	CB1Payload_override cb1o = BuildCB1FromEntity(rs);
 
-	// --- LOOP EACH MESH / PART ---
 	wchar_t label[128];
-	_snwprintf_s(label, _TRUNCATE, L"Draw Dynamic %08X [%ls]",rs.id, StageName(stage));
+	_snwprintf_s(label, _TRUNCATE, L"Draw Dynamic %08X [%ls]", rs.id, StageName(stage));
 	ScopedGpuEvent _object(anno_.Get(), label);
-	for (const SDynamicMesh& dm : rs.meshs)
+
+	for (size_t meshIndex = 0; meshIndex < rs.meshs.size(); ++meshIndex)
 	{
+		const SDynamicMesh& dm = rs.meshs[meshIndex];
+
 		size_t start = dm.part_range_per_render_stage[(int)stage];
 		size_t end = dm.part_range_per_render_stage[(int)stage + 1];
 
 		const uint8_t ilIdx = dm.input_layout_per_render_stage[(int)stage];
 		ID3D11InputLayout* il =
 			(ilIdx < tiger_input_layouts.size() && tiger_input_layouts[ilIdx])
-			? tiger_input_layouts[ilIdx].Get() : nullptr;
+			? tiger_input_layouts[ilIdx].Get()
+			: nullptr;
+
+
+		if (!il)
+		{
+			std::snprintf(buf, sizeof(buf),
+				"DrawEntity:   ENT 0x%08X mesh[%zu]: NULL input layout for stage %d (ilIdx=%u)\n",
+				rs.id, meshIndex, (int)stage, (unsigned)ilIdx);
+			OutputDebugStringA(buf);
+		}
 
 		for (size_t i = start; i < end; ++i)
 		{
 			const SDynamicMeshPart& part = dm.parts[i];
-			if (part.LodCatagory > 2) continue;
+
+
+			if (part.LodCatagory > 2)
+			{
+				continue;
+			}
+
+			uint32_t techId =
+				(part.varient_shader_index == 0xFFFF)
+				? part.technique.hash
+				: rs.external_mats[
+					rs.external_material_mapping[part.varient_shader_index].technique_start];
+
+			
+
+			auto itTech = TechCache_.find(techId);
+			if (itTech == TechCache_.end())
+			{
+				continue; 
+			}
+
+			if (!IsReady(itTech->second))
+			{
+				continue;
+			}
+
+			std::shared_ptr<EntropyAssets::Technique> tech{};
+			try
+			{
+				tech = itTech->second.get();
+			}
+			catch (const std::exception& e)
+			{
+				
+				continue;
+			}
+
+			if (!tech)
+			{
+				
+				continue;
+			}
+
+			const uint64_t key = (uint64_t(rs.id) << 32) | uint32_t(i);
+			auto itDyn = dynamicPartCache_.find(key);
+			if (itDyn == dynamicPartCache_.end() || !itDyn->second.ready)
+			{
+				
+
+				auto& slot = dynamicPartCache_[key];
+				if (!slot.ready)
+				{
+					if (!ResolveDynamicPartOnce(dm, part, slot))
+					{
+						
+						continue; 
+					}
+				}
+				itDyn = dynamicPartCache_.find(key);
+				if (itDyn == dynamicPartCache_.end() || !itDyn->second.ready)
+				{
+					
+					continue;
+				}
+			}
+
+			ResolvedDynamicPart& resolved = itDyn->second;
+
+			
+
 			const bool hasSkinning =
 				(dm.skinning_buffer.hash != 0u &&
 					dm.skinning_buffer.hash != 0xFFFFFFFFu);
-			// 1) resolve part buffers
-			const uint64_t key = (uint64_t(rs.id) << 32) | uint32_t(i);
-			auto& resolved = dynamicPartCache_[key];
 
-			// 2) technique
-			std::shared_ptr<EntropyAssets::Technique> tech;
-
-			if (part.varient_shader_index == 0xFFFF)
-			{
-				auto it = TechCache_.find(part.technique.hash);
-				tech = it->second.get();
-			}
-			else
-			{
-				uint32_t techId =
-					rs.external_mats[
-						rs.external_material_mapping[part.varient_shader_index].technique_start];
-
-				tech = TechCache_[techId].get();
-			}
-
-			// 3) bind technique (entity channels supported)
-			tech->Bind_With_Channels(pDevice, pContext,
-				externs, states, scopes,
-				rs.channels);
-
-			// 4) set VB/IB
+			// --- Bind pipeline state for this part ---
 			UINT offset = 0;
 			pContext->IASetInputLayout(il);
 			pContext->IASetPrimitiveTopology(
-				(part.PrimitiveType == 5) ?
-				D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP :
-				D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+				(part.PrimitiveType == 5)
+				? D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP
+				: D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 			if (resolved.vb1)
 			{
 				ID3D11Buffer* vbs[2] = { resolved.vb0.get(), resolved.vb1.get() };
-				UINT strides[2] = { resolved.stride0, resolved.stride1 };
-				UINT offs[2] = { 0,0 };
+				UINT          strides[2] = { resolved.stride0,   resolved.stride1 };
+				UINT          offs[2] = { 0,0 };
 				pContext->IASetVertexBuffers(0, 2, vbs, strides, offs);
 			}
 			else
 			{
 				ID3D11Buffer* vb = resolved.vb0.get();
-				UINT str = resolved.stride0;
+				UINT          str = resolved.stride0;
 				pContext->IASetVertexBuffers(0, 1, &vb, &str, &offset);
 			}
 
+			// Technique bind (with channels)
+			tech->Bind_With_Channels(pDevice, pContext, externs, states, scopes, rs.channels);
+
+			// --- CB1 setup: skinning vs non-skinning ---
 			if (hasSkinning && entity_vs_override)
 			{
 				pContext->VSSetShader(entity_vs_override.Get(), nullptr, 0);
-			}
 
-			pContext->IASetIndexBuffer(resolved.ib.get(), resolved.idxFmt, 0);
-
-			// 5) bind vertex colors
-			if (resolved.vCol)
-				pContext->VSSetShaderResources(0, 1, resolved.vCol->srv.GetAddressOf());
-
-			// 6) update CB1 override
-			{
 				D3D11_MAPPED_SUBRESOURCE m{};
 				if (SUCCEEDED(pContext->Map(g_cb1.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &m)))
 				{
@@ -1255,8 +1287,24 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 				ID3D11Buffer* c1 = g_cb1.Get();
 				pContext->VSSetConstantBuffers(1, 1, &c1);
 			}
+			else
+			{
+				D3D11_MAPPED_SUBRESOURCE m{};
+				if (SUCCEEDED(pContext->Map(g_cb1.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &m)))
+				{
+					memcpy(m.pData, &rs.cb1_single, sizeof(rs.cb1_single));
+					pContext->Unmap(g_cb1.Get(), 0);
+				}
+				ID3D11Buffer* c1 = g_cb1.Get();
+				pContext->VSSetConstantBuffers(1, 1, &c1);
+			}
 
-			// 7) draw
+			pContext->IASetIndexBuffer(resolved.ib.get(), resolved.idxFmt, 0);
+
+			if (resolved.vCol)
+				pContext->VSSetShaderResources(0, 1, resolved.vCol->srv.GetAddressOf());
+
+			// --- Draw ---
 			pContext->DrawIndexedInstanced(
 				resolved.indexCount,
 				1,
@@ -1267,28 +1315,39 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 	}
 }
 
+
 void Graphics::PrewarmVisibleAssets(const View& view)
 {
+	using namespace culldbg;
+
+	const XMFLOAT4X4& W2P = view.world_to_projective;
+	Frustum fr = Frustum::FromColumnMajor(W2P, true);
+
+	// -------------------------
 	// 1) Statics
+	// -------------------------
 	for (auto& rs : staticsToDraw)
 	{
-		// Cheap cull like you already do in DrawStaticMesh
-		using namespace culldbg;
-		const XMFLOAT4X4& W2P = view.world_to_projective;
-		Frustum fr = Frustum::FromColumnMajor(W2P, true);
+		if (g_activations_this_frame >= g_activation_budget_per_frame)
+			break;
+
 		bool anyVisible = false;
 		for (uint32_t i = 0; i < rs.world.size(); ++i) {
-			if (culldbg::aabb_in_frustum_dbg(fr, rs.bounds[i], nullptr, false)) { anyVisible = true; break; }
+			if (aabb_in_frustum_dbg(fr, rs.bounds[i], nullptr, false)) {
+				anyVisible = true;
+				break;
+			}
 		}
 		if (!anyVisible) continue;
 
-		// Touch techniques that’ll be used
 		for (int gi = 0; gi < (int)rs.mesh.mesh_groups.size(); ++gi)
 		{
+			if (g_activations_this_frame >= g_activation_budget_per_frame)
+				break;
+
 			const auto& mg = rs.mesh.mesh_groups[gi];
 			if (mg.TfxRenderStage != (UINT)TfxRenderStage::GenerateGbuffer) continue;
 
-			// Enqueue tech, and if ready, consume budget to pull it into RAM/driver now
 			std::shared_ptr<EntropyAssets::Technique> tech{};
 			if (gi >= 0 && gi < (int)rs.techniques.size()) {
 				auto it = TechCache_.find(rs.techniques[gi]);
@@ -1297,12 +1356,11 @@ void Graphics::PrewarmVisibleAssets(const View& view)
 					it = TechCache_.emplace(rs.techniques[gi], assets->EnqueueTechnique(th)).first;
 				}
 				if (IsReady(it->second) && g_activations_this_frame < g_activation_budget_per_frame) {
-					tech = it->second.get(); // counts as activation conceptually
+					tech = it->second.get();
 					++g_activations_this_frame;
 				}
 			}
 
-			// Enqueue buffers (no blocking) and, if READY, activate a few this frame
 			const auto& part = rs.mesh.parts[mg.part_index];
 			const auto& sb = rs.mesh.buffers[part.buffer_index];
 
@@ -1328,32 +1386,36 @@ void Graphics::PrewarmVisibleAssets(const View& view)
 				std::shared_ptr<EntropyAssets::BufferSRVRes> tmpSRV;
 				TryActivateReady(fCol, tmpSRV);
 			}
-
-			if (g_activations_this_frame >= g_activation_budget_per_frame) break;
 		}
-
-		if (g_activations_this_frame >= g_activation_budget_per_frame) break;
 	}
 
-	// 2) Specials (same idea, trimmed)
+	// -------------------------
+	// 2) Specials
+	// -------------------------
 	for (auto& rs : staticsToDraw)
 	{
+		if (g_activations_this_frame >= g_activation_budget_per_frame)
+			break;
+
 		if (rs.specials.empty()) continue;
-		using namespace culldbg;
-		const XMFLOAT4X4& W2P = view.world_to_projective;
-		Frustum fr = Frustum::FromColumnMajor(W2P, true);
+
 		bool anyVisible = false;
 		for (uint32_t i = 0; i < rs.world.size(); ++i) {
-			if (culldbg::aabb_in_frustum_dbg(fr, rs.bounds[i], nullptr, false)) { anyVisible = true; break; }
+			if (aabb_in_frustum_dbg(fr, rs.bounds[i], nullptr, false)) {
+				anyVisible = true;
+				break;
+			}
 		}
 		if (!anyVisible) continue;
 
 		for (const auto& specialPtr : rs.specials)
 		{
+			if (g_activations_this_frame >= g_activation_budget_per_frame)
+				break;
+
 			const SStaticSpecial& sp = specialPtr.part;
 			if (sp.TfxRenderStage != (uint8_t)TfxRenderStage::GenerateGbuffer) continue;
 
-			// technique
 			uint32_t techId = (specialPtr.techniqueId ? specialPtr.techniqueId : sp.technique);
 			auto it = TechCache_.find(techId);
 			if (it == TechCache_.end()) {
@@ -1361,7 +1423,7 @@ void Graphics::PrewarmVisibleAssets(const View& view)
 				it = TechCache_.emplace(techId, assets->EnqueueTechnique(th)).first;
 			}
 			if (IsReady(it->second) && g_activations_this_frame < g_activation_budget_per_frame) {
-				auto t = it->second.get();
+				(void)it->second.get();
 				++g_activations_this_frame;
 			}
 
@@ -1371,12 +1433,13 @@ void Graphics::PrewarmVisibleAssets(const View& view)
 				EnsureSpecialBufferRegistered(sp, StaticBufKind::UV, D3D11_BIND_VERTEX_BUFFER);
 			if (sp.VertexColourBuffer.hash && sp.VertexColourBuffer.hash != 0xFFFFFFFFu)
 				EnsureSpecialBufferRegistered(sp, StaticBufKind::Color, D3D11_BIND_SHADER_RESOURCE);
-			// buffers
+
 			auto& fIB = GetOrEnqueueBuffer(sp.IndexBuffer.hash, D3D11_BIND_INDEX_BUFFER);
 			auto& fVB1 = GetOrEnqueueBuffer(sp.VertexBuffer1.hash, D3D11_BIND_VERTEX_BUFFER);
 			std::shared_ptr<ID3D11Buffer> tmpBuf;
 			TryActivateReady(fIB, tmpBuf);
 			TryActivateReady(fVB1, tmpBuf);
+
 			if (sp.VertexBuffer2.hash && sp.VertexBuffer2.hash != 0xFFFFFFFFu) {
 				auto& fVB2 = GetOrEnqueueBuffer(sp.VertexBuffer2.hash, D3D11_BIND_VERTEX_BUFFER);
 				TryActivateReady(fVB2, tmpBuf);
@@ -1386,119 +1449,137 @@ void Graphics::PrewarmVisibleAssets(const View& view)
 				std::shared_ptr<EntropyAssets::BufferSRVRes> tmpSRV;
 				TryActivateReady(fCol, tmpSRV);
 			}
-
-			if (g_activations_this_frame >= g_activation_budget_per_frame) break;
 		}
-		if (g_activations_this_frame >= g_activation_budget_per_frame) break;
 	}
-	// 3) ENTITIES — MUST resolve buffers + techniques exactly like statics
-// 3) ENTITIES — MUST resolve buffers + techniques exactly like statics
-	for (auto& ent : entitiesToDraw) {
-		{
-			if (g_activations_this_frame >= g_activation_budget_per_frame)
-				break;
 
-			using namespace culldbg;
-			const XMFLOAT4X4& W2P = view.world_to_projective;
-			Frustum fr = Frustum::FromColumnMajor(W2P, true);
+	// -------------------------
+	// 3) ENTITIES
+	// -------------------------
+	static std::unordered_set<uint64_t> s_dynBufRegistered;
 
-			bool visible = false;
-			if (ent.occlusion_bounds) {
-				visible = aabb_in_frustum_dbg(fr, *ent.occlusion_bounds, nullptr, false);
-				if (!visible)
+for (auto& ent : entitiesToDraw)
+{
+    bool visible = true;
+    if (ent.occlusion_bounds) {
+        visible = aabb_in_frustum_dbg(fr, *ent.occlusion_bounds, nullptr, false);
+    }
+    if (!visible)
+        continue;
+
+   
+    for (size_t m = 0; m < ent.meshs.size(); ++m)
+    {
+        const SDynamicMesh& dm = ent.meshs[m];
+
+       
+        const uint64_t regKey = (uint64_t(ent.id) << 32) | uint32_t(m);
+        if (!s_dynBufRegistered.count(regKey)) {
+            EnsureEntityBufferRegistered(dm, DynamicBufKind::Index,   D3D11_BIND_INDEX_BUFFER);
+            EnsureEntityBufferRegistered(dm, DynamicBufKind::Vertex0, D3D11_BIND_VERTEX_BUFFER);
+            if (dm.vertex1_buffer.hash && dm.vertex1_buffer.hash != 0xFFFFFFFFu)
+                EnsureEntityBufferRegistered(dm, DynamicBufKind::Vertex1, D3D11_BIND_VERTEX_BUFFER);
+            if (dm.buffer2.hash && dm.buffer2.hash != 0xFFFFFFFFu)
+                EnsureEntityBufferRegistered(dm, DynamicBufKind::Buffer2, D3D11_BIND_VERTEX_BUFFER);
+            if (dm.buffer3.hash && dm.buffer3.hash != 0xFFFFFFFFu)
+                EnsureEntityBufferRegistered(dm, DynamicBufKind::Buffer3, D3D11_BIND_VERTEX_BUFFER);
+            if (dm.colour_buffer.hash && dm.colour_buffer.hash != 0xFFFFFFFFu)
+                EnsureEntityBufferRegistered(dm, DynamicBufKind::Color,
+                    D3D11_BIND_VERTEX_BUFFER | D3D11_BIND_SHADER_RESOURCE);
+            // if (dm.skinning_buffer.hash && dm.skinning_buffer.hash != 0xFFFFFFFFu)
+            //     EnsureEntityBufferRegistered(dm, DynamicBufKind::Skin, D3D11_BIND_SHADER_RESOURCE);
+
+            s_dynBufRegistered.insert(regKey);
+        }
+
+        
+        size_t starts[2] = {
+            dm.part_range_per_render_stage[(int)TfxRenderStage::GenerateGbuffer],
+            dm.part_range_per_render_stage[(int)TfxRenderStage::Transparents]
+        };
+        size_t ends[2] = {
+            dm.part_range_per_render_stage[(int)TfxRenderStage::GenerateGbuffer + 1],
+            dm.part_range_per_render_stage[(int)TfxRenderStage::Transparents + 1]
+        };
+
+
+        for (int s = 0; s < 2; ++s)
+        {
+            for (size_t i = starts[s]; i < ends[s]; ++i)
+            {
+                const auto& part = dm.parts[i];
+                if (part.LodCatagory > 2)
+                    continue;
+				const uint64_t key = ((uint64_t)ent.id << 32) | uint32_t(i);
+				auto& resolved = dynamicPartCache_[key];
+				if (resolved.ready) {
 					continue;
-			}
-			
-
-			for (const SDynamicMesh& dm : ent.meshs)
-			{
-				// --- Register all buffers (same as before)
-				EnsureEntityBufferRegistered(dm, DynamicBufKind::Index, D3D11_BIND_INDEX_BUFFER);
-				EnsureEntityBufferRegistered(dm, DynamicBufKind::Vertex0, D3D11_BIND_VERTEX_BUFFER);
-				if (dm.vertex1_buffer.hash) EnsureEntityBufferRegistered(dm, DynamicBufKind::Vertex1, D3D11_BIND_VERTEX_BUFFER);
-				if (dm.buffer2.hash)        EnsureEntityBufferRegistered(dm, DynamicBufKind::Buffer2, D3D11_BIND_VERTEX_BUFFER);
-				if (dm.buffer3.hash)        EnsureEntityBufferRegistered(dm, DynamicBufKind::Buffer3, D3D11_BIND_VERTEX_BUFFER);
-				if (dm.colour_buffer.hash)  EnsureEntityBufferRegistered(dm, DynamicBufKind::Color, D3D11_BIND_SHADER_RESOURCE);
-				if (dm.skinning_buffer.hash)EnsureEntityBufferRegistered(dm, DynamicBufKind::Skin, D3D11_BIND_SHADER_RESOURCE);
-
-				// --- Stage ranges we care about
-				size_t starts[2] = {
-					dm.part_range_per_render_stage[(int)TfxRenderStage::GenerateGbuffer],
-					dm.part_range_per_render_stage[(int)TfxRenderStage::Transparents]
-				};
-				size_t ends[2] = {
-					dm.part_range_per_render_stage[(int)TfxRenderStage::GenerateGbuffer + 1],
-					dm.part_range_per_render_stage[(int)TfxRenderStage::Transparents + 1]
-				};
-
-				// --- Loop both GBuffer and Transparency parts
-				for (int s = 0; s < 2; s++)
-				{
-					for (size_t i = starts[s]; i < ends[s]; i++)
-					{
-						const auto& part = dm.parts[i];
-						if (part.LodCatagory > 2)
-							continue;
-
-						// --- 1. Enqueue technique
-						uint32_t techId;
-						if (part.varient_shader_index == 0xFFFF) {
-							techId = part.technique.hash;
-						}
-						else {
-							techId = ent.external_mats[ent.external_material_mapping[part.varient_shader_index].technique_start];
-								
-						}
-
-						auto it = TechCache_.find(techId);
-						if (it == TechCache_.end())
-							it = TechCache_.emplace(techId, assets->EnqueueTechnique(TagHash(techId))).first;
-
-						// --- 2. Activate technique if ready
-						if (IsReady(it->second) && g_activations_this_frame < g_activation_budget_per_frame)
-						{
-							(void)it->second.get();
-							g_activations_this_frame++;
-						}
-
-						// --- 3. Activate buffers
-						auto tryVB = [&](TagHash h, UINT flags)
-							{
-								if (!h.hash || h.hash == 0xFFFFFFFFu) return;
-								auto& f = GetOrEnqueueBuffer(h.hash, flags);
-								std::shared_ptr<ID3D11Buffer> tmp;
-								TryActivateReady(f, tmp);
-							};
-
-						tryVB(dm.vertex0_buffer, D3D11_BIND_VERTEX_BUFFER);
-						tryVB(dm.vertex1_buffer, D3D11_BIND_VERTEX_BUFFER);
-						tryVB(dm.buffer2, D3D11_BIND_VERTEX_BUFFER);
-						tryVB(dm.buffer3, D3D11_BIND_VERTEX_BUFFER);
-
-						// color or skin SRVs
-						auto trySRV = [&](TagHash h)
-							{
-								if (!h.hash || h.hash == 0xFFFFFFFFu) return;
-								auto& f = GetOrEnqueueBufferSRV(h.hash);
-								std::shared_ptr<EntropyAssets::BufferSRVRes> tmp;
-								TryActivateReady(f, tmp);
-							};
-
-						trySRV(dm.colour_buffer);
-						trySRV(dm.skinning_buffer);
-
-						// --- 4. Resolve dynamic geometry (CRITICAL)
-						const uint64_t key = ((uint64_t)ent.id << 32) | uint32_t(i);
-						auto& resolved = dynamicPartCache_[key];
-
-						if (!resolved.ready)
-							ResolveDynamicPartOnce(dm, part, resolved);
-					}
 				}
-			}
-		}
-	}
+                uint32_t techId;
+                if (part.varient_shader_index == 0xFFFF) {
+                    techId = part.technique.hash;
+                }
+                else {
+                    techId = ent.external_mats[
+                        ent.external_material_mapping[part.varient_shader_index].technique_start];
+                }
+
+                auto it = TechCache_.find(techId);
+                if (it == TechCache_.end()) {
+                    TagHash th(techId);
+                    it = TechCache_.emplace(techId, assets->EnqueueTechnique(th)).first;
+                }
+
+               
+                if (IsReady(it->second) && g_activations_this_frame < g_activation_budget_per_frame)
+                {
+                    try {
+                        (void)it->second.get();
+                        ++g_activations_this_frame;
+                    }
+                    catch (const std::exception& e) {
+                        char buf[256];
+                        std::snprintf(buf, sizeof(buf),
+                            "PrewarmVisibleAssets ENT 0x%08X: tech 0x%08X activation failed: %s\n",
+                            ent.id, techId, e.what());
+                        //outputdebugstringA(buf);
+                    }
+                }
+
+                
+                auto tryVB = [&](TagHash h, UINT flags)
+                {
+                    if (!h.hash || h.hash == 0xFFFFFFFFu) return;
+                    auto& f = GetOrEnqueueBuffer(h.hash, flags);
+                    std::shared_ptr<ID3D11Buffer> tmp;
+                    TryActivateReady(f, tmp);
+                };
+
+                tryVB(dm.vertex0_buffer, D3D11_BIND_VERTEX_BUFFER);
+                tryVB(dm.vertex1_buffer, D3D11_BIND_VERTEX_BUFFER);
+                //tryVB(dm.buffer2,        D3D11_BIND_VERTEX_BUFFER);
+                tryVB(dm.buffer3,        D3D11_BIND_VERTEX_BUFFER);
+
+                auto trySRV = [&](TagHash h)
+                {
+                    if (!h.hash || h.hash == 0xFFFFFFFFu) return;
+                    auto& f = GetOrEnqueueBufferSRV(h.hash);
+                    std::shared_ptr<EntropyAssets::BufferSRVRes> tmp;
+                    TryActivateReady(f, tmp);
+                };
+
+                trySRV(dm.colour_buffer);
+               
+                
+                resolved = dynamicPartCache_[key];
+				if (!resolved.ready)
+					printf("Resolved not ready");
+                    ResolveDynamicPartOnce(dm, part, resolved);
+            }
+        }
+    }
 }
+}
+
 
 		
 				
@@ -1514,10 +1595,7 @@ void Graphics::EnsureEntityBufferRegistered(const SDynamicMesh& mesh,
 	if (id == 0u || id == 0xFFFFFFFFu) return;
 
 	if (!registry->HasBuffer(id)) {
-		// Map to your static parse rules:
-		//   Index    -> StaticBufKind::Index (uses IndexBufferHeader)
-		//   Color    -> StaticBufKind::Color (adds SRV bind + uses VertexBufferHeader)
-		//   Others   -> StaticBufKind::Vertex (uses VertexBufferHeader)
+	
 		StaticBufKind parseAs =
 			(which == DynamicBufKind::Index) ? StaticBufKind::Index :
 			(which == DynamicBufKind::Color) ? StaticBufKind::Color :
@@ -1609,7 +1687,7 @@ void Graphics::RenderFrame()
 	pContext->Map(m_instanceSB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &map);
 	m_instWritePtr = static_cast<uint8_t*>(map.pData);*/
 
-	// Bind the SRV once for the VS (slot must match your HLSL register)
+	
 	ID3D11ShaderResourceView* vsSrvs[] = { m_instanceSRV.Get() };
 	pContext->VSSetShaderResources(15, 1, vsSrvs); // t15
 
@@ -1638,26 +1716,24 @@ void Graphics::RenderFrame()
 		D3D11_VIEWPORT vp{ 0,0, float(windowWidth), float(windowHeight), 0.0f, 1.0f };
 		pContext->RSSetViewports(1, &vp);
 
-		// --- Clear to robust defaults ---
-		// RT0: Albedo (sRGB) – black is fine
 		const float clearRt0[4] = { 0, 0, 0, 1 };
 		pContext->ClearRenderTargetView(gbufA.rt0.rtv.Get(), clearRt0);
 
-		// RT1: Normals/roughness – neutral normal + max roughness
+		
 		const float clearRt1[4] = { 0.5f, 0.5f, 1.0f, 1.0f };
 		pContext->ClearRenderTargetView(gbufA.rt1.rtv.Get(), clearRt1);
 
-		// RT2: Material params – engine default (no spec etc.)
+		
 		const float clearRt2[4] = { 0.0f, 0.0f, 1.0f, 0.0f };
 		pContext->ClearRenderTargetView(gbufA.rt2.rtv.Get(), clearRt2);
 
-		// Depth (reversed-Z): clear to 0.0f (far)
+		
 		pContext->ClearDepthStencilView(
 			gbufA.depth.dsv.Get(),
 			D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL,
 			0.0f, 0);
 
-		// Opaque states for GBuffer (no blending, write depth, no bias)
+		
 		float bf[4] = { 1,1,1,1 };
 		pContext->OMSetBlendState(states.blend_states[0].Get(), bf, 0xFFFFFFFF);
 		pContext->OMSetDepthStencilState(depthStencilState.Get(), 0);
@@ -1804,7 +1880,7 @@ void Graphics::RenderFrame()
 	// transparency pass
 	// =========================
 	if (!sceneEmpty) {
-		// clear per-pass SRVs
+
 		ID3D11ShaderResourceView* nulls[16] = {};
 		pContext->PSSetShaderResources(0, 16, nulls);
 		pContext->VSSetShaderResources(0, 16, nulls);
@@ -1815,22 +1891,23 @@ void Graphics::RenderFrame()
 		ScopedGpuEvent e(anno_.Get(), L"transparency_pass");
 		SetFullViewport(pContext.Get(), float(windowWidth), float(windowHeight));
 
-		// instance buffer mapping once (like the GBuffer pass)
+		
 		m_instCursor = 0;
 		D3D11_MAPPED_SUBRESOURCE map{};
 		pContext->Map(m_instanceSB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &map);
 		m_instWritePtr = static_cast<uint8_t*>(map.pData);
 
-		// VS SRV slot must match HLSL (t15)
+
 		ID3D11ShaderResourceView* srvs[] = { m_instanceSRV.Get() };
 		pContext->VSSetShaderResources(15, 1, srvs);
 
-		// Build packets for transparent stage (statics +, you can still do entities immediate if needed)
+		
 		for (auto& rs : staticsToDraw) DrawStaticMesh(rs, viewState, TfxRenderStage::Transparents);
+		
+		SubmitPackets(pContext.Get(), packets_, TfxRenderStage::Transparents);
 		for (auto& re : entitiesToDraw)
 			DrawEntity(re, viewState, TfxRenderStage::Transparents);
-		// Submit with Transparent pass semantics (sorting + states + extra SRVs)
-		SubmitPackets(pContext.Get(), packets_, TfxRenderStage::Transparents);
+
 
 		pContext->Unmap(m_instanceSB.Get(), 0);
 		m_instWritePtr = nullptr;
@@ -1850,7 +1927,7 @@ void Graphics::RenderFrame()
 	{
 		ScopedGpuEvent e(anno_.Get(), L"present_to_backbuffer");
 
-		// sRGB RTV for the *final combine* (normal present path)
+		
 		ID3D11RenderTargetView* bbSRGB = pRenderTargetView.Get();
 		pContext->OMSetRenderTargets(1, &bbSRGB, nullptr);
 
@@ -1889,7 +1966,7 @@ void Graphics::RenderFrame()
 		drawrt0 || drawrt1 || drawrt2 || drawLight_diffuse || drawLight_specular ||
 		drawLight_ibl || drawShading || drawShadingRead;
 
-	// If any preview is on, switch to the **linear UNORM RTV** so we don't post-gamma the floats.
+
 	if (wantDebugPreview)
 	{
 		ID3D11RenderTargetView* bbLinear = pRenderTargetViewLinear.Get(); // created at init
@@ -1916,7 +1993,7 @@ void Graphics::RenderFrame()
 	spriteFont->DrawString(spriteBatch.get(), StringConverter::StringToWide(CameraPrintRot).c_str(), DirectX::XMFLOAT2(0, 100), DirectX::Colors::Wheat);
 	spriteBatch->End();
 
-	// UI (render to whichever RTV is currently bound; linear if previewing)
+	
 	ImGui_ImplDX11_NewFrame();
 	ImGui_ImplWin32_NewFrame();
 	ImGui::NewFrame();
@@ -2019,7 +2096,7 @@ void Graphics::RenderFrame()
 				act.display_name.c_str(),
 				map.display_name.c_str(),
 				map.map_hash);
-			OutputDebugStringA(buf);
+			//outputdebugstringA(buf);
 
 			this->staticsToDraw.clear();
 			this->lightsToDraw.clear();
@@ -2043,7 +2120,7 @@ void Graphics::RenderFrame()
 	ImGui::Render();
 	ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 
-	pSwapChain->Present(1, 0);
+	pSwapChain->Present(0, 0);
 }
 
 
@@ -2175,10 +2252,10 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		dd.DepthEnable = FALSE;
 		pDevice->CreateDepthStencilState(&dd, dsDisabled.GetAddressOf());
 
-		// Bind once for the default backbuffer path (your GBuffer has its own dsWrite)
+		
 		pContext->OMSetDepthStencilState(depthStencilState.Get(), 0);
 
-		// ----- Rasterizer: back-face culling ON -----
+		
 		// Flip FrontCounterClockwise to FALSE if your geometry is clockwise.
 		CD3D11_RASTERIZER_DESC rsDesc(D3D11_DEFAULT);
 		rsDesc.CullMode = D3D11_CULL_BACK;
@@ -2246,8 +2323,8 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 
 		CD3D11_RASTERIZER_DESC rzGBuf(D3D11_DEFAULT);
 		rzGBuf.CullMode = D3D11_CULL_BACK;
-		rzGBuf.FrontCounterClockwise = TRUE;   // or FALSE if your winding is CW
-		rzGBuf.DepthBias = 0;                 // <-- tiny bias in integer units
+		rzGBuf.FrontCounterClockwise = TRUE;  
+		rzGBuf.DepthBias = 0;                
 		rzGBuf.SlopeScaledDepthBias = 0.0f;
 		rzGBuf.DepthBiasClamp = 0.0f;
 		pDevice->CreateRasterizerState(&rzGBuf, rasterizerStateGBuffer.GetAddressOf());
@@ -2267,7 +2344,7 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 			pDevice->CreateSamplerState(&sd, samplerPointClamp.GetAddressOf());
 		}
 
-		// linear-clamp (for color GBuffer)
+	
 		{
 			CD3D11_SAMPLER_DESC sd(D3D11_DEFAULT);
 			sd.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
@@ -2318,8 +2395,8 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 
 		{
 			CD3D11_RASTERIZER_DESC rs(D3D11_DEFAULT);
-			rs.CullMode = D3D11_CULL_FRONT;     // draw backfaces of the volume
-			rs.FrontCounterClockwise = TRUE;    // keep consistent with your mesh winding
+			rs.CullMode = D3D11_CULL_FRONT;    
+			rs.FrontCounterClockwise = TRUE;   
 			pDevice->CreateRasterizerState(&rs, rasterizerCullFront.GetAddressOf());
 		}
 
@@ -2345,7 +2422,6 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 			bd.AlphaToCoverageEnable = FALSE;
 			bd.IndependentBlendEnable = TRUE;
 
-			// Enable ONE+ONE ADD on both RT0 and RT1
 			for (int i = 0; i < 2; ++i) {
 				D3D11_RENDER_TARGET_BLEND_DESC rt{};
 				rt.BlendEnable = TRUE;
@@ -2358,7 +2434,7 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 				rt.RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
 				bd.RenderTarget[i] = rt;
 			}
-			// Leave the rest (2..7) disabled/zeroed.
+		
 			pDevice->CreateBlendState(&bd, bsAdditive2RT.GetAddressOf());
 		}
 		D3D11_DEPTH_STENCILOP_DESC dsdesc{};

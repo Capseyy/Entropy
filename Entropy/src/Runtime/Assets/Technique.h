@@ -17,12 +17,17 @@ namespace EntropyAssets {           // <<< add
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
     };
 
-    struct Texture2DRes { // whatever you already have
+    struct Texture2DRes { 
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
         ID3D11ShaderResourceView* Get() const { return srv.Get(); }
+        uint32_t width = 1;
+        uint32_t height = 1;
+        uint32_t depth = 1;
+        uint32_t arraySize = 1;
+
     };
 
-    struct Texture3DRes { // whatever you already have
+    struct Texture3DRes { 
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
         ID3D11ShaderResourceView* Get() const { return srv.Get(); }
     };

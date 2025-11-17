@@ -402,17 +402,46 @@ AssetSystem::createTexture_(const Texture2DPayload& p)
     D3D11_TEXTURE2D_DESC finalDesc{};
     tex->GetDesc(&finalDesc);
 
-    if (finalDesc.ArraySize > 1) {
-        sd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
-        sd.Texture2DArray.MostDetailedMip = 0;
-        sd.Texture2DArray.MipLevels = -1;
-        sd.Texture2DArray.FirstArraySlice = 0;
-        sd.Texture2DArray.ArraySize = finalDesc.ArraySize;
+    // Check if this texture is actually a cube / cube array
+    const bool isCube = (finalDesc.MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE) != 0;
+
+    if (isCube)
+    {
+        const UINT totalFaces = finalDesc.ArraySize;
+        const UINT numCubes = (totalFaces > 0) ? (totalFaces / 6) : 0;
+
+        if (numCubes <= 1)
+        {
+            // Single cube
+            sd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURECUBE;
+            sd.TextureCube.MostDetailedMip = 0;
+            sd.TextureCube.MipLevels = -1;
+        }
+        else
+        {
+            // Cube array: 6 faces per cube, packed in the array slices
+            sd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURECUBEARRAY;
+            sd.TextureCubeArray.MostDetailedMip = 0;
+            sd.TextureCubeArray.MipLevels = -1;
+            sd.TextureCubeArray.First2DArrayFace = 0;
+            sd.TextureCubeArray.NumCubes = numCubes;
+        }
     }
-    else {
-        sd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-        sd.Texture2D.MostDetailedMip = 0;
-        sd.Texture2D.MipLevels = -1;
+    else
+    {
+        // Regular 2D / 2D array SRV
+        if (finalDesc.ArraySize > 1) {
+            sd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
+            sd.Texture2DArray.MostDetailedMip = 0;
+            sd.Texture2DArray.MipLevels = -1;
+            sd.Texture2DArray.FirstArraySlice = 0;
+            sd.Texture2DArray.ArraySize = finalDesc.ArraySize;
+        }
+        else {
+            sd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+            sd.Texture2D.MostDetailedMip = 0;
+            sd.Texture2D.MipLevels = -1;
+        }
     }
 
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
@@ -424,6 +453,10 @@ AssetSystem::createTexture_(const Texture2DPayload& p)
     // printf("created mips = %u (wanted %u, full %u)\n", check.MipLevels, wantedMips, fullMips);
 
     auto out = std::make_shared<EntropyAssets::Texture2DRes>();
+    out->width = p.desc.Width;
+    out->height = p.desc.Height;
+    out->arraySize = p.desc.ArraySize;
+//out->depth = p.desc todo add depth here
     out->srv = srv;
     return out;
 }
@@ -730,7 +763,21 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
                 }
                 psTexF.emplace_back(slot, EnqueueTexture(texId).future);
             }
-            // ensure + enqueue (your helpers)
+            else if (texTag.sub_type == 2) {
+                if (!R_->HasTexture(texId)) {
+                    if (auto payload = BuildTextureCubePayloadFromTag(texTag)) {
+                        
+                        R_->RegisterTexture(texId, std::move(*payload));
+                    }
+                    else {
+                        continue; 
+                    }
+                }
+
+      
+                psTexF.emplace_back(slot, EnqueueTexture(texId).future);
+            }
+            
             
             
         }

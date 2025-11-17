@@ -103,6 +103,7 @@ void LoadZone::load_entity_model_into_scene(TagHash sem,
             }
         }
     }
-
+    auto cb = UpdateCB1_Single(model.model_offset, model.model_scale, pos.w, model.texcoord_scale.x, model.texcoord_offset.x, model.texcoord_offset.y, quat, pos);
+    re.cb1_single = cb;
     entities.emplace_back(std::move(re));
 }

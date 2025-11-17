@@ -84,8 +84,8 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
     }
     TfxProgram prog = TfxProgram::FromBytecode(this->pixeldata.TFX_Bytecode,
         this->pixeldata.TFX_Constants);
-    // implement getFloat/getVec4/getMat4 in extern.cpp
-    auto& cb0 = this->pixeldata.SamplerFallback; // std::vector<Vec4> used as cb0 backing
+
+    auto& cb0 = this->pixeldata.SamplerFallback;
     /*if (this->id == 0x810AF322)
     {
         prog.Evaluate_Trace(externs, cb0);
@@ -94,11 +94,11 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
         
     }*/
     
-    prog.Evaluate(externs, cb0);
+    prog.Evaluate(externs, cb0,this->Textures);
 
 
     
-            // writes float4s to cb0[..] as dictated by bytecode
+           
     
     if (this->CBuffers.empty() && this->CBuffers_fallback != nullptr)  {
         ID3D11Buffer* buf = this->CBuffers_fallback->buffer.Get();
@@ -200,7 +200,7 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
         TfxProgram prog_vs = TfxProgram::FromBytecode(this->vertexdata.TFX_Bytecode,
             this->vertexdata.TFX_Constants);
         auto& cb0_vs = this->vertexdata.SamplerFallback;
-        prog_vs.Evaluate(externs, cb0_vs);
+        prog_vs.Evaluate(externs, cb0_vs,this->Textures_VS);
         if (this->CBuffers_VS.empty() && this->CBuffers_fallback_VS != nullptr) {
             ID3D11Buffer* buf = this->CBuffers_fallback_VS->buffer.Get();
 
@@ -331,7 +331,7 @@ bool EntropyAssets::Technique::Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11D
 
     }*/
     {
-        prog.Evaluate_With_Channels(externs, cb0, channels, false);
+        prog.Evaluate_With_Channels(externs, cb0, channels,this->Textures, false);
 
     }
     
@@ -439,7 +439,7 @@ bool EntropyAssets::Technique::Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11D
         TfxProgram prog_vs = TfxProgram::FromBytecode(this->vertexdata.TFX_Bytecode,
             this->vertexdata.TFX_Constants);
         auto& cb0_vs = this->vertexdata.SamplerFallback;
-        prog_vs.Evaluate_With_Channels(externs, cb0_vs, channels);
+        prog_vs.Evaluate_With_Channels(externs, cb0_vs, channels,this->Textures_VS);
         if (this->CBuffers_VS.empty() && this->CBuffers_fallback_VS != nullptr) {
             ID3D11Buffer* buf = this->CBuffers_fallback_VS->buffer.Get();
 

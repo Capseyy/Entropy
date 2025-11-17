@@ -1,4 +1,3 @@
-// EntityChannelEditorUI.h (updated)
 #pragma once
 #include "TigerEngine/Technique/Tfx/extern.h"
 #include "Renderer/Graphics/ImGui/imgui.h"
@@ -8,28 +7,27 @@
 #include <string>
 #include <cstdio>
 #include <algorithm>
+#include <cmath>
 
 static inline std::string Hex8(uint32_t x) {
     char b[16]; std::snprintf(b, sizeof(b), "%08X", x);
     return b;
 }
 
-// Track selection by entity id (0 means none)
-static uint32_t g_selectedEntityId = 0;
-static char     g_newChannelHex[16] = { 0 };
+static int  g_selectedEntityIndex = -1;
+static char g_newChannelHex[16] = { 0 };
 
 inline void ShowEntityChannelEditorUI(std::vector<RenderEntity>& entities, XMFLOAT3 camPos)
 {
     if (!ImGui::Begin("Entity Channel Editor")) { ImGui::End(); return; }
 
-    // Build a list of (index, distance^2) for entities that ALREADY have channels
     struct Row { int idx; float dist2; };
     std::vector<Row> withChannels;
     withChannels.reserve(entities.size());
+
     for (int i = 0; i < (int)entities.size(); ++i) {
         const auto& e = entities[i];
         if (!e.channels.empty()) {
-            // distance^2 to camera
             const float dx = e.pos.x - camPos.x;
             const float dy = e.pos.y - camPos.y;
             const float dz = e.pos.z - camPos.z;
@@ -37,11 +35,9 @@ inline void ShowEntityChannelEditorUI(std::vector<RenderEntity>& entities, XMFLO
         }
     }
 
-    // Sort by distance^2 (ascending == closest first)
     std::sort(withChannels.begin(), withChannels.end(),
         [](const Row& a, const Row& b) { return a.dist2 < b.dist2; });
 
-    // -------- Left: entity list (only those with channels), sorted by distance --------
     ImGui::BeginChild("left", ImVec2(300, 0), true);
     if (withChannels.empty()) {
         ImGui::TextDisabled("No entities with channels.");
@@ -49,13 +45,16 @@ inline void ShowEntityChannelEditorUI(std::vector<RenderEntity>& entities, XMFLO
     else {
         for (const Row& r : withChannels) {
             const auto& e = entities[r.idx];
-            const bool selected = (g_selectedEntityId == (uint32_t)e.id);
+            const bool selected = (g_selectedEntityIndex == r.idx);
             const float dist = std::sqrt(std::max(r.dist2, 0.0f));
+
             // Show:  [#]  id  (dist)
             char label[128];
-            std::snprintf(label, sizeof(label), "%4d  id:%08X  (%.1f)", r.idx, (uint32_t)e.id, dist);
+            std::snprintf(label, sizeof(label),
+                "%4d  id:%08X  (%.1f)", r.idx, (uint32_t)e.id, dist);
+
             if (ImGui::Selectable(label, selected)) {
-                g_selectedEntityId = (uint32_t)e.id;
+                g_selectedEntityIndex = r.idx;  
             }
         }
     }
@@ -63,15 +62,15 @@ inline void ShowEntityChannelEditorUI(std::vector<RenderEntity>& entities, XMFLO
 
     ImGui::SameLine();
 
-    // -------- Right: channels for the selected entity --------
+   
     ImGui::BeginChild("right", ImVec2(0, 0), true);
 
-    // Find selected entity by id (selection persists after sort)
+
     RenderEntity* entPtr = nullptr;
-    if (g_selectedEntityId != 0) {
-        for (auto& e : entities) {
-            if ((uint32_t)e.id == g_selectedEntityId) { entPtr = &e; break; }
-        }
+    if (g_selectedEntityIndex >= 0 &&
+        g_selectedEntityIndex < (int)entities.size())
+    {
+        entPtr = &entities[g_selectedEntityIndex];
     }
 
     if (!entPtr) {
@@ -102,8 +101,6 @@ inline void ShowEntityChannelEditorUI(std::vector<RenderEntity>& entities, XMFLO
     }
 
     ImGui::Separator();
-
-    // Show/edit current channels (sorted by key for stable UI)
     std::vector<uint32_t> keys; keys.reserve(chan.size());
     for (auto& kv : chan) keys.push_back(kv.first);
     std::sort(keys.begin(), keys.end());
@@ -115,6 +112,8 @@ inline void ShowEntityChannelEditorUI(std::vector<RenderEntity>& entities, XMFLO
         ImGui::TableSetupColumn("Ops");
         ImGui::TableHeadersRow();
 
+        ImGui::PushID((int)ent.id);
+
         for (uint32_t h : keys) {
             ImGui::TableNextRow();
 
@@ -123,14 +122,19 @@ inline void ShowEntityChannelEditorUI(std::vector<RenderEntity>& entities, XMFLO
             ImGui::TextUnformatted(hex);
 
             ImGui::TableSetColumnIndex(1);
-            float v = chan[h];
-            if (ImGui::DragFloat((std::string("##v") + hex).c_str(), &v, 0.01f)) chan[h] = v;
+            float& v = chan[h];
+
+            ImGui::PushID((int)h);
+            ImGui::DragFloat("##v", &v, 0.01f);
 
             ImGui::TableSetColumnIndex(2);
-            if (ImGui::SmallButton((std::string("Zero##") + hex).c_str())) chan[h] = 0.0f;
+            if (ImGui::SmallButton("Zero")) v = 0.0f;
             ImGui::SameLine();
-            if (ImGui::SmallButton((std::string("Remove##") + hex).c_str())) chan.erase(h);
+            if (ImGui::SmallButton("Remove")) chan.erase(h);
+            ImGui::PopID();
         }
+
+        ImGui::PopID();
         ImGui::EndTable();
     }
 

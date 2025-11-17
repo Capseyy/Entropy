@@ -6,6 +6,7 @@
 #include <glm/gtc/quaternion.hpp> 
 #include "TigerEngine/Entity/entity.h"
 #include "TigerEngine/Technique/Tfx/tfx_program.h"
+#include "Renderer/Graphics/Scope/instance.h"
 
 struct DynamicMeshPart {
     uint32_t techniqueId = 0;
@@ -44,5 +45,6 @@ struct RenderEntity {
     std::vector<Unk_808072C5> external_material_mapping;
     std::unordered_map<uint32_t, float_t> channels;
     std::optional<Aabb> occlusion_bounds;
+    CB1Payload_override cb1_single;
     // add per-part overrides if your format has them
 };

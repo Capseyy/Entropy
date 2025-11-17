@@ -10,9 +10,8 @@
 #include <numbers>
 #ifndef TFX_EVAL_HELPERS_DEFINED
 #define TFX_EVAL_HELPERS_DEFINED
+#include "Runtime/Assets/Technique.h"
 namespace tfx_eval_detail {
-
-    // --- Extra math helpers (drop inside tfx_eval_detail) ---
 
     inline Vec4 abs4(const Vec4& a) { return Vec4(std::fabs(a.x), std::fabs(a.y), std::fabs(a.z), std::fabs(a.w)); }
 
@@ -23,34 +22,34 @@ namespace tfx_eval_detail {
     }
 
     inline Vec4 sin_rot_est_clamped(const Vec4& a) {
-        // y = a * (-16|a| + 8); then a better approx: y * (0.225|y| + 0.775)
+
         Vec4 y = a * (abs4(a) * Vec4::splat(-16.0f) + Vec4::splat(8.0f));
         return y * (abs4(y) * Vec4::splat(0.225f) + Vec4::splat(0.775f));
     }
     inline Vec4 sin_rot_est(const Vec4& a) { return sin_rot_est_clamped(wrap_to_half(a)); }
     inline Vec4 cos_rot_est(const Vec4& a) { return sin_rot_est(a + Vec4(0.25f, 0.25f, 0.25f, 0.25f)); }
     inline Vec4 sin_cos_rot_est(const Vec4& a) {
-        // match rust: a + (0, .25, 0, .25)
+        
         return sin_rot_est(a + Vec4(0.0f, 0.25f, 0.0f, 0.25f));
     }
 
 
     inline float hsum4(const Vec4& v) { return v.x + v.y + v.z + v.w; }
 
-    // Convenience swizzle used by the spline logic: .yzww
+   
     inline Vec4 yzww(const Vec4& v) { return Vec4(v.y, v.z, v.w, v.w); }
 
-    // triangle wave: 2 * abs(wrap_to_half(x))
+  
     inline Vec4 triangle4(const Vec4& x) { return abs4(wrap_to_half(x)) * Vec4::splat(2.0f); }
 
-    // XOR for masks is already provided by xor01()
+   
 
-    inline float hermite_smooth(float v) { // 3v^2 - 2v^3
+    inline float hermite_smooth(float v) { 
         float v2 = v * v;
         return (-2.0f * v + 3.0f) * v2;
     }
 
-    // Jitter: optimized scaled-sum-of-sines then Hermite smooth
+
     inline Vec4 jitter4(const Vec4& x) {
         Vec4 rotations = Vec4::splat(x.x) * Vec4(4.67f, 2.99f, 1.08f, 1.35f)
             + Vec4(0.52f, 0.37f, 0.16f, 0.79f);
@@ -73,7 +72,7 @@ namespace tfx_eval_detail {
 
     inline Vec4 rand4(const Vec4& x) {
         float v0 = std::floor(x.x);
-        // magic constants 1/(prime/1e6)
+
         Vec4 primes(1.0f / 1.043501f, 1.0f / 0.794471f, 1.0f / 0.113777f, 1.0f / 0.015101f);
         float val0 = std::fmod(v0 * hsum4(primes), 1.0f);
         val0 = std::fmod(val0 * val0 * 251.0f, 1.0f);
@@ -267,7 +266,8 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
     std::vector<Vec4>& cb,
     const std::vector<Vec4>& constants,
     std::array<Vec4, 16>& temp,
-	std::unordered_map<uint32_t, float_t> channel_floats,
+    std::unordered_map<uint32_t, float_t> channel_floats,
+    std::vector<std::shared_ptr<EntropyAssets::Texture2DRes>> texs,
     bool trace = true)
 {
     using namespace tfx_eval_detail;
@@ -372,15 +372,14 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             auto d = std::get<PushExternInputMat4Data>(i.data);
             Mat4 m = externs.getMat4(d.ext, size_t(d.offset) * 16);
 
-            // cache for TransformVec4 and expose rows in temps (some bytecode reads them)
+           
             cachedM = m;
             temp[0] = m.x_axis;
             temp[1] = m.y_axis;
             temp[2] = m.z_axis;
             temp[3] = m.w_axis;
 
-            // If the next instruction is PopOutputMat4, push rows now so it can pop them.
-            // PopOutputMat4 pops in order r3,r2,r1,r0, so we must push r0,r1,r2,r3 (LIFO).
+          
             if (ip + 1 < ops.size() && ops[ip + 1].op == TfxBytecode::PopOutputMat4) {
                 push(m.x_axis);
                 push(m.y_axis);
@@ -400,7 +399,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
                                        // ----------- channels (NEW: actually fetch) -----------
         case TfxBytecode::PushGlobalChannelVector: {
             const auto d = std::get<PushGlobalChannelVectorData>(i.data);
-            // index is in vec4 units ? bytes = index * 16
+      
             Vec4 v = externs.getVec4(TfxExtern::Generic, size_t(d.unk1) * 16);
             push(v);
             break;
@@ -419,12 +418,27 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
 				push(Vec4::splat(1.0f));
             }
 
-            // Intentionally do nothing else (no push to the VM stack, etc.)
+            
             break;
         }
-        case TfxBytecode::PushTexDimensions: {; 
-           
-            push(Vec4(64.0f,64.0f,1.0f,1.0f));
+        case TfxBytecode::PushTexDimensions:
+        {
+            const auto d = std::get<PushTexParamData>(i.data);
+
+            Vec4 vec{ 0, 0, 0, 0 };
+
+            if (d.index < texs.size() && texs[d.index])
+            {
+                const auto& texRef = *texs[d.index];
+
+                vec.x = texRef.width;
+                vec.y = texRef.height;
+                vec.z = texRef.depth;
+                vec.w =texRef.arraySize;
+            }
+            // else: leave zeros if texture index is invalid / missing
+
+            push(vec);
             break;
         }
 
@@ -527,8 +541,6 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
         case TfxBytecode::Spline8ConstChain: {
             auto d = std::get<SplineConstData>(i.data);
 
-            // pop Recursion then X (top-first). If your producer pushes in the other order,
-            // swap these two pop lines.
             Vec4 Rec = pop1(ip, "Spline8Chain Rec");
             Vec4 X = pop1(ip, "Spline8Chain X");
 
@@ -675,7 +687,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             break;
         }
         case TfxBytecode::Cubic: {
-            // Stack (top -> bottom): coefficients, x   (same order as Rust)
+
             auto coefficients = pop1(ip, "Cubic coeffs");
             auto x = pop1(ip, "Cubic x");
 
@@ -744,16 +756,13 @@ CollectObjectChannelU32(const std::vector<TfxData>& ops)
         if (ins.op != TfxBytecode::PushObjectChannelVector)
             continue;
 
-        // Try to read the payload; adjust field name if needed.
         if (const auto* d = std::get_if<PushObjectChannelVectorData>(&ins.data)) {
-            // ---- Pick the correct field name for your payload struct ----
-            // Common patterns in codebases: d->index, d->channel, d->unk1
+           
 			const uint32_t key = d->hash_be;
 
             out.push_back(key);
         }
-        // If the instruction encodes the id in a unified type used by both Global/Object,
-        // add another branch here (e.g., std::get_if<ChannelVectorData>(...)).
+       
     }
 
     return out;
