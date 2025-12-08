@@ -83,23 +83,12 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
         pContext->PSSetShader(ps, nullptr, 0);
     }
     TfxProgram prog = TfxProgram::FromBytecode(this->pixeldata.TFX_Bytecode,
-        this->pixeldata.TFX_Constants);
+        this->pixeldata.TFX_Constants, this->id);
 
     auto& cb0 = this->pixeldata.SamplerFallback;
-    /*if (this->id == 0x810AF322)
-    {
-        prog.Evaluate_Trace(externs, cb0);
-    }
-    else {
-        
-    }*/
     
-    prog.Evaluate(externs, cb0,this->Textures);
-
-
-    
-           
-    
+    prog.Evaluate(externs, cb0, this->Textures);
+ 
     if (this->CBuffers.empty() && this->CBuffers_fallback != nullptr)  {
         ID3D11Buffer* buf = this->CBuffers_fallback->buffer.Get();
 
@@ -122,7 +111,6 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
         pContext->PSSetConstantBuffers(UINT(this->psCBSlots_fallback), 1, &buf);
     }
 
-    // Bind all technique constant buffers (your existing behavior)
     if (!this->CBuffers.empty()) {
         for (size_t i = 0; i < this->CBuffers.size(); ++i) {
             ID3D11Buffer* b = this->CBuffers[i]->buffer.Get();
@@ -130,8 +118,6 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
         }
     }
 
-    // ---- 3) Parse bytecode to bind the *correct* sampler slots ----
-    // We read PushSampler + SetShaderSampler (stage,slot) and build a mapping.
     struct PsSamplerBind { UINT slot; UINT sampler_index; };
     std::vector<PsSamplerBind> psBinds;
 
@@ -162,8 +148,6 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
             }
         }
     }
-
-    // Bind samplers exactly to the slots requested by the bytecode
     for (const auto& b : psBinds) {
         if (b.sampler_index < this->Samplers.size() && this->Samplers[b.sampler_index]) {
             ID3D11SamplerState* s = this->Samplers[b.sampler_index]->sampler.Get();
@@ -171,11 +155,11 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
         }
     }
 
-    // (Optional) If there were no SetShaderSampler ops, fall back to your old linear binding:
+
     if (psBinds.empty()) {
         for (size_t i = 0; i < this->Samplers.size(); ++i) {
             ID3D11SamplerState* s = this->Samplers[i]->sampler.Get();
-            pContext->PSSetSamplers(UINT(i), 1, &s); // no +1 offset anymore
+            pContext->PSSetSamplers(UINT(i), 1, &s); 
         }
     }
 
@@ -198,7 +182,7 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
 
     if (this->vertexdata.TFX_Bytecode.size() != 0 && this->vertexdata.contstant_buffer.hash == 0xffffffff) {
         TfxProgram prog_vs = TfxProgram::FromBytecode(this->vertexdata.TFX_Bytecode,
-            this->vertexdata.TFX_Constants);
+            this->vertexdata.TFX_Constants, this->id);
         auto& cb0_vs = this->vertexdata.SamplerFallback;
         prog_vs.Evaluate(externs, cb0_vs,this->Textures_VS);
         if (this->CBuffers_VS.empty() && this->CBuffers_fallback_VS != nullptr) {
@@ -315,25 +299,24 @@ bool EntropyAssets::Technique::Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11D
         ID3D11PixelShader* ps = this->PS[0]->ps.Get();
         pContext->PSSetShader(ps, nullptr, 0);
     }
+    
     TfxProgram prog = TfxProgram::FromBytecode(this->pixeldata.TFX_Bytecode,
-        this->pixeldata.TFX_Constants);
+        this->pixeldata.TFX_Constants, this->id);
     // implement getFloat/getVec4/getMat4 in extern.cpp
     auto& cb0 = this->pixeldata.SamplerFallback; // std::vector<Vec4> used as cb0 backing
-    /*if (this->id == 0x810AF322)
+    /*if (this->id == 0x80CE12FC)
     {
-        prog.Evaluate_Trace(externs, cb0);
-    }
-    else {
-
-    }*/
-    /*if (this->id == 0x80E2DF12) {
-        prog.Evaluate_With_Channels(externs, cb0, channels, true);
-
+		printf("Start EVAL\n");
+		printf("Technique::Bind_With_Channels: Using Evaluate_With_Channels with technique 0x810AF322\n");
+        prog.Evaluate_With_Channels(externs, cb0, channels, this->Textures, true);
+		printf("End EVAL\n");
     }*/
     {
-        prog.Evaluate_With_Channels(externs, cb0, channels,this->Textures, false);
+        
+        prog.Evaluate_With_Channels(externs, cb0, channels, this->Textures, false);
 
     }
+
     
 
 
@@ -437,7 +420,7 @@ bool EntropyAssets::Technique::Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11D
 
     if (this->vertexdata.TFX_Bytecode.size() != 0 && this->vertexdata.contstant_buffer.hash == 0xffffffff) {
         TfxProgram prog_vs = TfxProgram::FromBytecode(this->vertexdata.TFX_Bytecode,
-            this->vertexdata.TFX_Constants);
+            this->vertexdata.TFX_Constants, this->id);
         auto& cb0_vs = this->vertexdata.SamplerFallback;
         prog_vs.Evaluate_With_Channels(externs, cb0_vs, channels,this->Textures_VS);
         if (this->CBuffers_VS.empty() && this->CBuffers_fallback_VS != nullptr) {

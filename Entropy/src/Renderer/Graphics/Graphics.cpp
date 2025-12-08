@@ -23,7 +23,6 @@ void Graphics::InitAnnotation() {
 	pContext->QueryInterface(IID_PPV_ARGS(anno_.GetAddressOf())); // may be null
 }
 
-// RAII scope marker
 struct ScopedGpuEvent {
 	ID3DUserDefinedAnnotation* a{};
 	ScopedGpuEvent(ID3DUserDefinedAnnotation* anno, const wchar_t* name) : a(anno) {
@@ -50,9 +49,7 @@ static bool TryActivateReady(std::shared_future<std::shared_ptr<T>>& fut,
 		out = fut.get();            // may rethrow from producer
 	}
 	catch (const std::exception& e) {
-		//outputdebugstringA((std::string("TryActivateReady: ") + e.what() + "\n").c_str());
-		out.reset();                // treat as “not available”
-		// Do NOT increment activation here, or do so if you want it to count.
+		out.reset();           
 		return false;
 	}
 	++g_activations_this_frame;
@@ -65,8 +62,7 @@ static inline CB1Payload_override BuildCB1FromEntity(const RenderEntity& rs)
 
 	CB1Payload_override cb{};
 
-	// Old parameters:
-	//   model_offset, model_scale, instance_scale, texScale, texOffX, texOffY, rot, pos
+	
 	const auto& model_offset = rs.meshData.model_offset;  // glm::vec4
 	const auto& model_scale = rs.meshData.model_scale;   // glm::vec4
 	const float instance_scale = rs.pos.w;
@@ -77,8 +73,6 @@ static inline CB1Payload_override BuildCB1FromEntity(const RenderEntity& rs)
 
 	const glm::quat& rot = rs.rot;
 	const glm::vec3  pos(rs.pos.x, rs.pos.y, rs.pos.z);
-
-	// === EXACTLY like your old UpdateCB1_Single ===
 	const XMVECTOR q = XMVectorSet(rot.w, rot.x, rot.y, rot.z);
 	const XMMATRIX R = XMMatrixRotationQuaternion(q);
 	const XMMATRIX T = XMMatrixTranslation(pos.x, pos.y, pos.z);
@@ -106,12 +100,10 @@ BufferPayload BuildBufferPayloadFromTag(TagHash tag, StaticBufKind which)
 	if (!tag.data || tag.size == 0)
 		throw std::runtime_error("BuildBufferPayloadFromTag: header tag is empty");
 
-	// All headers are little-endian in your codebase
 	if (which == StaticBufKind::Index) {
-		// Parse header from THIS tag
+
 		const IndexBufferHeader ibh = bin::parse<IndexBufferHeader>(tag.data, tag.size, bin::Endian::Little);
 
-		// Actual bytes come from the *referenced* tag
 		TagHash dataTag(tag.reference);
 		if (!dataTag.data || dataTag.size == 0)
 			throw std::runtime_error("BuildBufferPayloadFromTag: index data tag empty");
@@ -1176,7 +1168,7 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 			const SDynamicMeshPart& part = dm.parts[i];
 
 
-			if (part.LodCatagory > 2)
+			if (part.LodCatagory > 3)
 			{
 				continue;
 			}
@@ -1270,7 +1262,6 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 				pContext->IASetVertexBuffers(0, 1, &vb, &str, &offset);
 			}
 
-			// Technique bind (with channels)
 			tech->Bind_With_Channels(pDevice, pContext, externs, states, scopes, rs.channels);
 
 			// --- CB1 setup: skinning vs non-skinning ---
@@ -2067,6 +2058,7 @@ void Graphics::RenderFrame()
 	}
 	ShowEntityChannelEditorUI(entitiesToDraw, camera.GetPositionFloat3());
 	ImGui::End();
+
 	ImGui::Begin("Activity Selector");
 	if (ImGui::CollapsingHeader("Activities & Maps"))
 	{
@@ -2079,38 +2071,74 @@ void Graphics::RenderFrame()
 				ActivityDef a{};
 				a.display_name = ta.dev_name;
 				a.activity_id = ta.id;
+
+				// --- maps / loadzones ---
 				a.maps.reserve(ta.bubbles.size());
 				for (const auto& tm : ta.bubbles) {
-					a.maps.push_back(MapDef{ tm.first.c_str(), tm.second});
+					
+					a.maps.push_back(MapDef{ tm.first.c_str(), tm.second });
 				}
+
+				
+				a.phases.reserve(ta.phases.size());
+				for (const auto& tp : ta.phases) {
+					a.phases.push_back(PhaseDef{
+						tp.first,   // phase display name
+						tp.second          // phase id / hash / enum
+						});
+				}
+
 				cache.emplace_back(std::move(a));
 			}
+
 			return cache;
 			};
 
 		ActivityBrowserCallbacks cbs;
-		cbs.on_map_chosen = [&](const ActivityDef& act, const MapDef& map) {
-			char buf[256];
-			std::snprintf(buf, sizeof(buf),
-				"Chosen map from '%s': %s (0x%08X)\n",
-				act.display_name.c_str(),
-				map.display_name.c_str(),
-				map.map_hash);
-			//outputdebugstringA(buf);
 
+		// New: map + phase chosen
+		cbs.on_map_phase_chosen = [&](const ActivityDef& act,
+			const MapDef& map,
+			const PhaseDef& phase)
+			{
+				char buf[256];
+				std::snprintf(buf, sizeof(buf),
+					"Chosen '%s' | Map: %s (0x%08X) | Phase: %s (0x%08X)\n",
+					act.display_name.c_str(),
+					map.display_name.c_str(),
+					map.map_hash,
+					phase.display_name.c_str(),
+					phase.phase_tag);
+				// OutputDebugStringA(buf);
+
+				this->staticsToDraw.clear();
+				this->lightsToDraw.clear();
+				this->entitiesToDraw.clear();
+
+				loadzone = std::make_unique<LoadZone>(*this);
+				loadzone->parentHash = map.map_hash;   
+
+				loadzone->ProcessMap(); 
+				loadzone->load_activity_phase(TagHash(phase.phase_tag));
+				this->staticsToDraw = loadzone->statics;
+				this->lightsToDraw = loadzone->lights;
+				this->entitiesToDraw = loadzone->entities;
+				this->staticAO1 = loadzone->AOMap1;
+			};
+
+		cbs.on_map_chosen = [&](const ActivityDef& act, const MapDef& map) {
 			this->staticsToDraw.clear();
 			this->lightsToDraw.clear();
 			this->entitiesToDraw.clear();
+
 			loadzone = std::make_unique<LoadZone>(*this);
-			loadzone->parentHash = map.map_hash; //duality
+			loadzone->parentHash = map.map_hash;
 			loadzone->ProcessMap();
+
 			this->staticsToDraw = loadzone->statics;
 			this->lightsToDraw = loadzone->lights;
 			this->entitiesToDraw = loadzone->entities;
 			this->staticAO1 = loadzone->AOMap1;
-			};
-
-		cbs.on_activity_selected = [&](const ActivityDef& act) {
 			};
 
 		DrawActivityBrowser(provider, cbs);
@@ -2120,7 +2148,7 @@ void Graphics::RenderFrame()
 	ImGui::Render();
 	ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 
-	pSwapChain->Present(0, 0);
+	pSwapChain->Present(1, 0);
 }
 
 
@@ -2164,9 +2192,7 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 			return false;
 		}
 		UINT createDeviceFlags = 0;
-#if defined(_DEBUG)
-		createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;  // Enable debug layer
-#endif
+
 		DXGI_SWAP_CHAIN_DESC scd = { 0 };
 		scd.BufferDesc.Width = this->windowWidth;
 		scd.BufferDesc.Height = this->windowHeight;
@@ -2588,8 +2614,9 @@ bool Graphics::InitializeScene()
 	//this->lightsToDraw = loadzone->lights;
 	//this->entitiesToDraw = loadzone->entities;
 	//this->staticAO1 = loadzone->AOMap1;
-	//loadzone->load_datatable_into_scene(TagHash(0x80D4076F));
-	loadzone->load_datatable_into_scene(TagHash(0x80D26815));
+	//loadzone->load_datatable_into_scene(TagHash(0x80D40A7E));
+	//loadzone->load_datatable_into_scene(TagHash(0x80FDC30D));
+	loadzone->load_datatable_into_scene(TagHash(0x80D40A7F));
 	if (loadzone) {
 		this->staticsToDraw = loadzone->statics;
 		this->lightsToDraw = loadzone->lights;

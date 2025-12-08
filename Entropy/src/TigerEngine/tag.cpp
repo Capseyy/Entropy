@@ -125,6 +125,11 @@ void WideHash::print() {
 }
 unsigned char* WideHash::getData() {
 	const auto& h64 = GlobalData::getH64();
+	if (wideHashData.Hash64 == 0 && wideHashData.Unk0 == 0xffffffff) {
+		size = 0;
+		data = nullptr;
+		return nullptr;
+	}
 	auto it = h64.find(wideHashData.Hash64);
 	if (wideHashData.Unk0 != 0xffffffff) {
 		TagHash toTagHash = TagHash(wideHashData.Unk0);

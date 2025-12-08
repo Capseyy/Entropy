@@ -7,8 +7,8 @@
 #include "TigerEngine/Map/TigerBuffer.h"
 
 // Your parser + types
-#include "TigerEngine/tag.h"       // TagHash(uint64_t) -> { data, size }
-#include "TigerEngine/Map/static.h"// SStaticModel, SStaticMeshData
+#include "TigerEngine/tag.h"      
+#include "TigerEngine/Map/static.h"
 
 using namespace DirectX;
 

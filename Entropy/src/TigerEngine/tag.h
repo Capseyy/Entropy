@@ -23,6 +23,23 @@
 #include "d3d11.h"
 
 
+inline uint32_t fnv1_32(const uint8_t* data, std::size_t len) {
+    const uint32_t FNV_OFFSET_BASIS = 0x811C9DC5u;
+    const uint32_t FNV_PRIME = 0x01000193u;  // 16777619
+
+    uint32_t hash = FNV_OFFSET_BASIS;
+
+    for (std::size_t i = 0; i < len; ++i) {
+        hash *= FNV_PRIME;     
+        hash ^= data[i];      
+    }
+
+    return hash;
+}
+
+inline uint32_t fnv1_32(std::string_view s) {
+    return fnv1_32(reinterpret_cast<const uint8_t*>(s.data()), s.size());
+}
 
 struct StringHash {
     uint32_t hash;
@@ -95,6 +112,8 @@ class ResourcePointer {
 public:
     uint64_t offset{ 0 };
     uint32_t type{ 0 };
+	uint32_t starting_pos{ 0 };
+    uint32_t debug_plain_offset{ 0 };
     bool     valid{ false };
 
     template <typename T>
@@ -163,6 +182,7 @@ namespace bin {
         std::span<const std::byte> data;
         size_t pos{ 0 };
         Endian src{ Endian::Little };
+        size_t base{ 0 };   // NEW: global offset of data[0] inside the Tag buffer
 
         size_t remaining() const { return data.size() - pos; }
         void need(size_t n) { if (remaining() < n) throw std::out_of_range("bin::Reader: read past end"); }
@@ -278,15 +298,38 @@ namespace bin {
         auto startPos = r.pos;
         t.offset = r.read_arith<int64_t>() + startPos;
     }
-    inline void read_into(Reader& r, ResourcePointer& t) {
-        auto startPos = r.pos;
-        auto offset = r.read_arith<int64_t>();
-        r.seek(startPos + offset - 4);
+    inline void read_into(bin::Reader& r, ResourcePointer& t) {
+       
+        const size_t fieldLocalPos = r.pos;
+        const size_t fieldGlobalPos = r.base + fieldLocalPos;
+
+        t.starting_pos = static_cast<uint32_t>(fieldGlobalPos);
+
+        const int64_t rel = r.read_arith<int64_t>();
+
+        const size_t savedLocalPos = r.pos;
+
+        const int64_t targetGlobalSigned = static_cast<int64_t>(fieldGlobalPos) + rel;
+        if (targetGlobalSigned < 0) {
+            throw std::out_of_range("ResourcePointer: negative target offset");
+        }
+
+        const size_t targetGlobal = static_cast<size_t>(targetGlobalSigned);
+
+        t.offset = static_cast<uint64_t>(targetGlobal);   
+        t.debug_plain_offset = static_cast<uint32_t>(rel);
+
+        if (targetGlobal < 4) {
+            throw std::out_of_range("ResourcePointer: type offset before buffer start");
+        }
+
+        const size_t typeLocalPos = (targetGlobal - 4) - r.base;
+        r.seek(typeLocalPos);
         t.type = r.read_arith<int32_t>();
-        t.offset = offset + startPos;
-        r.seek(startPos+8);
+
+        r.seek(savedLocalPos);
     }
-    // ---------- std::string: [u32 len][bytes] (no null) ----------
+
     inline void read_into(Reader& r, std::string& s) {
         uint32_t n = r.read_arith<uint32_t>();
         auto bytes = r.read_bytes(n);
@@ -320,18 +363,16 @@ namespace bin {
             }
         }
     }
-    // ---------- std::vector<T>: [u32 count][T…] ----------
+
     template<class T>
     inline void read_into(Reader& r, std::vector<T>& vec) {
-        // Header: [u32 count][u64 relOffsetFromHere]
+       
         const uint32_t count = r.read_arith<uint64_t>();
         const uint64_t offset = r.read_arith<uint64_t>();
-        // Base = position right after the header (current r.pos)
+       
         const size_t base = r.pos;
         if (count != 0) {
-            //std::cout << offset;
-            //std::cout << "\n";
-            // Bounds: base + offset must be within the buffer
+            
             if (offset > static_cast<uint64_t>(r.data.size()))
                 throw std::out_of_range("vector: offset too large");
 
@@ -339,17 +380,14 @@ namespace bin {
             if (target > r.data.size())
                 throw std::out_of_range("vector: target beyond buffer");
 
-            // Jump to the elements
             r.seek(target);
-
-            // Optional sanity guard for fixed-size elements (like SStringPart = 32 bytes)
+          
             if constexpr (std::is_trivially_default_constructible_v<T> && std::is_trivially_destructible_v<T>) {
                 const size_t need = static_cast<size_t>(count) * sizeof(T);
                 if (need > r.remaining())
                     throw std::out_of_range("vector: elements exceed remaining bytes");
             }
 
-            // Read elements
             vec.clear();
             vec.reserve(static_cast<size_t>(count));
             for (size_t i = 0; i < static_cast<size_t>(count); ++i) {
@@ -360,13 +398,8 @@ namespace bin {
             }
 
         }
-
-        // Restore so parsing can continue after the header
         r.seek(base);
     }
-
-    // ---------- Aggregates (structs) ----------
-    // Path A: Boost.PFR — zero boilerplate
     template<class T>
     inline void read_aggregate(Reader& r, T& x) {
         boost::pfr::for_each_field(x, [&](auto& field) {
@@ -374,11 +407,10 @@ namespace bin {
             });
     }
 
-    // Dispatch for user-defined types (neither arithmetic nor std::vector/string)
     template<class T>
     inline void read_into(Reader& r, T& x) {
         if constexpr (std::is_arithmetic_v<T> || std::is_same_v<T, bool>) {
-            // already handled by the primitive overloads above
+           
             if constexpr (!std::is_same_v<T, bool>) {
                 x = r.read_arith<T>();
             }
@@ -390,29 +422,32 @@ namespace bin {
             read_into(r, x);
         }
         else if constexpr (requires { typename T::value_type; x.size(); }) {
-            // this branch is for containers but std::vector has its own overload already,
-            // so we intentionally don't make this generic to avoid surprises.
             static_assert(!sizeof(T*), "Unsupported container type. Provide a read_into overload.");
         }
         else {
-            read_aggregate(r, x); // walk fields via PFR or fallback
+            read_aggregate(r, x); 
         }
     }
 
-    // ---------- Top-level convenience ----------
     template<class T>
-    inline T parse(const unsigned char* blob, size_t size, Endian src = Endian::Little) {
-        Reader rr{ std::span<const std::byte>{reinterpret_cast<const std::byte*>(blob), size}, 0, src };
-        T out{};                       // keep this
+    inline T parse(const unsigned char* blob,
+        size_t size,
+        Endian src = Endian::Little,
+        size_t base_offset = 0)   // NEW param
+    {
+        Reader rr{
+            std::span<const std::byte>{reinterpret_cast<const std::byte*>(blob), size},
+            0,
+            src,
+            base_offset
+        };
+        T out{};
         rr.src = src;
         read_into(rr, out);
         return out;
     }
+}
 
-} // namespace bin
-
-// ---------- Fallback macro (only if you DISABLE Boost.PFR) ----------
-// Usage inside a struct body: BIN_REFLECTABLE(MyType, field1, field2, field3)
 #if !BIN_HAS_PFR
 #include <tuple>
 #define BIN_REFLECTABLE(Type, ...)                                           \
@@ -429,24 +464,26 @@ inline T ResourcePointer::Parse(TagHash& tag) {
     if (offset > static_cast<uint64_t>(tag.size)) {
         throw std::out_of_range("ResourcePointer::Parse: offset beyond tag buffer");
     }
-    const unsigned char* ptr = tag.data + static_cast<size_t>(offset);
-    const std::size_t remaining = static_cast<std::size_t>(tag.size - offset);
-    return bin::parse<T>(ptr, remaining);
+
+    const auto off = static_cast<size_t>(offset);
+    const unsigned char* ptr = tag.data + off;
+    const std::size_t remaining = static_cast<std::size_t>(tag.size - off);
+
+    return bin::parse<T>(ptr, remaining, bin::Endian::Little, off);
 }
 
 template <typename T>
-inline T ResourcePointer::Parse(const TagHash& tag) const{
+inline T ResourcePointer::Parse(const TagHash& tag) const {
     if (!tag.data) {
         throw std::invalid_argument("ResourcePointer::Parse: TagHash.data is null");
     }
     if (offset > static_cast<uint64_t>(tag.size)) {
         throw std::out_of_range("ResourcePointer::Parse: offset beyond tag buffer");
     }
-    const unsigned char* ptr = tag.data + static_cast<size_t>(offset);
-    const std::size_t remaining = static_cast<std::size_t>(tag.size - offset);
-    return bin::parse<T>(ptr, remaining);
+
+    const auto off = static_cast<size_t>(offset);
+    const unsigned char* ptr = tag.data + off;
+    const std::size_t remaining = static_cast<std::size_t>(tag.size - off);
+
+    return bin::parse<T>(ptr, remaining, bin::Endian::Little, off);
 }
-//template <typename T>
-//inline T ResourcePointer::Parse(TagHash tag) {
-//    return Parse<T>(static_cast<const TagHash&>(tag));
-//}

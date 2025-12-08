@@ -14,6 +14,22 @@ void TigerActivity::ProcessActivity(uint32_t activity_hash) {
 			pair.first = bubble.bubble_string.string;
 			bubbles.emplace_back(pair);
 		}
+		for (auto& activity_resource : bubble.activity_resources) {
+			auto resource_parent = bin::parse<Unk_80808E89>(activity_resource.activity_resource_parent.data, activity_resource.activity_resource_parent.size);
+			auto resource_table = bin::parse<Unk_80808EBE>(resource_parent.resource_table.data, resource_parent.resource_table.size);
+			auto main_script = TagHash(resource_table.activity_resource[0]);
+			auto script_data = bin::parse<Unk_80808943>(main_script.data, main_script.size);
+			auto main_script_resource = bin::parse<SActivityResource>(script_data.activity_resource_tag.data, script_data.activity_resource_tag.size);
+			if (main_script_resource.unk18.type == 0x808098FA) {
+				std::pair<std::string, uint32_t> pair;
+				pair.second = resource_parent.resource_table.hash;
+				
+				auto activity_data = main_script_resource.unk18.Parse<Unk_808098FA>(script_data.activity_resource_tag);
+				pair.first = activity_data.script_name.name;
+				this->phases.emplace_back(pair);
+				
+			}
+		}
 		
 	}
 }

@@ -65,15 +65,20 @@ void LoadZone::ProcessMap()
 	printf("Loaded %d datatables\n", data_tables.size());
 }
 
-inline void LoadZone::load_datatable_into_scene(TagHash table) {
+inline void LoadZone::load_datatable_into_scene(TagHash table, glm::quat quat_ovd, glm::vec4 pos_ovd) {
 	//printf("Starting parse for %08x \n", table.hash);
-	const auto datatable = bin::parse<SMapDataTable>(table.data, table.size);
+	auto datatable = bin::parse<SMapDataTable>(table.data, table.size);
 
 	for (const auto& entry : datatable.data_tables) {
+		EntityVecPair evp{};
+		evp.pos = entry.translation;
+		evp.quat = entry.rotation;
+		this->loaded_entity_instances[entry.world_id] = evp;
+		
 		switch (entry.resource.type)
 		{
 		case 0x80806cc9: {
-			printf("Found static placement\n");
+			//printf("Found static placement\n");
 			auto const resource = entry.resource.Parse<Unk_80806CC9>(table);
 			const auto static_parent = bin::parse<s_static_map_parent>(resource.static_parent.data, resource.static_parent.size);
 			StaticMap staticMap{};
@@ -84,7 +89,7 @@ inline void LoadZone::load_datatable_into_scene(TagHash table) {
 			break;
 		}
 		case 0x80806a63: {
-			printf("Found light placement\n");
+			//printf("Found light placement\n");
 			auto const resource = entry.resource.Parse<Unk_80806A63>(table);
 			const auto light_parent = bin::parse<SLightCollection>(resource.light_collection.data, resource.light_collection.size);
 			for (int i = 0; i < light_parent.lights.size(); i++)
@@ -117,9 +122,9 @@ inline void LoadZone::load_datatable_into_scene(TagHash table) {
 
 		//}
 		case 0x80806aa3: {
-			printf("Found Sky placement in %08X \n", table.hash);
+			//printf("Found Sky placement in %08X \n", table.hash);
 			auto resource = entry.resource.Parse<Unk_80806AA3>(table);
-			printf("Sky Ent Tag: %08X \n", resource.sky_ents.hash);
+			//printf("Sky Ent Tag: %08X \n", resource.sky_ents.hash);
 			auto header = bin::parse<Unk_80806AA7>(resource.sky_ents.data, resource.sky_ents.size);
 
 			const size_t n = std::min({ header.unk8.size(), header.unk18.size(), header.unk28.size() });
@@ -130,7 +135,6 @@ inline void LoadZone::load_datatable_into_scene(TagHash table) {
 
 				if (u8.unk70 == 5) continue;
 
-				// u8.transform is std::array<float, 16> in column-major order
 				const glm::mat4 M = glm::make_mat4(u8.transform.data());
 
 				glm::vec3 scale, translation, skew;
@@ -159,9 +163,172 @@ inline void LoadZone::load_datatable_into_scene(TagHash table) {
 		default:
 			break;
 		}
-		load_entity_into_scene(TagHash(entry.entity.tagHash32), entry.rotation, entry.translation);
+		if (pos_ovd != glm::vec4()) {
+			auto th = TagHash(entry.entity.tagHash32);
+			load_entity_into_scene(th, quat_ovd, pos_ovd);
+		}
+		else {
+			auto th = TagHash(entry.entity.tagHash32);
+			load_entity_into_scene(th, entry.rotation, entry.translation);
+		}
+		
 
 
 
 	}
+}
+
+
+void LoadZone::load_activity_phase(TagHash table) {
+	const auto activity_phase = bin::parse<Unk_80808EBE>(table.data, table.size);
+	std::vector<std::pair<Unk_808046B5,TagHash>> spawn_rule_maps_temp;
+	for (const auto& entry : activity_phase.activity_resource) {
+		const auto ActResTag = TagHash(entry);
+		const auto activity_resource_parent = bin::parse<Unk_80808943>(ActResTag.data, ActResTag.size);
+		const auto activity_resource = bin::parse<SActivityResource>(activity_resource_parent.activity_resource_tag.data, activity_resource_parent.activity_resource_tag.size);
+		auto& activity_resource_tag = activity_resource_parent.activity_resource_tag;
+		switch (activity_resource.unk18.type)
+		{
+		case 0x808092d8: {
+			//printf("Found Entity Instance placement\n");
+			auto const resource = activity_resource.unk18.Parse<Unk_808092D8>(activity_resource_tag);
+			load_datatable_into_scene(resource.data_table);
+			break;
+		}
+		case 0x808098fa: { //entity names
+			auto const resource = activity_resource.unk18.Parse<Unk_808098FA>(activity_resource_tag);
+			if (activity_resource.NameFile.hash != 0xFFFFFFFF) {
+				std::unordered_map<uint32_t, std::string> file_names;
+				const auto name_tag = bin::parse<Unk_8080906b>(activity_resource.NameFile.data, activity_resource.NameFile.size);
+				for (const auto& str_entry : name_tag.string_table) {
+					if (str_entry.Unk0.type == 0x8080894d) {
+						const auto name_ptr = str_entry.Unk0.Parse<Unk_8080894D>(activity_resource.NameFile);
+						const auto name = name_ptr.Unk0.name;
+						uint32_t fnv = fnv1_32(name);
+						file_names.emplace(fnv, name);
+					}
+				}
+				for (const auto& wid_pair : resource.object_groups) {
+					auto it = file_names.find(wid_pair.fnvHash);
+					if (it != file_names.end()) {
+						loaded_entity_names.try_emplace(wid_pair.world_id, it->second);
+					}
+				}
+			}
+			break;
+		}
+		case 0x80804699: { //spawn_rules
+			//printf("Spawn Rules instancer\n");
+			auto const resource = activity_resource.unk18.Parse<Unk_80804699>(activity_resource_tag);
+			std::vector<uint64_t> world_ids;
+			for (const auto& spawn_rule_id : resource.spawn_rule_ids) {
+				world_ids.push_back(spawn_rule_id.world_id);
+
+			}
+			this->spawn_rule_maps[resource.common_values.world_id] = world_ids;
+			break;
+		}
+		case 0x808046b5: { //combatant instancer
+			//printf("Combatant Instancer\n");
+			auto const resource = activity_resource.unk18.Parse<Unk_808046B5>(activity_resource_tag);
+			std::pair<Unk_808046B5, TagHash> pr;
+			pr.first = resource;
+			pr.second = activity_resource_tag;
+			spawn_rule_maps_temp.emplace_back(pr);
+			break;
+		}
+		case 0x80804695: {//comb spawn points
+
+			auto const resource = activity_resource.unk18.Parse<Unk_80804695>(activity_resource_tag);
+			for (const auto entry : resource.spawn_points) {
+				if (entry.pointer.type == 0x8080448b) {
+					auto const contest_combat = entry.pointer.Parse<Unk_8080448B>(activity_resource_tag);
+					if (contest_combat.data_table.success) {
+						load_datatable_into_scene(contest_combat.data_table);
+					}
+					
+				}
+				
+			}
+			break;
+		}
+
+		default:
+			break;
+		}
+	}
+	for (const auto& spawn_pair : spawn_rule_maps_temp) {
+		const auto& resource = spawn_pair.first;
+		const auto& activity_resource_tag = spawn_pair.second;
+		for (const auto& combatant : resource.combatant_instances) {
+			bool loaded = false;
+			if (combatant.entity_data_table.success) {
+				auto it = this->spawn_rule_maps.find(resource.sr_id);
+				if (it != this->spawn_rule_maps.end()) {
+					for (const auto& wid : it->second) {
+						auto ev_it = this->loaded_entity_instances.find(wid);
+						if (ev_it != this->loaded_entity_instances.end()) {
+							glm::vec4 pos = ev_it->second.pos;
+							glm::quat rot = ev_it->second.quat;
+							loaded = true;
+							load_datatable_into_scene(TagHash(combatant.entity_data_table.tagHash32), rot, pos);
+						}
+					}
+				}
+			}
+			else {
+				if (combatant.unk68.type == 0x8080462b) {
+					const auto unk_462b = combatant.unk68.Parse<Unk_8080462B>(activity_resource_tag);
+					for (const auto& instance : unk_462b.combatant_instances) {
+						auto it = this->spawn_rule_maps.find(resource.sr_id);
+						if (it != this->spawn_rule_maps.end()) {
+							for (const auto& wid : it->second) {
+								auto ev_it = this->loaded_entity_instances.find(wid);
+								if (ev_it != this->loaded_entity_instances.end()) {
+									glm::vec4 pos = ev_it->second.pos;
+									glm::quat rot = ev_it->second.quat;
+									loaded = true;
+									load_datatable_into_scene(TagHash(instance.entity_data_table.tagHash32), rot, pos);
+								}
+							}
+						}
+					}
+				}
+				else if (combatant.unk68.type == 0x80804690) { //used for contest combatants
+					const auto unk_4690 = combatant.unk68.Parse<Unk_80804690>(activity_resource_tag);
+					if (activity_resource_tag.hash == 0x8137F6FE) {
+						int u = 1;
+					}
+					for (const auto& instance : unk_4690.combatant_instances) {
+						auto it = this->spawn_rule_maps.find(resource.sr_id);
+						if (it != this->spawn_rule_maps.end()) {
+							for (const auto& wid : it->second) {
+								auto ev_it = this->loaded_entity_instances.find(wid);
+								if (ev_it != this->loaded_entity_instances.end()) {
+									glm::vec4 pos = ev_it->second.pos;
+									glm::quat rot = ev_it->second.quat;
+
+									loaded = true;
+									load_datatable_into_scene(TagHash(instance.entity_data_table.tagHash32), rot, pos);
+								}
+							}
+						}
+						if (loaded) {
+							break;
+						}
+					}
+				}
+			}
+			if (!loaded && combatant.entity_data_table.success) {
+				printf("Failed to locate position for combatant in tag %08X at default pos\n", activity_resource_tag.hash);
+				load_datatable_into_scene(TagHash(combatant.entity_data_table.tagHash32), resource.default_rot, resource.default_pos);
+			}
+
+		}
+	}
+
+
+	/*for (const auto& name_pair : loaded_entity_names) {
+		printf("Loaded Entity Name: %s for World ID: %llu\n", name_pair.second.c_str(), name_pair.first);
+	}*/
 }

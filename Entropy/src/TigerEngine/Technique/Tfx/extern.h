@@ -244,7 +244,9 @@ enum class TfxExtern : uint8_t {
     UiHdrTransform = 95,
     PlayerCenteredCascadedGrid = 96,
     SoftDeform = 97,
+    ParticleMeshEmissionCompute = 98,
 };
+
 
 
 

@@ -95,8 +95,9 @@ inline bool ShowFrameExternEditor(ExternStorage& ex)
 }
 
 // ==================== GlobalLighting ====================
+// ==================== GlobalLighting ====================
 namespace GLightOff {
-    // mirrors extern_struct! GlobalLighting
+    // mirrors extern_struct! GlobalLightingExtern
     constexpr size_t kSRV08 = 0x08; // ID3D11ShaderResourceView*
     constexpr size_t kV10 = 0x10; // Vec4
     constexpr size_t kSpecularDir = 0x30; // Vec4 (unk30)
@@ -114,15 +115,16 @@ namespace GLightOff {
 }
 
 inline void EnsureGlobalLightingCapacity(ExternStorage& ex) {
-    // If scope is missing/empty, seed full defaults from the POD
+    // If scope is missing/empty, seed full defaults from the POD struct.
     auto it = ex.scopes.find(TfxExtern::GlobalLighting);
     if (it == ex.scopes.end() || it->second.cpu.empty()) {
-        ex.set(TfxExtern::GlobalLighting, MakeGlobalLightingDefaults());
+        GlobalLightingExtern def{};              // uses your C++ defaults
+        ex.set(TfxExtern::GlobalLighting, def);  // copies sizeof(GlobalLightingExtern)
         return;
     }
 
     auto& scope = it->second;
-    const size_t want = sizeof(GlobalLightingExtern); // covers up to 0xD0+16 = 0xE0
+    const size_t want = sizeof(GlobalLightingExtern); // 0xE0
     if (scope.cpu.size() < want) {
         const size_t oldSize = scope.cpu.size();
         scope.cpu.resize(want, 0u);
@@ -153,8 +155,11 @@ inline void EnsureGlobalLightingCapacity(ExternStorage& ex) {
 }
 
 inline void GlobalLightingSetDefaults(ExternStorage& ex) {
-    // full struct defaults (same as Rust extern defaults)
-    ex.set(TfxExtern::GlobalLighting, MakeGlobalLightingDefaults());
+    GlobalLightingExtern def{};                 // all defaults from struct:
+    // - SRV = nullptr
+    // - Vec4s = Vec4::one() or (1,-1,1,0)
+    // - floats = 1.0f / -0.5f as you set
+    ex.set(TfxExtern::GlobalLighting, def);
 }
 
 inline bool ShowGlobalLightingExternEditor(ExternStorage& ex) {
@@ -183,7 +188,7 @@ inline bool ShowGlobalLightingExternEditor(ExternStorage& ex) {
         auto rowV4 = [&](const char* label, size_t off, float step = 0.01f) {
             ImGui::TableNextRow(); ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(label);
             ImGui::TableSetColumnIndex(1);
-            Vec4 v = rv(off); float a[4]{ v.x,v.y,v.z,v.w };
+            Vec4 v = rv(off); float a[4]{ v.x, v.y, v.z, v.w };
             if (ImGui::DragFloat4(std::string("##").append(label).c_str(), a, step)) {
                 wv(off, Vec4(a[0], a[1], a[2], a[3])); changed = true;
             }
@@ -234,3 +239,4 @@ inline bool ShowGlobalLightingExternEditor(ExternStorage& ex) {
     }
     return changed;
 }
+

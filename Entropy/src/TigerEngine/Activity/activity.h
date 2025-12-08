@@ -9,7 +9,157 @@ public:
 	uint32_t id;
 	std::string dev_name;
 	std::vector<std::pair<std::string, uint32_t>> bubbles;
+	std::vector<std::pair<std::string, uint32_t>> phases;
 	void ProcessActivity(uint32_t activity_hash);
+};
+
+struct Unk_80808EBE {
+	uint64_t FileSize;
+	std::vector<uint32_t> activity_resource;
+};
+
+struct CommonActivityValues {
+	uint32_t unk0;
+	uint32_t unk4;
+	uint64_t unk8;
+	std::array<uint32_t, 6> hashes;
+	uint32_t fnvHash;
+	uint32_t unk2C;
+	uint64_t world_id;
+};
+
+struct Unk_80804692 {
+	uint64_t unk0;
+	WideHash entity_data_table;
+	StringHash entity_name;
+	std::array<uint32_t, 5> unk;
+};
+
+struct Unk_80804690 {
+	uint64_t unk0;
+	uint64_t unk8;
+	std::vector<Unk_80804692> combatant_instances;
+};
+
+struct Unk_8080462D {
+	uint64_t unk0;
+	WideHash entity_data_table;
+	StringHash entity_name;
+	std::array<uint32_t, 5> unk;
+};
+
+struct Unk_8080462B {
+	uint64_t unk0;
+	uint64_t unk8;
+	std::vector<Unk_8080462D> combatant_instances;
+};
+
+struct Unk_808092D8 {
+	CommonActivityValues common_values;
+	std::array<uint32_t, 19> unk38;
+	TagHash data_table;
+};
+
+struct Unk_80808943 {
+	uint64_t FileSize;
+	uint32_t phase_hash;
+	std::array<uint32_t, 5> unk8;
+	TagHash activity_resource_tag;
+};
+
+struct Unk_8080448B {
+	std::array<uint32_t, 12> unk0;
+	TagHash data_table;
+};
+
+struct Unk_80809956 {
+	std::array<uint32_t, 4> unk0;
+	ResourcePointer pointer;
+};
+
+struct Unk_80804695 {
+	CommonActivityValues common_values;
+	std::array<uint64_t, 9> unk38;
+	std::vector<Unk_80809956> spawn_points;
+	std::array<uint32_t, 7> unk68;
+};;
+
+struct Unk_80809905 {
+	uint32_t fnvHash;
+	uint32_t unk2C;
+	uint64_t world_id;
+};
+
+struct Unk_80809928 {
+	uint64_t world_id;
+	uint32_t unk08;
+	uint32_t unk0c;
+};
+
+struct Unk_80804696 {
+	std::array<uint32_t, 10> unk0;
+	WideHash entity_data_table;
+	StringHash entity_name;
+	std::array<uint32_t, 11> unk20;
+	ResourcePointer unk68;
+	std::array<uint32_t, 4> unk70; //TODO: must be something
+
+};
+
+struct Unk_808046B5 {
+	CommonActivityValues common_values;
+	std::array<uint64_t, 9> unk38;
+	std::vector<Unk_80804696> combatant_instances;
+	std::array<uint32_t, 8> unk68;
+	uint64_t sr_id;
+	uint64_t unkb8;
+	glm::quat default_rot;
+	glm::vec4 default_pos;
+};
+
+struct Unk_80804699 {
+	CommonActivityValues common_values;
+	std::array<uint64_t, 10> unk38;
+	std::vector<Unk_80809928> spawn_rule_ids;
+};
+
+struct Unk_808098FA {
+	CommonActivityValues common_values;
+	std::array<uint32_t, 8> unk38;
+	std::vector<Unk_80809905> object_groups;
+	uint64_t unk68;
+	RawStringPointer64 script_name;
+};
+
+struct Unk_80809d02 {
+	ResourcePointer Unk0;
+	ResourcePointer Unk8;
+};
+
+struct Unk_8080894D {
+	RawStringPointer64 Unk0;
+};
+
+struct Unk_8080906b {
+	uint64_t FileSize;
+	std::vector<Unk_80809d02> string_table;
+};
+
+struct SActivityResource { //
+	uint64_t FileSize;
+	ResourcePointer unk8;
+	ResourcePointer unk10;
+	ResourcePointer unk18;
+	SkipTo<0x80> UnkSkip;
+	TagHash NameFile;
+};
+
+struct Unk_80808E89 {
+	uint64_t FileSize;
+	uint64_t unk8;
+	ResourcePointer unk10;
+	TagHash resource_table;
+	//TODO : rest unknown
 };
 
 struct Unk_80809700 {

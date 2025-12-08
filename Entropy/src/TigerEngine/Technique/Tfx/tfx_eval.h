@@ -268,6 +268,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
     std::array<Vec4, 16>& temp,
     std::unordered_map<uint32_t, float_t> channel_floats,
     std::vector<std::shared_ptr<EntropyAssets::Texture2DRes>> texs,
+    uint32_t technique_id,
     bool trace = true)
 {
     using namespace tfx_eval_detail;
@@ -282,7 +283,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
         auto v = stack.back(); stack.pop_back(); return v;
         };
 
-    Mat4 cachedM{}; // for TransformVec4 following PushExternInputMat4
+    Mat4 cachedM{};
 
     for (size_t ip = 0; ip < ops.size(); ++ip) {
         const auto& i = ops[ip];
@@ -726,21 +727,62 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
         case TfxBytecode::PushExternInputU32:
         case TfxBytecode::PushExternInputUav:
         case TfxBytecode::Unk49:
+            break;
         case TfxBytecode::Unk4c:
+            break;
         case TfxBytecode::Unk50:
+            break;
         case TfxBytecode::Unk51:
+            break;
         case TfxBytecode::PushTexTileParams:
+        {
+            const auto* d = std::get_if<PushTexParamData>(&i.data);
+            if (!d) {
+                if (trace) std::fprintf(stderr,
+                    "[eval] bad payload for PushTexTileParams\n");
+                push(Vec4::zero());
+                break;
+            }
+
+            Vec4 base(0.25f, 0.25f, 0.25f, 0.0625f);
+
+
+            Vec4 v = tfx_eval_detail::swizzle_fields(base, d->fields);
+
+            if (trace) {
+                std::printf("    PushTexTileParams: idx=%u fields=0x%02X -> %s\n",
+                    d->index, d->fields, tfx_eval_detail::to_str(v).c_str());
+            }
+
+            push(v);
+            break;
+        }
+
         case TfxBytecode::PushTexTileCount:
+        {
+            const auto d = std::get<PushTexParamData>(i.data);
+
+            Vec4 base(0.25f, 0.25f, 0.25f, 0.0625f);
+            Vec4 v = swizzle_fields(base, d.fields);
+
+            push(v);
+            break;
+        }
         case TfxBytecode::Unk42:
         case TfxBytecode::Unk55:
         case TfxBytecode::Unk56:
         case TfxBytecode::Unk57:
         case TfxBytecode::Unk58:
-            // Ignored here on purpose; binding is handled elsewhere.
-            break;
+        case TfxBytecode::Unk1c:
+        case TfxBytecode::Unk25:
+
+
 
         default:
-            if (trace) std::fprintf(stderr, "[eval] unhandled opcode %s at ip=%zu\n", OpName(i.op), ip);
+            if (OpName(i.op) == "Unknown"){
+                std::fprintf(stderr, "[eval] unhandled opcode %s at ip=%zu in tech %08X\n", OpName(i.op), ip, technique_id);
+            }
+            
             break;
         }
     }

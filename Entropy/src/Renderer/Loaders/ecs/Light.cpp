@@ -76,13 +76,10 @@ void Graphics::DrawLight(const RenderLight& rl, const View& view)
 	ctx->OMSetDepthStencilState(depthStencilLightVolume.Get(), 0);
 	ctx->RSSetState(rasterizerStateBiased.Get());
 
-	// Samplers: s0 = point-clamp (GBuffer), s1 = linear (gathers/LUTs)
 	ID3D11SamplerState* sams[] = { lighting1.Get(), lighting2.Get() };
 	ctx->PSSetSamplers(0, (UINT)std::size(sams), sams);
 
 
-
-	// ------------------- Draw the light volume -------------------
 	ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	UINT stride = sizeof(float) * 3, offset = 0;
 	ID3D11Buffer* vb = lightCubeVB.Get();

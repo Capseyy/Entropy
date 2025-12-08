@@ -12,44 +12,123 @@
 
 // ====================== OPCODES (EoF exact) ======================
 enum class TfxBytecode : uint8_t {
-    Add = 0x01, Subtract = 0x02, Multiply = 0x03, Divide = 0x04,
-    Multiply2 = 0x05, Add2 = 0x06, IsZero = 0x07, Min = 0x08, Max = 0x09,
-    LessThan = 0x0A, Dot = 0x0B, Merge_1_3 = 0x0C, Merge_2_2 = 0x0D, Merge_3_1 = 0x0E,
-    Cubic = 0x0F, Lerp = 0x10, LerpSaturated = 0x11, MultiplyAdd = 0x12, Clamp = 0x13, Unk14 = 0x14,
-    Abs = 0x15, Sign = 0x16, Floor = 0x17, Ceil = 0x18, Round = 0x19, Frac = 0x1A,
-    Unk1b = 0x1B, Unk1c = 0x1C, Negate = 0x1D,
-    VecRotSin = 0x1E, VecRotCos = 0x1F, VecRotSinCos = 0x20,
-    PermuteAllX = 0x21, Permute = 0x22, Saturate = 0x23,
-    Unk25 = 0x25, Unk26 = 0x26, Triangle = 0x27, Jitter = 0x28, Wander = 0x29, Rand = 0x2A, RandSmooth = 0x2B,
-    Unk2c = 0x2C, Unk2d = 0x2D, TransformVec4 = 0x2E,
+    Add = 0x01,
+    Subtract = 0x02,
+    Multiply = 0x03,
+    Divide = 0x04,
+    Multiply2 = 0x05,
+    Add2 = 0x06,
+    IsZero = 0x07,
+    Min = 0x08,
+    Max = 0x09,
+    LessThan = 0x0A,
+    Dot = 0x0B,
+    Merge_1_3 = 0x0C,
+    Merge_2_2 = 0x0D,
+    Merge_3_1 = 0x0E,
 
-    Unk34_EoF = 0x34, Unk35_EoF = 0x35, Unk36_EoF = 0x36, Unk37_EoF = 0x37,
-    Unk38_EoF = 0x38, Unk39_EoF = 0x39, Unk3A_EoF = 0x3A,
+    Cubic = 0x0F,
+    Unk0F_EoF = 0x10,
+    Unk10_EoF = 0x11,
+    Unk11_EoF = 0x12,
+    Lerp = 0x13,
+    LerpSaturated = 0x14,
+   
 
-    PushConstantVec4 = 0x3B, LerpConstant = 0x3C, LerpConstantSaturated = 0x3D,
-    Spline4Const = 0x3E, Spline8Const = 0x3F, Spline8ConstChain = 0x40,
-    Gradient4Const = 0x41, Gradient8Const = 0x42,
+    MultiplyAdd = 0x15,
+    Clamp = 0x16,
+    Unk14 = 0x17,
 
-    PushExternInputFloat = 0x43, PushExternInputVec4 = 0x44, PushExternInputMat4 = 0x45,
-    PushExternInputTextureView = 0x46, PushExternInputU32 = 0x47, PushExternInputUav = 0x48,
+    Abs = 0x18,
+    Sign = 0x19,
+    Floor = 0x1A,
+    Ceil = 0x1B,
+    Round = 0x1C,
+    Frac = 0x1D,
 
-    Unk42 = 0x49,
-    PushFromOutput = 0x4A, PopOutput = 0x4B, PopOutputMat4 = 0x4C,
-    PushTemp = 0x4D, PopTemp = 0x4E,
+    Unk1b = 0x1E,
+    Unk1c = 0x1F,
+    Negate = 0x20,
 
-    SetShaderTexture = 0x4F, Unk49 = 0x50, SetShaderSampler = 0x51, SetShaderUav = 0x52,
-    Unk4c = 0x53, PushSampler = 0x54,
-    PushObjectChannelVector = 0x55, PushGlobalChannelVector = 0x56,
-    Unk50 = 0x57, Unk51 = 0x58,
+    VecRotSin = 0x21,
+    VecRotCos = 0x22,
+    VecRotSinCos = 0x23,
 
-    PushTexDimensions = 0x59, PushTexTileParams = 0x5A, PushTexTileCount = 0x5B,
-    Unk55 = 0x5C, Unk56 = 0x5D, Unk57 = 0x5E, Unk58 = 0x5F,
+    Unk21_EoF = 0x24,
+    Unk22_EoF = 0x25,
+    Unk23_EoF = 0x26,
+    Unk24_EoF = 0x27,
+
+    PermuteAllX = 0x28,
+    Permute = 0x29,
+    Saturate = 0x2A,
+
+    Unk25 = 0x2B,
+    Unk26 = 0x2C,
+    Triangle = 0x2D,
+    Jitter = 0x2E,
+    Wander = 0x2F,
+    Rand = 0x30,
+    RandSmooth = 0x31,
+
+    Unk2c = 0x32,
+    Unk2d = 0x33,
+    TransformVec4 = 0x35,
+
+    Unk34_EoF = 0x3B,
+    Unk35_EoF = 0x3C,
+    Unk36_EoF = 0x3D,
+    Unk37_EoF = 0x3E,
+    Unk38_EoF = 0x3F,
+    Unk39_EoF = 0x40,
+    Unk3A_EoF = 0x41,
+
+    PushConstantVec4 = 0x42,
+    LerpConstant = 0x43,
+    LerpConstantSaturated = 0x44,
+    Spline4Const = 0x45,
+    Spline8Const = 0x46,
+    Spline8ConstChain = 0x47,
+    Gradient4Const = 0x48,
+    Gradient8Const = 0x49,
+
+    PushExternInputFloat = 0x4A,
+    PushExternInputVec4 = 0x4B,
+    PushExternInputMat4 = 0x4C,
+    PushExternInputTextureView = 0x4D,
+    PushExternInputU32 = 0x4E,
+    PushExternInputUav = 0x4F,
+
+    Unk42 = 0x50,
+    PushFromOutput = 0x51,
+    PopOutput = 0x52,
+    PopOutputMat4 = 0x53,
+    PushTemp = 0x54,
+    PopTemp = 0x55,
+
+    SetShaderTexture = 0x56,
+    Unk49 = 0x57,
+    SetShaderSampler = 0x58,
+    SetShaderUav = 0x59,
+    Unk4c = 0x5A,
+    PushSampler = 0x5B,
+
+    PushObjectChannelVector = 0x5C,
+    PushGlobalChannelVector = 0x5D,
+    Unk50 = 0x5E,
+    Unk51 = 0x5F,
+
+    PushTexDimensions = 0x60,
+    PushTexTileParams = 0x61,
+    PushTexTileCount = 0x62,
+    Unk55 = 0x63,
+    Unk56 = 0x64,
+    Unk57 = 0x65,
+    Unk58 = 0x66,
 
     Unknown = 0xFF
 };
 
-
-// ====================== PAYLOADS ======================
 struct PermuteData { uint8_t fields; };
 struct PushConstantVec4Data { uint8_t constant_index; };
 struct LerpConstantData { uint8_t constant_start; };
@@ -77,7 +156,7 @@ struct PushGlobalChannelVectorData { uint8_t unk1; };
 struct PushTexParamData { uint8_t index; uint8_t fields; };
 struct OneU8 { uint8_t v; };
 
-// Packed ttttsssss binder byte
+
 struct SetShaderBindingData { uint8_t value; uint8_t stage; uint8_t slot; };
 inline SetShaderBindingData DecodeBinding(uint8_t v) {
     SetShaderBindingData d{};

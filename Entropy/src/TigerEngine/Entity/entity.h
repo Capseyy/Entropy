@@ -66,15 +66,16 @@ struct Unk_808072C5
 
 struct Unk_80806D8F  // Entity Mesh Resource 
 {
-    SkipTo<0x244> Unk0;            // 0x000..0x223  (136 dwords) -> MeshFile at 0x224
-    TagHash MeshFile;                          // 0x224 (or 0x244 if you chose 145)
-	SkipTo<0x330> Unk248;            // 0x228..0x3BF  (102 dwords)
+    SkipTo<0x244> Unk0;            
+    TagHash MeshFile;                      
+	SkipTo<0x330> Unk248;           
 	TagHash texplates;
 	SkipTo<0x3E0> Unk334;
     std::vector<Unk_808072C5> entity_material_map;  
-	SkipTo<0x420> Unk3f0;                     // 0x3F0..0x3FF
-    std::vector<uint32_t> materials;           // 0x400..0x40F                    // 0x410..0x477  pad to total 0x478
+	SkipTo<0x420> Unk3f0;                     
+    std::vector<uint32_t> materials;                          
 };
+
 
 struct SEntityResource
 {
@@ -82,6 +83,8 @@ struct SEntityResource
 	ResourcePointer resource08;
 	ResourcePointer resource10;
 	ResourcePointer resource18;
+	SkipTo<0x60> pad;
+	std::vector<ResourcePointer> relative_table;
 };
 
 struct Unk_80809c04
