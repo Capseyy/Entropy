@@ -1140,7 +1140,9 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 	wchar_t label[128];
 	_snwprintf_s(label, _TRUNCATE, L"Draw Dynamic %08X [%ls]", rs.id, StageName(stage));
 	ScopedGpuEvent _object(anno_.Get(), label);
-
+	if (rs.id == 0x80E32C94) {
+		int bp = 0;
+	}
 	for (size_t meshIndex = 0; meshIndex < rs.meshs.size(); ++meshIndex)
 	{
 		const SDynamicMesh& dm = rs.meshs[meshIndex];
@@ -2114,11 +2116,12 @@ void Graphics::RenderFrame()
 				this->staticsToDraw.clear();
 				this->lightsToDraw.clear();
 				this->entitiesToDraw.clear();
-
+				dynamicPartCache_.clear();
 				loadzone = std::make_unique<LoadZone>(*this);
 				loadzone->parentHash = map.map_hash;   
 
 				loadzone->ProcessMap(); 
+
 				loadzone->load_activity_phase(TagHash(phase.phase_tag));
 				this->staticsToDraw = loadzone->statics;
 				this->lightsToDraw = loadzone->lights;
@@ -2134,7 +2137,7 @@ void Graphics::RenderFrame()
 			loadzone = std::make_unique<LoadZone>(*this);
 			loadzone->parentHash = map.map_hash;
 			loadzone->ProcessMap();
-
+			dynamicPartCache_.clear();
 			this->staticsToDraw = loadzone->statics;
 			this->lightsToDraw = loadzone->lights;
 			this->entitiesToDraw = loadzone->entities;
@@ -2615,8 +2618,8 @@ bool Graphics::InitializeScene()
 	//this->entitiesToDraw = loadzone->entities;
 	//this->staticAO1 = loadzone->AOMap1;
 	//loadzone->load_datatable_into_scene(TagHash(0x80D40A7E));
-	//loadzone->load_datatable_into_scene(TagHash(0x80FDC30D));
-	loadzone->load_datatable_into_scene(TagHash(0x80D40A7F));
+	loadzone->load_datatable_into_scene(TagHash(0x80FDC30D));
+	//loadzone->load_datatable_into_scene(TagHash(0x80D40A7F));
 	if (loadzone) {
 		this->staticsToDraw = loadzone->statics;
 		this->lightsToDraw = loadzone->lights;

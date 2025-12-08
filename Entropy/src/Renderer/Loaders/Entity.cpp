@@ -65,17 +65,17 @@ void LoadZone::load_entity_into_scene(TagHash& tag, glm::quat quat, glm::vec4 po
                 e.MeshFile, quat, pos, e.entity_material_map, e.materials, {});
         }
 
-        /*for (const auto& table_entry : ent_resource.relative_table) {
+        for (const auto& table_entry : ent_resource.relative_table) {
             auto WH = table_entry.Parse<WideHash>(resource.entity_resource);
             if (WH.success && WH.reference == 0x80809AD8) {
-                if (recursion_depth > 1) {
+                if (recursion_depth >= 0) {
                     printf("Max recursion depth reached when loading entity %08x\n", tag.hash);
                     return;
                 }
                 auto th = TagHash(WH.tagHash32);
                 load_entity_into_scene(th, quat, pos, recursion_depth+=1);
             }
-        }*/
+        }
 
     }
 
