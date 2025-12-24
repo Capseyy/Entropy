@@ -1086,7 +1086,8 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 	TfxRenderStage stage)
 {
 	char buf[256];
-
+	if (!IsEntityTypeVisible(rs.rtype))
+		return;
 	// --- CULL ---
 	if (rs.occlusion_bounds)
 	{
@@ -1170,17 +1171,18 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 			const SDynamicMeshPart& part = dm.parts[i];
 
 
-			if (part.LodCatagory > 3)
+			if (part.LodCatagory > 2)
 			{
 				continue;
 			}
-
-			uint32_t techId =
+			
+			uint32_t	techId =
 				(part.varient_shader_index == 0xFFFF)
 				? part.technique.hash
 				: rs.external_mats[
 					rs.external_material_mapping[part.varient_shader_index].technique_start];
-
+			
+			
 			
 
 			auto itTech = TechCache_.find(techId);
@@ -1263,6 +1265,7 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 				UINT          str = resolved.stride0;
 				pContext->IASetVertexBuffers(0, 1, &vb, &str, &offset);
 			}
+
 
 			tech->Bind_With_Channels(pDevice, pContext, externs, states, scopes, rs.channels);
 
@@ -2002,6 +2005,38 @@ void Graphics::RenderFrame()
 	ImGui::Checkbox("Draw drawLight_ibl", &drawLight_ibl);
 	ImGui::Checkbox("Draw ShadingRead", &drawShadingRead);
 	ImGui::Checkbox("Global Lighting", &stageGlobalLighting);
+	if (ImGui::CollapsingHeader("Entity Type Filters"))
+	{
+		auto checkboxType = [](const char* label, EntityType t)
+			{
+				uint32_t bit = 1u << (uint32_t)t;
+				bool enabled = (g_entityTypeVisibleMask & bit) != 0;
+				if (ImGui::Checkbox(label, &enabled)) {
+					if (enabled) g_entityTypeVisibleMask |= bit;
+					else         g_entityTypeVisibleMask &= ~bit;
+				}
+			};
+
+		if (ImGui::Button("Show All")) {
+			g_entityTypeVisibleMask =
+				(1u << (uint32_t)EntityType::Standard) |
+				(1u << (uint32_t)EntityType::ParticleSystem) |
+				(1u << (uint32_t)EntityType::Combatant) |
+				(1u << (uint32_t)EntityType::SkyEntity) |
+				(1u << (uint32_t)EntityType::ChildEntity);
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Hide All")) {
+			g_entityTypeVisibleMask = 0;
+		}
+
+		checkboxType("Standard", EntityType::Standard);
+		checkboxType("Activity", EntityType::Activity);
+		checkboxType("ParticleSystem", EntityType::ParticleSystem);
+		checkboxType("Combatant", EntityType::Combatant);
+		checkboxType("SkyEntity", EntityType::SkyEntity);
+		checkboxType("ChildEntity", EntityType::ChildEntity);
+	}
 	if (ImGui::CollapsingHeader("ViewExtern"))
 	{
 		ViewExtern v{};
@@ -2159,18 +2194,18 @@ bool Graphics::Initialize(HWND hWnd, int width, int height)
 {
 	this->windowWidth = width;
 	this->windowHeight = height;
-
+	printf("Starting Initialize DirectX...\n");
 	if (!InitializeDirectX(hWnd))
 		return false;
-	OutputDebugStringA("DirectX initialized.\n");
+	printf("DirectX initialized.\n");
 	if (!InitializeShaders())
 		return false;
-	OutputDebugStringA("Shaders initialized.\n");
+	printf("Shaders initialized.\n");
 	if (!InitializeRenderGlobals())
 		return false;
 	if (!InitializeScene())
 		return false;
-	OutputDebugStringA("Scene initialized.\n");
+	printf("Scene initialized.\n");
 
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
@@ -2297,7 +2332,7 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		hr = pDevice->CreateRasterizerState(&rsDescNoCull, rasterizerStateNoCull.GetAddressOf());
 		COM_ERROR_IF_FAILED(hr, "Failed to create rasterizer (nocull).");
 
-		std::filesystem::path font_path = std::filesystem::path(SOLUTION_DIR) / "Data" / "Fonts" / "entropy.spritefont";
+		std::filesystem::path font_path = "entropy.spritefont";
 		spriteBatch = std::make_unique<DirectX::SpriteBatch>(this->pContext.Get());
 		spriteFont = std::make_unique<DirectX::SpriteFont>(
 			this->pDevice.Get(),
@@ -2617,8 +2652,10 @@ bool Graphics::InitializeScene()
 	//this->lightsToDraw = loadzone->lights;
 	//this->entitiesToDraw = loadzone->entities;
 	//this->staticAO1 = loadzone->AOMap1;
-	//loadzone->load_datatable_into_scene(TagHash(0x80D40A7E));
-	loadzone->load_datatable_into_scene(TagHash(0x80FDC30D));
+	//loadzone->load_datatable_into_scene(TagHash(0x80AD26AB));
+	//loadzone->load_datatable_into_scene(TagHash(0x80FDC30D));
+	auto e_to_load = TagHash(0x80CC0D57);
+	loadzone->load_entity_into_scene(e_to_load, glm::quat(0, 0, 0, 0) , glm::vec4(1), 0);
 	//loadzone->load_datatable_into_scene(TagHash(0x80D40A7F));
 	if (loadzone) {
 		this->staticsToDraw = loadzone->statics;

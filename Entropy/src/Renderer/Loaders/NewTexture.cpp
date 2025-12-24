@@ -7,20 +7,18 @@ using Microsoft::WRL::ComPtr;
 static std::optional<std::pair<STextureHeader, std::vector<uint8_t>>>
 LoadTextureData(TagHash hash, bool load_full_mip)
 {
-    // In Rust they use package_manager() + get_entry(hash).reference.
-    // Here we assume TagHash(hash) is the header blob itself; its .reference
-    // refers to the other piece (small/large buffer). Adjust to your TagHash API if needed.
+    
     if (!hash.data || !hash.size) return std::nullopt;
     const auto header = bin::parse<STextureHeader>(hash.data, hash.size, bin::Endian::Little);
 
     std::vector<uint8_t> texture_data;
     if (header.large_buffer.data && header.large_buffer.size) {
-        // large_buffer exists ? read that first
+
         const auto* p = static_cast<const uint8_t*>(header.large_buffer.data);
         texture_data.insert(texture_data.end(), p, p + header.large_buffer.size);
     }
     else {
-        // fallback to the header reference bytes
+
         TagHash ref(hash.reference);
         if (!ref.data || !ref.size) return std::nullopt;
         const auto* p = static_cast<const uint8_t*>(ref.data);
@@ -28,7 +26,7 @@ LoadTextureData(TagHash hash, bool load_full_mip)
     }
 
     if (load_full_mip && header.large_buffer.data && header.large_buffer.size) {
-        // append the “other half” like Rust
+    
         TagHash ref(hash.reference);
         if (ref.data && ref.size) {
             const auto* p = static_cast<const uint8_t*>(ref.data);
@@ -39,7 +37,6 @@ LoadTextureData(TagHash hash, bool load_full_mip)
     return std::make_pair(header, std::move(texture_data));
 }
 
-// ---- 1:1 loader (Texture::load) ----
 std::optional<LoadedTexture> LoadTexture(ID3D11Device* device, TagHash hash)
 {
     auto ld = LoadTextureData(hash, /*load_full_mip=*/true);
@@ -49,6 +46,7 @@ std::optional<LoadedTexture> LoadTexture(ID3D11Device* device, TagHash hash)
 
     const DXGI_FORMAT fmt = static_cast<DXGI_FORMAT>(tex.dxgiFormat);
 
+    
     if (tex.depth > 1) {
         // -------- Texture3D path (mips = 1) ----------
         auto [rowPitch, slicePitch] = calculate_pitch(fmt, tex.width, tex.height);
@@ -84,8 +82,7 @@ std::optional<LoadedTexture> LoadTexture(ID3D11Device* device, TagHash hash)
         return out;
     }
     else if (tex.arraySize > 1) {
-        // -------- TextureCube path ----------
-        // Build subresources per (mip, arraySlice)
+
         const UINT mipCount = tex.mipCount;
         std::vector<D3D11_SUBRESOURCE_DATA> initial;
         initial.resize(size_t(mipCount) * size_t(tex.arraySize));
@@ -133,8 +130,7 @@ std::optional<LoadedTexture> LoadTexture(ID3D11Device* device, TagHash hash)
         return out;
     }
     else {
-        // -------- Texture2D path ----------
-        // Rust logic: if no large_buffer, trust only mip0 (mipcount_fixed = 1)
+
         UINT mipcount_fixed = (tex.large_buffer.data && tex.large_buffer.size) ? tex.mipCount : 1;
 
         std::vector<D3D11_SUBRESOURCE_DATA> initial;

@@ -46,7 +46,7 @@ uint32_t LoadZone::RegisterBufferBlob(const void* bytes, size_t size, uint32_t i
     return id;
 }
 
-void LoadZone::load_entity_into_scene(TagHash& tag, glm::quat quat, glm::vec4 pos, int recursion_depth)
+void LoadZone::load_entity_into_scene(TagHash& tag, glm::quat quat, glm::vec4 pos, int recursion_depth, EntityType et)
 {
     const SEntity entity = bin::parse<SEntity>(tag.data, tag.size);
 
@@ -62,18 +62,48 @@ void LoadZone::load_entity_into_scene(TagHash& tag, glm::quat quat, glm::vec4 po
                 ent_resource.resource18.Parse<Unk_80806D8F>(resource.entity_resource);
 
             load_entity_model_into_scene(
-                e.MeshFile, quat, pos, e.entity_material_map, e.materials, {});
+                e.MeshFile, quat, pos, e.entity_material_map, e.materials, {}, et);
+        }
+        else if (ent_resource.resource18.type == 0x80808179) {
+            const auto e =
+                ent_resource.resource18.Parse<Unk_80808179>(resource.entity_resource);
+            for (const auto& unk_entry : e.unk10) {
+                if (unk_entry.unk10.type == 0x808067B9) {
+                    const auto e =
+                        unk_entry.unk10.Parse<Unk_808067B9>(resource.entity_resource);
+                    for (const auto& psys : e.particle_systems) {
+                        if (psys.particle_system.success) {
+                            const auto psystem =
+                                bin::parse<SParticleSystem>(psys.particle_system.data,
+                                psys.particle_system.size);
+                            if (psystem.particle_mesh.success){
+								const TagHash mesh_tag(psystem.particle_mesh.tagHash32);
+                                const auto mesh_parent =
+                                    bin::parse<Unk_80806929>(mesh_tag.data,
+                                        mesh_tag.size);
+								std::vector<uint32_t> ext_techs;
+								ext_techs.push_back(psystem.technique_hash);
+                                for (const auto& mesh_entry : mesh_parent.unk10) {
+                              
+                                    load_entity_model_into_scene(
+                                        mesh_entry.sem, quat, pos, {}, ext_techs, {}, EntityType::ParticleSystem);
+									}
+                                }
+							}
+                    }
+				}
+            }
         }
 
         for (const auto& table_entry : ent_resource.relative_table) {
             auto WH = table_entry.Parse<WideHash>(resource.entity_resource);
             if (WH.success && WH.reference == 0x80809AD8) {
-                if (recursion_depth >= 0) {
-                    printf("Max recursion depth reached when loading entity %08x\n", tag.hash);
+                if (recursion_depth >= 5) {
+                    //printf("Max recursion depth reached when loading entity %08x\n", tag.hash);
                     return;
                 }
                 auto th = TagHash(WH.tagHash32);
-                load_entity_into_scene(th, quat, pos, recursion_depth+=1);
+                load_entity_into_scene(th, quat, pos, recursion_depth+=1, EntityType::ChildEntity);
             }
         }
 
@@ -85,7 +115,8 @@ void LoadZone::load_entity_model_into_scene(TagHash sem,
     glm::quat quat,
     glm::vec4 pos,
     std::vector<Unk_808072C5> tech_maps,
-    std::vector<uint32_t> ext_techs, std::optional<Aabb> occlustion_bounds)
+    std::vector<uint32_t> ext_techs, std::optional<Aabb> occlustion_bounds,
+    EntityType et)
 {
     const SEntityModel model = bin::parse<SEntityModel>(sem.data, sem.size);
     if (sem.hash == 0x80E32C94) {
@@ -99,6 +130,7 @@ void LoadZone::load_entity_model_into_scene(TagHash sem,
     re.pos = pos;
     re.rot = quat;
     re.id = sem.hash;
+	re.rtype = et;
     for (const auto& part_group : model.parts) {
         re.meshs.push_back(part_group);
         for (const auto& part : part_group.parts) {
@@ -114,6 +146,7 @@ void LoadZone::load_entity_model_into_scene(TagHash sem,
             }
             else {
                 const auto tech_tag = TagHash(ext_techs[tech_maps[part.varient_shader_index].technique_start]);
+                if (tech_tag.hash == 0xffffffff) { continue; }
                 const auto technique = bin::parse<STechnique>(tech_tag.data, tech_tag.size, bin::Endian::Little);
                 TfxProgram prog = TfxProgram::FromBytecode(technique.PixelShader.TFX_Bytecode,
                     technique.PixelShader.TFX_Constants, tech_tag.hash);
@@ -123,6 +156,7 @@ void LoadZone::load_entity_model_into_scene(TagHash sem,
                 for (const auto ch : prog.channels) re.channels[ch] = 1.0f;
             }
         }
+       
     }
     auto cb = UpdateCB1_Single(model.model_offset, model.model_scale, pos.w, model.texcoord_scale.x, model.texcoord_offset.x, model.texcoord_offset.y, quat, pos);
     re.cb1_single = cb;

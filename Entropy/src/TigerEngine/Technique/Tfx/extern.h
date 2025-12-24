@@ -304,8 +304,7 @@ struct FrameExtern
 
     uint8_t _pad198[0x1A0 - 0x198]{};        // 0x198..0x19F
 
-    // --- vectors with known defaults ---
-    Vec4    unk1a0 = Vec4::one();                 // 0x1A0 default ZERO
+    Vec4    unk1a0 = Vec4::zero();                 // 0x1A0 default ZERO
     Vec4    unk1b0 = Vec4::one();                 // 0x1B0
     Vec4    unk1c0 = Vec4(1.0f, 1.0f, 0.0f, 1.0f); // 0x1C0 default (1,1,0,1)
 
@@ -344,8 +343,8 @@ inline FrameExtern MakeScopeFrameDefaults()
     // Scalars around 0x190—left at defaults unless you want to bind something specific
     f.unk190 = 1.0f;
     f.unk194 = 1.0f;
-
-    f.unk1a0 = Vec4(0.5f, 0.5f, 0.0f, 0.0f);                         // overrides
+	f.unk1a0 = Vec4::zero();                                         // unk9
+                       // overrides
     f.unk1b0 = Vec4::zero();                                         // unk9
     f.unk1c0 = Vec4(1.0f, 1.0f, 0.0f, 1.0f);                         // unk4 (matches comment)
 
@@ -587,20 +586,19 @@ struct DeferredLightExtern {
     // 0x00..0x3F — unknown header in the CB we don't use here
     uint8_t _pad00[0x40]{};
 
-    // 0x40
-    Mat4  unk40;   // used (Alkahest: translate(view.position))
+    Mat4  unk40;  
 
     // 0x80
-    Mat4  unk80;// used (Alkahest: node local_to_world)
+    Mat4  unk80;
 
-    // 0xC0..0xFF
-    Vec4  unkc0 = Vec4::one();        // defaults to 1,1,1,1
-    Vec4  unkd0 = Vec4::one();
-    Vec4  unke0 = Vec4::one();
-    Vec4  unkf0 = Vec4::one();
+
+    Vec4  unkc0 = Vec4(0.0f, 0.0f, 0.0f, 1.0f);
+    Vec4  unkd0 = Vec4(0.0f, 0.0f, 0.0f, 1.0f);
+    Vec4  unke0 = Vec4(0.0f, 0.0f, 0.0f, 1.0f);
+    Vec4  unkf0 = Vec4(0.0f, 0.0f, 0.0f, 1.0f);
 
     // 0x100
-    Vec4  unk100 = Vec4::one();       // Alkahest: light params (leave 1s by default)
+    Vec4  unk100 = Vec4(0.0f, 0.0f, 0.0f, 1.0f);
 
     // 0x110..0x120
     float unk110 = 1.0f;              // unknown ? 1.0

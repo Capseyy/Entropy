@@ -154,6 +154,7 @@ namespace tfx_eval_detail {
             c[(fields >> 2) & 3],
             c[(fields >> 0) & 3]);
     }
+
     inline Vec4 mul_vec4_mat(const Vec4& v, const Mat4& m) {
         return Vec4(
             v.x * m.x_axis.x + v.y * m.y_axis.x + v.z * m.z_axis.x + v.w * m.w_axis.x,
@@ -426,20 +427,16 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
         {
             const auto d = std::get<PushTexParamData>(i.data);
 
-            Vec4 vec{ 0, 0, 0, 0 };
+            Vec4 dims = Vec4(0.25f, 0.25f, 0.25f, 0.0625f);
+      
+            const Vec4 v = swizzle_fields(dims, d.fields);
+            
+        
+            /*std::printf("    PushTexDimensions(Rust): idx=%u fields=0x%02X base=%s -> %s\n",
+                    d.index, d.fields, to_str(dims).c_str(), to_str(v).c_str());*/
+            
 
-            if (d.index < texs.size() && texs[d.index])
-            {
-                const auto& texRef = *texs[d.index];
-
-                vec.x = texRef.width;
-                vec.y = texRef.height;
-                vec.z = texRef.depth;
-                vec.w =texRef.arraySize;
-            }
-            // else: leave zeros if texture index is invalid / missing
-
-            push(vec);
+            push(v);
             break;
         }
 

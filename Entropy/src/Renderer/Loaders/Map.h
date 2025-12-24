@@ -33,9 +33,9 @@ public:
 	std::vector<RenderLight> lights;
 	std::vector<RenderEntity> entities;
 	void ProcessMap();
-	void load_datatable_into_scene(TagHash, glm::quat quat = {}, glm::vec4 pos = {});
-	void load_entity_into_scene(TagHash& tag, glm::quat quat, glm::vec4 pos, int recursion_depth = 0);
-	void load_entity_model_into_scene(TagHash sem, glm::quat rot, glm::vec4 pos, std::vector<Unk_808072C5> tech_maps, std::vector<uint32_t> ext_techs, std::optional<Aabb> Occlusion_Bounds);
+	void load_datatable_into_scene(TagHash, glm::quat quat = {}, glm::vec4 pos = {}, EntityType et = EntityType::Standard);
+	void load_entity_into_scene(TagHash& tag, glm::quat quat, glm::vec4 pos, int recursion_depth = 0, EntityType et = EntityType::Standard);
+	void load_entity_model_into_scene(TagHash sem, glm::quat rot, glm::vec4 pos, std::vector<Unk_808072C5> tech_maps, std::vector<uint32_t> ext_techs, std::optional<Aabb> Occlusion_Bounds, EntityType et);
 	uint32_t RegisterBufferBlob(const void* bytes, size_t size, uint32_t id,
 		UINT bindFlags, UINT stride = 0);
 	MapStaticAO LoadAmbAO(SAmbientOcclusionBuffer tag);

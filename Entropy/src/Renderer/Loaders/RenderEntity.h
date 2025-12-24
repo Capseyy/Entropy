@@ -8,9 +8,33 @@
 #include "TigerEngine/Technique/Tfx/tfx_program.h"
 #include "Renderer/Graphics/Scope/instance.h"
 
+enum class EntityType : uint8_t {
+    Standard = 1,
+    Activity =2,
+    ParticleSystem = 3,
+    Combatant = 4,
+    SkyEntity = 5,
+    ChildEntity = 6,
+};
+
+
+static uint32_t g_entityTypeVisibleMask =
+(1u << (uint32_t)EntityType::Standard) |
+(1u << (uint32_t)EntityType::Activity) |
+(1u << (uint32_t)EntityType::ParticleSystem) |
+(1u << (uint32_t)EntityType::Combatant) |
+(1u << (uint32_t)EntityType::SkyEntity) |
+(1u << (uint32_t)EntityType::ChildEntity);
+
+static inline bool IsEntityTypeVisible(EntityType t)
+{
+    const uint32_t bit = 1u << (uint32_t)t;
+    return (g_entityTypeVisibleMask & bit) != 0;
+}
+
 struct DynamicMeshPart {
     uint32_t techniqueId = 0;
-    std::shared_ptr<EntropyAssets::Technique> technique; // filled by AssetSystem         // which groups this part uses (optional)
+    std::shared_ptr<EntropyAssets::Technique> technique;
     SDynamicMeshPart meshpartinfo;
 };
 
@@ -36,9 +60,9 @@ struct BufferGroupDynamic {
 };
 
 struct RenderEntity {
-    std::vector<SDynamicMesh> meshs;     // geometry + techniques (built by StaticRenderer)
-    SEntityModel meshData;          // raw mesh data (for LOD or other purposes)
-    glm::quat rot;    // per-object transform (if you have one)
+    std::vector<SDynamicMesh> meshs;    
+    SEntityModel meshData;      
+    glm::quat rot;    
     glm::vec4 pos;
     std::vector<uint32_t> external_mats;
     uint32_t id;
@@ -46,5 +70,5 @@ struct RenderEntity {
     std::unordered_map<uint32_t, float_t> channels;
     std::optional<Aabb> occlusion_bounds;
     CB1Payload_override cb1_single;
-    // add per-part overrides if your format has them
+	EntityType rtype = EntityType::Standard;
 };

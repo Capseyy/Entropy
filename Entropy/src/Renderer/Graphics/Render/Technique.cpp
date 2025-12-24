@@ -50,11 +50,14 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
     Microsoft::WRL::ComPtr<ID3D11DeviceContext> pContext, ExternStorage& externs, RenderStates& states, std::vector<std::pair<std::string, TigerScope>>& scopes)
 {
     uint32_t StateSelection = this->StateSelection;
-
     uint64_t UsedScopes = this->usedScopes;
     auto used = TfxScope::from_bits_truncate(this->usedScopes);
 
     const auto sel = DecodeStateSelection(this->StateSelection);
+
+    if (this->id == 0x81087E3B) {
+        int debug_break = 1;
+    }
 
     // Blend ----------------------------------------------------------
     if (sel.blend && *sel.blend < states.blend_states.size() &&
@@ -167,7 +170,8 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
         const size_t n = std::min(this->Textures.size(), this->psTextureSlots.size());
         for (size_t i = 0; i < n; ++i) {
             const UINT slot = this->psTextureSlots[i];
-            ID3D11ShaderResourceView* srv = this->Textures[i] ? this->Textures[i]->Get() : nullptr;
+            ID3D11ShaderResourceView* srv = this->Textures[i]->Get();
+			
             pContext->PSSetShaderResources(slot, 1, &srv);
         }
     }
@@ -207,7 +211,7 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
             pContext->VSSetConstantBuffers(UINT(this->vsCBSlots_fallback), 1, &buf);
         }
     }
-    // Bind all technique constant buffers (your existing behavior)
+  
     if (!this->CBuffers_VS.empty()) {
         for (size_t i = 0; i < this->CBuffers_VS.size(); ++i) {
             ID3D11Buffer* b = this->CBuffers_VS[i]->buffer.Get();
@@ -273,7 +277,6 @@ bool EntropyAssets::Technique::Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11D
 
     const auto sel = DecodeStateSelection(this->StateSelection);
 
-    // Blend ----------------------------------------------------------
     if (sel.blend && *sel.blend < states.blend_states.size() &&
         states.blend_states[*sel.blend]) {
         const float blendFactor[4] = { 1.f, 1.f, 1.f, 1.f };
@@ -302,25 +305,14 @@ bool EntropyAssets::Technique::Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11D
     
     TfxProgram prog = TfxProgram::FromBytecode(this->pixeldata.TFX_Bytecode,
         this->pixeldata.TFX_Constants, this->id);
-    // implement getFloat/getVec4/getMat4 in extern.cpp
-    auto& cb0 = this->pixeldata.SamplerFallback; // std::vector<Vec4> used as cb0 backing
-    /*if (this->id == 0x80CE12FC)
-    {
-		printf("Start EVAL\n");
-		printf("Technique::Bind_With_Channels: Using Evaluate_With_Channels with technique 0x810AF322\n");
-        prog.Evaluate_With_Channels(externs, cb0, channels, this->Textures, true);
-		printf("End EVAL\n");
-    }*/
+
+    auto& cb0 = this->pixeldata.SamplerFallback; 
+ 
     {
         
         prog.Evaluate_With_Channels(externs, cb0, channels, this->Textures, false);
 
     }
-
-    
-
-
-    // writes float4s to cb0[..] as dictated by bytecode
 
     if (this->CBuffers.empty() && this->CBuffers_fallback != nullptr) {
         ID3D11Buffer* buf = this->CBuffers_fallback->buffer.Get();
@@ -344,7 +336,6 @@ bool EntropyAssets::Technique::Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11D
         pContext->PSSetConstantBuffers(UINT(this->psCBSlots_fallback), 1, &buf);
     }
 
-    // Bind all technique constant buffers (your existing behavior)
     if (!this->CBuffers.empty()) {
         for (size_t i = 0; i < this->CBuffers.size(); ++i) {
             ID3D11Buffer* b = this->CBuffers[i]->buffer.Get();
@@ -352,8 +343,6 @@ bool EntropyAssets::Technique::Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11D
         }
     }
 
-    // ---- 3) Parse bytecode to bind the *correct* sampler slots ----
-    // We read PushSampler + SetShaderSampler (stage,slot) and build a mapping.
     struct PsSamplerBind { UINT slot; UINT sampler_index; };
     std::vector<PsSamplerBind> psBinds;
 

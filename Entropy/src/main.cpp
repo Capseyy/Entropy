@@ -26,7 +26,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int)
 	for (const auto& pkg : pcache) {
 		GlobalData::getMap().insert({ pkg.first, pkg.second });
 		for (const auto& h64entry : pkg.second.h64s) {
-			GlobalData::getH64().insert({ h64entry.hash64, TagHash(h64entry.hash32, true)});
+			GlobalData::getH64().insert({ h64entry.hash64, TagHash(h64entry.hash32, true) });
 		}
 	}
 
@@ -39,11 +39,11 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int)
 	for (auto& entry : StringMap) {
 		GlobalData::globalString().insert(entry);
 	}
-	
+
 	auto end = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed = end - start;
 	GenerateTigerActivities();
-	//SearchBungieFiles(0xBC22ED22);
+	//SearchBungieFiles(0x255D6F5B);
 	HRESULT hr = CoInitialize(NULL);
 	if (FAILED(hr))
 	{
@@ -60,5 +60,5 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int)
 			engine.RenderFrame();
 		}
 	}
-    return 0;
+	return 0;
 }

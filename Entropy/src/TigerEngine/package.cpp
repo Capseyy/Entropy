@@ -242,7 +242,7 @@ ExtractResult Package::ExtractEntry(const int EntryNumber)
 
     for (auto& m : maps) {
         const std::string full = PackageName + "_" + std::to_string(m.pid) + ".pkg";
-        m.mp = MapPkgOnce(full);              // uses global mmap cache keyed by full path
+        m.mp = MapPkgOnce(full);
         if (!m.mp) {
             std::fprintf(stderr, "Failed to mmap %s\n", full.c_str());
             delete[] fileBuffer;

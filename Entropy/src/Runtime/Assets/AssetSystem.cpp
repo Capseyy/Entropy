@@ -95,8 +95,6 @@ AssetHandle<ID3D11Buffer> AssetSystem::EnqueueBuffer(uint32_t id)
 std::shared_ptr<ID3D11Buffer> AssetSystem::createBuffer_(const BufferPayload& p)
 {
     D3D11_BUFFER_DESC desc = p.desc;
-
-    // If it looks like a static upload, tell the driver so:
     const bool hasInit = !p.data.empty();
     if (hasInit && (desc.Usage == D3D11_USAGE_DEFAULT) && (desc.CPUAccessFlags == 0)) {
         desc.Usage = D3D11_USAGE_IMMUTABLE;
@@ -109,7 +107,6 @@ std::shared_ptr<ID3D11Buffer> AssetSystem::createBuffer_(const BufferPayload& p)
     HRESULT hr = device_->CreateBuffer(&desc, hasInit ? &srd : nullptr, &buf);
     if (FAILED(hr)) throw std::runtime_error("CreateBuffer failed");
 
-    // Adopt COM pointer correctly
     return std::shared_ptr<ID3D11Buffer>(buf.Detach(),
         [](ID3D11Buffer* b) { if (b) b->Release(); });
 }
@@ -889,8 +886,6 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
             }
         }
 
-        // NEW: Samplers
-        // ---------- COLLECT ----------
         tech->Samplers.reserve(psSampF.size());
         tech->psSamplerSlots.reserve(psSampF.size());
         for (auto& [slot, fut] : psSampF) {

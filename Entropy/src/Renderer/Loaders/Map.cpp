@@ -65,7 +65,7 @@ void LoadZone::ProcessMap()
 	printf("Loaded %d datatables\n", data_tables.size());
 }
 
-inline void LoadZone::load_datatable_into_scene(TagHash table, glm::quat quat_ovd, glm::vec4 pos_ovd) {
+inline void LoadZone::load_datatable_into_scene(TagHash table, glm::quat quat_ovd, glm::vec4 pos_ovd, EntityType et) {
 	//printf("Starting parse for %08x \n", table.hash);
 	auto datatable = bin::parse<SMapDataTable>(table.data, table.size);
 
@@ -110,21 +110,36 @@ inline void LoadZone::load_datatable_into_scene(TagHash table, glm::quat quat_ov
 			break;
 
 		}
-		//case 0x80806a40: {// Ambient OCclusion placementP
-		//	printf("Found AO placement\n");
-		//	auto const resource = entry.resource.Parse<Unk_80806A40>(table);
-		//	auto ao_parent = bin::parse<SAmbientOcclusionParent>(resource.ambient_occlusion.data, resource.ambient_occlusion.size);
-		//	auto ao_map1 = LoadAmbAO(ao_parent.offset_mappings1);
-		//	this->AOMap1 = ao_map1;
-		//	auto ao_map2 = LoadAmbAO(ao_parent.offset_mappings2);
-		//	auto ao_map3 = LoadAmbAO(ao_parent.offset_mappings3);
-		//	break;
+		case 0x80806c5e: {
+			auto const resource = entry.resource.Parse<Unk_80806C5E>(table);
+			const auto expensive_light = bin::parse<SShadowingLight>(resource.expensive_light.data, resource.expensive_light.size);
+			RenderLight ls;
+			ls.idx = 0;
+			ls.light_matrix = expensive_light.light_space_transform;
+			ls.pos = entry.translation;
+			ls.rot = entry.rotation;
+			auto tech = gfx.assets->EnqueueTechnique(expensive_light.technique_shading);
+			ls.parent = resource.expensive_light.hash;
+			ls.technique = tech.get();
+			ls.unk50 = expensive_light.unk50;
+			this->lights.push_back(ls);
+			break;
+		}
+		case 0x80806a40: {// Ambient OCclusion placementP
+			printf("Found AO placement\n");
+			auto const resource = entry.resource.Parse<Unk_80806A40>(table);
+			auto ao_parent = bin::parse<SAmbientOcclusionParent>(resource.ambient_occlusion.data, resource.ambient_occlusion.size);
+			auto ao_map1 = LoadAmbAO(ao_parent.offset_mappings1);
+			this->AOMap1 = ao_map1;
+			//auto ao_map2 = LoadAmbAO(ao_parent.offset_mappings2);
+			//auto ao_map3 = LoadAmbAO(ao_parent.offset_mappings3);
+			break;
 
-		//}
+		}
 		case 0x80806aa3: {
-			//printf("Found Sky placement in %08X \n", table.hash);
+
 			auto resource = entry.resource.Parse<Unk_80806AA3>(table);
-			//printf("Sky Ent Tag: %08X \n", resource.sky_ents.hash);
+	
 			auto header = bin::parse<Unk_80806AA7>(resource.sky_ents.data, resource.sky_ents.size);
 
 			const size_t n = std::min({ header.unk8.size(), header.unk18.size(), header.unk28.size() });
@@ -156,7 +171,7 @@ inline void LoadZone::load_datatable_into_scene(TagHash table, glm::quat quat_ov
 				glm::vec4 pos(translation, s_uniform);
 
 				auto sky_entity = bin::parse<Unk_80806AAE>(u8.unk60.data, u8.unk60.size);
-				load_entity_model_into_scene(sky_entity.sem, rot, pos, {}, {},header.unk18[i].unk0);
+				load_entity_model_into_scene(sky_entity.sem, rot, pos, {}, {},header.unk18[i].unk0, EntityType::SkyEntity);
 			}
 			break;
 		}
@@ -165,11 +180,11 @@ inline void LoadZone::load_datatable_into_scene(TagHash table, glm::quat quat_ov
 		}
 		if (pos_ovd != glm::vec4()) {
 			auto th = TagHash(entry.entity.tagHash32);
-			load_entity_into_scene(th, quat_ovd, pos_ovd);
+			load_entity_into_scene(th, quat_ovd, pos_ovd, 0, et);
 		}
 		else {
 			auto th = TagHash(entry.entity.tagHash32);
-			load_entity_into_scene(th, entry.rotation, entry.translation);
+			load_entity_into_scene(th, entry.rotation, entry.translation, 0, et);
 		}
 		
 
@@ -192,7 +207,7 @@ void LoadZone::load_activity_phase(TagHash table) {
 		case 0x808092d8: {
 			//printf("Found Entity Instance placement\n");
 			auto const resource = activity_resource.unk18.Parse<Unk_808092D8>(activity_resource_tag);
-			load_datatable_into_scene(resource.data_table);
+			load_datatable_into_scene(resource.data_table,{},{},EntityType::Activity);
 			break;
 		}
 		case 0x808098fa: { //entity names
@@ -240,11 +255,11 @@ void LoadZone::load_activity_phase(TagHash table) {
 		case 0x80804695: {//comb spawn points
 
 			auto const resource = activity_resource.unk18.Parse<Unk_80804695>(activity_resource_tag);
-			for (const auto entry : resource.spawn_points) {
+			for (const auto& entry : resource.spawn_points) {
 				if (entry.pointer.type == 0x8080448b) {
 					auto const contest_combat = entry.pointer.Parse<Unk_8080448B>(activity_resource_tag);
 					if (contest_combat.data_table.success) {
-						load_datatable_into_scene(contest_combat.data_table);
+						load_datatable_into_scene(contest_combat.data_table, {}, {}, EntityType::Combatant);
 					}
 					
 				}
@@ -269,9 +284,10 @@ void LoadZone::load_activity_phase(TagHash table) {
 						auto ev_it = this->loaded_entity_instances.find(wid);
 						if (ev_it != this->loaded_entity_instances.end()) {
 							glm::vec4 pos = ev_it->second.pos;
+							pos.w = 1.0f;
 							glm::quat rot = ev_it->second.quat;
 							loaded = true;
-							load_datatable_into_scene(TagHash(combatant.entity_data_table.tagHash32), rot, pos);
+							load_datatable_into_scene(TagHash(combatant.entity_data_table.tagHash32), rot, pos, EntityType::Combatant);
 						}
 					}
 				}
@@ -286,9 +302,10 @@ void LoadZone::load_activity_phase(TagHash table) {
 								auto ev_it = this->loaded_entity_instances.find(wid);
 								if (ev_it != this->loaded_entity_instances.end()) {
 									glm::vec4 pos = ev_it->second.pos;
+									pos.w = 1.0f;
 									glm::quat rot = ev_it->second.quat;
 									loaded = true;
-									load_datatable_into_scene(TagHash(instance.entity_data_table.tagHash32), rot, pos);
+									load_datatable_into_scene(TagHash(instance.entity_data_table.tagHash32), rot, pos, EntityType::Combatant);
 								}
 							}
 						}
@@ -306,10 +323,11 @@ void LoadZone::load_activity_phase(TagHash table) {
 								auto ev_it = this->loaded_entity_instances.find(wid);
 								if (ev_it != this->loaded_entity_instances.end()) {
 									glm::vec4 pos = ev_it->second.pos;
+									pos.w = 1.0f;
 									glm::quat rot = ev_it->second.quat;
 
 									loaded = true;
-									load_datatable_into_scene(TagHash(instance.entity_data_table.tagHash32), rot, pos);
+									load_datatable_into_scene(TagHash(instance.entity_data_table.tagHash32), rot, pos, EntityType::Combatant);
 								}
 							}
 						}
@@ -321,7 +339,7 @@ void LoadZone::load_activity_phase(TagHash table) {
 			}
 			if (!loaded && combatant.entity_data_table.success) {
 				printf("Failed to locate position for combatant in tag %08X at default pos\n", activity_resource_tag.hash);
-				load_datatable_into_scene(TagHash(combatant.entity_data_table.tagHash32), resource.default_rot, resource.default_pos);
+				load_datatable_into_scene(TagHash(combatant.entity_data_table.tagHash32), resource.default_rot, resource.default_pos, EntityType::Combatant);
 			}
 
 		}

@@ -99,6 +99,51 @@ struct Unk_80806AAE
 	TagHash sem;
 };
 
+struct Unk_808091F1
+{
+	std::array<uint32_t, 4> unk0;
+	ResourcePointer unk10;
+};
+
+struct Unk_80808179
+{
+	std::array<uint32_t,118> pad;
+	std::vector<Unk_808091F1> unk10;
+};
+
+struct Unk_808067BB
+{
+	std::array<uint32_t, 4> unk0;
+	TagHash particle_system;
+};
+
+struct SParticleSystem 
+{
+	TagHash particle_data_tag;
+	std::array<uint32_t, 5> unk8;
+	std::uint32_t technique_hash;
+	uint32_t unk1C;
+	WideHash particle_mesh;
+};
+
+struct Unk_80806F06
+{
+	TagHash sem;
+};
+
+struct Unk_80806929
+{
+	uint64_t FileSize;
+	uint64_t unk08;
+	std::vector<Unk_80806F06> unk10;
+};
+
+struct Unk_808067B9
+{
+	std::array<uint32_t, 10> unk0;
+	std::vector<Unk_808067BB> particle_systems;
+};
+
 struct SEntity
 {
 	uint64_t FileSize;

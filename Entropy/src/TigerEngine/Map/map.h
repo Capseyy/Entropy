@@ -38,6 +38,14 @@ struct Unk_80806A63 {//lights
 	TagHash light_collection;
 };
 
+struct Unk_80806C5E {//lights
+	uint64_t unk0;
+	uint64_t unk8;
+	TagHash expensive_light;
+	uint64_t unk14;
+	uint32_t unk1c;
+};
+
 struct Unk_80806A40 {//AO
 	uint64_t unk0;
 	uint64_t unk8;
@@ -117,14 +125,14 @@ struct SLight {
 	float     unkb8;
 	float     unkbc;
 
-	// New in TFS (taghash-like value e.g. 0x9E440E84)
+
 	uint32_t  unkc0;
 
 	TagHash   technique_shading;
 	TagHash   technique_volumetrics;
 	TagHash   technique_compute_lightprobe;
-	TagHash   unkd0; // Unk80806da1
-	TagHash   unkd4; // Unk80806da1
+	TagHash   unkd0;
+	TagHash   unkd4; 
 	uint32_t  unkd8[6];
 };
 
@@ -142,6 +150,43 @@ struct SLightCollection {
 	std::vector<SLight> lights;
 	std::vector<Unk_80809F4F> transforms;
 
+};
+
+struct SShadowingLight {
+	Vec4      unk0;
+	Vec4      unk10;
+	Vec4      unk20;
+	Vec4      unk30;
+	std::array<uint32_t,4>  unk40;
+	Vec4      unk50;
+	glm::mat4 light_space_transform; // 16 floats
+
+	uint32_t  unka0;
+	uint32_t  unka4;
+	uint32_t  unka8;
+	float     unkac;
+	float     unkb0;
+	float     unkb4;
+	float     unkb8;
+	float     unkbc;
+	float     far_plane;
+	float     half_fov;
+
+	uint32_t  unkc8;
+	float     unkcc;
+
+	TagHash   technique_shading;
+	TagHash   technique_shading_shadowing;
+	TagHash   technique_volumetrics;
+	TagHash   technique_volumetrics_shadowing;
+	TagHash   technique_compute_lightprobe;
+	TagHash   technique_compute_lightprobe_shadowing;
+
+	TagHash   unke8; // Unk80806da1
+	TagHash   unkec; // Unk80806da1
+
+	float     unkf0[5];
+	uint8_t   unk104[12];
 };
 
 struct MapStaticAO {
