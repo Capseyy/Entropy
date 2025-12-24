@@ -175,6 +175,17 @@ inline void LoadZone::load_datatable_into_scene(TagHash table, glm::quat quat_ov
 			}
 			break;
 		}
+		case 0x80806C7D: {
+			auto resource = entry.resource.Parse<Unk_80806C7D>(table);
+			auto terrain_data = bin::parse<STerrain>(resource.terrain_tag.data, resource.terrain_tag.size);
+			RenderTerrain rt;
+			rt.id = resource.terrain_tag.hash;
+			rt.meshData = terrain_data;
+			rt.occlusion_bounds = terrain_data.bounds;
+			this->terrain_patches.emplace_back(rt);
+
+			break;
+		}
 		default:
 			break;
 		}

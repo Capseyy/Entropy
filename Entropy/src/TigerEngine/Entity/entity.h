@@ -99,6 +99,68 @@ struct Unk_80806AAE
 	TagHash sem;
 };
 
+struct STerrainPart
+{
+	uint32_t Technique;
+	uint32_t IndexStart;
+	uint16_t IndexCount;
+	uint8_t groupIndex;
+	uint8_t detailLevel;
+};
+
+struct STerrainGroup
+{
+	Vec4 Unk0;
+	float_t Unk10;
+	float_t Unk14;
+	float_t Unk18;
+	uint32_t Unk1C;
+	Vec4 Unk20;
+	uint32_t Unk30;
+	uint32_t Unk34;
+	uint32_t Unk38;
+	uint32_t Unk3C;
+	uint32_t Unk40;
+	uint32_t Unk44;
+	uint32_t Unk48;
+	uint32_t Unk4C;
+	TagHash dyemap;
+	uint32_t unk54;
+	uint32_t unk58;
+	uint32_t unk5c;
+
+
+};
+
+struct STerrain
+{
+	uint64_t filesize;
+	uint64_t unk8;
+	Aabb bounds;
+	Vec4 transform;
+	SkipTo<0x50> skip;
+	std::vector<STerrainGroup> mesh_groups;
+	//std::array<uint32_t, 4> mesh_groups_skip;
+	TagHash Vertex0;
+	TagHash Vertex1;
+	TagHash IndexBuffer;
+	uint32_t Unk_technique;
+	uint32_t Unk_technique2;
+	SkipTo<0x78> unk78;
+	std::vector<STerrainPart> mesh_parts;
+
+};
+
+struct Unk_80806C7D
+{
+	uint64_t unk0;
+	uint64_t unk8;
+	uint32_t unk10;
+	uint32_t unk14;
+	TagHash terrain_tag;
+	TagHash occlusion_bound_tag;
+};
+
 struct Unk_808091F1
 {
 	std::array<uint32_t, 4> unk0;

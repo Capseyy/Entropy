@@ -441,6 +441,30 @@ void Graphics::EnsureStaticBufferRegistered(const SStaticMeshData& mesh,
 	}
 }
 
+void Graphics::EnsureBufferRegistered(TagHash tag,
+	StaticBufKind which,
+	UINT addFlags)
+{
+
+	const uint32_t id = tag.hash;
+	if (id == 0 || id == 0xFFFFFFFFu) return;
+
+	if (!registry->HasBuffer(id)) {
+		auto payload = BuildBufferPayloadFromTag(tag, which);
+		payload.desc.BindFlags |= addFlags;     // merge required flags for upcoming use
+		registry->RegisterBuffer(id, std::move(payload));
+		return;
+	}
+
+	auto payload = registry->GetBuffer(id);
+	const UINT merged = payload.desc.BindFlags | addFlags;
+	if (merged != payload.desc.BindFlags) {
+		payload.desc.BindFlags = merged;
+		registry->RegisterBuffer(id, std::move(payload));
+	}
+}
+
+
 void Graphics::EnsureSpecialBufferRegistered(const SStaticSpecial& sp,
 	StaticBufKind which,
 	UINT addFlags)
@@ -659,17 +683,24 @@ void CreateCB1_FallBack(ID3D11Device* dev) {
 void Graphics::InitializeInputLayouts()
 {
 
-	for (size_t i = 0; i < INPUT_LAYOUTS.size(); ++i) {
+	for (size_t i = 0; i < INPUT_LAYOUTS.size(); ++i)
+	{
 		Microsoft::WRL::ComPtr<ID3D11InputLayout> il;
+
+		// Skip empty layouts (prevents E_INVALIDARG spam)
+		if (INPUT_LAYOUTS[i].elements.empty())
+			continue;
+
 		HRESULT hr = CreateInputLayoutFromTigerLayout(pDevice.Get(), INPUT_LAYOUTS[i], il);
-		if (FAILED(hr) || !il) {
+		if (FAILED(hr) || !il)
+		{
 			char msg[256];
 			sprintf_s(msg, "Tiger IL[%zu] creation failed (hr=0x%08X)\n", i, (unsigned)hr);
-			
+			OutputDebugStringA(msg);
+			continue;
 		}
-		else {
-			tiger_input_layouts[i] = std::move(il);
-		}
+
+		tiger_input_layouts[i] = std::move(il);
 	}
 }
 
@@ -720,7 +751,6 @@ void BuildViewAndProj(View& viewState, const Camera& camera, int windowWidth, in
 	const float aspect = float(windowWidth) / float(windowHeight);
 	const float zn = std::max(0.001f, camera.GetNearZ());
 
-	// Reversed-Z infinite LH projection:
 	const float t = tanf(0.5f * fovY);
 	const float m11 = 1.0f / (t * aspect);
 	const float m22 = 1.0f / t;
@@ -1025,6 +1055,25 @@ void Graphics::RunPostprocessChain()
 	}
 }
 
+void Graphics::CreateTerrainCB64()
+{
+	D3D11_BUFFER_DESC bd{};
+	bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+	bd.ByteWidth = 64;                    // exactly 64 bytes
+	bd.Usage = D3D11_USAGE_DYNAMIC;
+	bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+	bd.MiscFlags = 0;
+	bd.StructureByteStride = 0;
+
+	// optional: zero init
+	TerrainCB64 zero{};
+	D3D11_SUBRESOURCE_DATA init{};
+	init.pSysMem = &zero;
+
+	HRESULT hr = pDevice->CreateBuffer(&bd, &init, g_terrain_cb.GetAddressOf());
+	COM_ERROR_IF_FAILED(hr, "CreateTerrainCB64 failed");
+}
+
 bool Graphics::ResolveDynamicPartOnce(
 	const SDynamicMesh& dm,
 	const SDynamicMeshPart& part,
@@ -1080,6 +1129,112 @@ bool Graphics::ResolveDynamicPartOnce(
 	out.ready = true;
 	return true;
 }
+
+void Graphics::DrawTerrain(const RenderTerrain& rt, const View& view)
+{
+	char buf[256];
+
+	if (rt.occlusion_bounds)
+	{
+		using namespace culldbg;
+		const auto fr = Frustum::FromColumnMajor(view.world_to_projective, true);
+		int dummy = 0;
+		if (!aabb_in_frustum_dbg(fr, *rt.occlusion_bounds, &dummy, false))
+			return;
+	}
+
+
+	wchar_t label[128];
+	_snwprintf_s(label, _TRUNCATE, L"Draw Terrain %08X [%ls]",
+		rt.id, StageName(TfxRenderStage::GenerateGbuffer));
+	ScopedGpuEvent _object(anno_.Get(), label);
+
+	EnsureBufferRegistered(rt.meshData.IndexBuffer, StaticBufKind::Index, D3D11_BIND_INDEX_BUFFER);
+	EnsureBufferRegistered(rt.meshData.Vertex0, StaticBufKind::Vertex, D3D11_BIND_VERTEX_BUFFER);
+	EnsureBufferRegistered(rt.meshData.Vertex1, StaticBufKind::Vertex, D3D11_BIND_VERTEX_BUFFER);
+
+	auto& fIB = GetOrEnqueueBuffer(rt.meshData.IndexBuffer.hash, D3D11_BIND_INDEX_BUFFER);
+	auto& fV0 = GetOrEnqueueBuffer(rt.meshData.Vertex0.hash, D3D11_BIND_VERTEX_BUFFER);
+	auto& fV1 = GetOrEnqueueBuffer(rt.meshData.Vertex1.hash, D3D11_BIND_VERTEX_BUFFER);
+
+	if (!FutReady(fIB) || !FutReady(fV0) || !FutReady(fV1))
+		return;
+
+	std::shared_ptr<ID3D11Buffer> ib = fIB.get();
+	std::shared_ptr<ID3D11Buffer> vb0 = fV0.get();
+	std::shared_ptr<ID3D11Buffer> vb1 = fV1.get();
+
+	const auto pIB = registry->GetBuffer(rt.meshData.IndexBuffer.hash);
+	const auto pVB0 = registry->GetBuffer(rt.meshData.Vertex0.hash);
+	const auto pVB1 = registry->GetBuffer(rt.meshData.Vertex1.hash);
+
+	const DXGI_FORMAT idxFmt = (pIB.stride == 2) ? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT;
+	const UINT stride0 = pVB0.stride;
+	const UINT stride1 = pVB1.stride;
+
+	// ---- bind shared IA buffers once ----
+	{
+		pContext->IASetInputLayout(
+			(0xA < tiger_input_layouts.size() && tiger_input_layouts[22])
+			? tiger_input_layouts[22].Get()
+			: nullptr);
+
+		ID3D11Buffer* vbs[2] = { vb0.get(), vb1.get() };
+		UINT strides[2] = { stride0, stride1 };
+		UINT offs[2] = { 0,0 };
+		pContext->IASetVertexBuffers(0, 2, vbs, strides, offs);
+
+		pContext->IASetIndexBuffer(ib.get(), idxFmt, 0);
+	}
+
+	for (const auto& mesh_part : rt.meshData.mesh_parts)
+	{
+		if (mesh_part.detailLevel >= 1) continue;
+
+		uint32_t techId = mesh_part.Technique;
+		auto it = TechCache_.find(techId);
+		if (it == TechCache_.end()) {
+			TagHash th(techId);
+			it = TechCache_.emplace(techId, assets->EnqueueTechnique(th)).first;
+		}
+		
+		std::shared_ptr<EntropyAssets::Technique> tech;
+		try { tech = it->second.get(); }
+		catch (...) { continue; }
+		if (!tech) continue;
+		auto& mesh_group_used = rt.meshData.mesh_groups[mesh_part.groupIndex];
+		TerrainCB64 cb = MakeTerrainCB64(
+			rt.meshData.transform.x, rt.meshData.transform.y, rt.meshData.transform.z, rt.meshData.transform.w,
+			mesh_group_used.Unk20.x, mesh_group_used.Unk20.y, mesh_group_used.Unk20.z, mesh_group_used.Unk20.w
+		);
+
+		D3D11_MAPPED_SUBRESOURCE m{};
+		if (SUCCEEDED(pContext->Map(g_terrain_cb.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &m)))
+		{
+			std::memcpy(m.pData, &cb, sizeof(cb));     // 64 bytes
+			pContext->Unmap(g_terrain_cb.Get(), 0);
+		}
+
+		
+
+		tech->Bind(pDevice, pContext, externs, states, scopes);
+
+		pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+
+		const UINT firstIndex = (UINT)mesh_part.IndexStart;
+		const UINT indexCount = (UINT)mesh_part.IndexCount;
+		pContext->RSSetState(rasterizerStateGBuffer.Get());
+		if (indexCount == 0) continue;
+		ID3D11Buffer* b = g_terrain_cb.Get();
+		pContext->VSSetConstantBuffers(11, 1, &b);
+
+		pContext->DrawIndexed(
+			indexCount,
+			firstIndex,
+			0);
+	}
+}
+
 
 void Graphics::DrawEntity(const RenderEntity& rs,
 	const View& view,
@@ -1141,9 +1296,6 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 	wchar_t label[128];
 	_snwprintf_s(label, _TRUNCATE, L"Draw Dynamic %08X [%ls]", rs.id, StageName(stage));
 	ScopedGpuEvent _object(anno_.Get(), label);
-	if (rs.id == 0x80E32C94) {
-		int bp = 0;
-	}
 	for (size_t meshIndex = 0; meshIndex < rs.meshs.size(); ++meshIndex)
 	{
 		const SDynamicMesh& dm = rs.meshs[meshIndex];
@@ -1739,12 +1891,17 @@ void Graphics::RenderFrame()
 
 		
 		for (auto& rs : staticsToDraw) DrawStaticMesh(rs, viewState, TfxRenderStage::GenerateGbuffer);
+		for (auto& rt : this->terrainToDraw) {
+			DrawTerrain(rt, viewState);
+		}
+	}
 		for (auto& re : entitiesToDraw)
 			DrawEntity(re, viewState, TfxRenderStage::GenerateGbuffer);
 		SubmitPackets(pContext.Get(), packets_,TfxRenderStage::GenerateGbuffer);
 		pContext->Unmap(m_instanceSB.Get(), 0);
 		m_instWritePtr = nullptr;
-	}
+
+		
 	{
 		ScopedGpuEvent e(anno_.Get(), L"copy (RT1->RT1_Clone)");
 		pContext->CopyResource(gbufA.rt1_read.tex.Get(), gbufA.rt1.tex.Get());
@@ -2151,6 +2308,7 @@ void Graphics::RenderFrame()
 				this->staticsToDraw.clear();
 				this->lightsToDraw.clear();
 				this->entitiesToDraw.clear();
+				this->terrainToDraw.clear();
 				dynamicPartCache_.clear();
 				loadzone = std::make_unique<LoadZone>(*this);
 				loadzone->parentHash = map.map_hash;   
@@ -2162,12 +2320,14 @@ void Graphics::RenderFrame()
 				this->lightsToDraw = loadzone->lights;
 				this->entitiesToDraw = loadzone->entities;
 				this->staticAO1 = loadzone->AOMap1;
+				this->terrainToDraw = loadzone->terrain_patches;
 			};
 
 		cbs.on_map_chosen = [&](const ActivityDef& act, const MapDef& map) {
 			this->staticsToDraw.clear();
 			this->lightsToDraw.clear();
 			this->entitiesToDraw.clear();
+			this->terrainToDraw.clear();
 
 			loadzone = std::make_unique<LoadZone>(*this);
 			loadzone->parentHash = map.map_hash;
@@ -2177,6 +2337,7 @@ void Graphics::RenderFrame()
 			this->lightsToDraw = loadzone->lights;
 			this->entitiesToDraw = loadzone->entities;
 			this->staticAO1 = loadzone->AOMap1;
+			this->terrainToDraw = loadzone->terrain_patches;
 			};
 
 		DrawActivityBrowser(provider, cbs);
@@ -2559,7 +2720,7 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 	registry = std::make_unique<RuntimeAssetRegistry>();
 	assets = std::make_unique<AssetSystem>(pDevice.Get(), pContext.Get(), *pool, *mainQueue, registry.get());
 	// Create the camera constant buffer
-
+	CreateTerrainCB64();
 	CreateScopeViewCB12(pDevice.Get());
 	CreateInstanceBuffer();
 	CreateCB1(pDevice.Get());

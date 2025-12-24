@@ -25,7 +25,4 @@ struct RenderStatic {
     std::vector<uint32_t> techniques;
 	uint32_t id = 0;
 
-
-
-    // add per-part overrides if your format has them
 };

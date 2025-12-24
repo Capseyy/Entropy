@@ -546,24 +546,23 @@ AssetSystem::createBufferSRV_(const BufferPayload& p, const BufferSRVMeta& meta)
 {
     using Microsoft::WRL::ComPtr;
 
-    // 1) Prefer the existing GPU buffer if one already exists in your registry.
-    //    (Assumes R_ / registry has already registered it via RegisterBuffer).
+
     std::shared_ptr<ID3D11Buffer> existing;
     try {
         existing = bufferCache_.GetOrLoad(p.id, [&] { return createBuffer_(p); }).get(); // if you store id in payload
     }
     catch (...) {
-        // ignore; fall back to local creation
+        
     }
 
     ComPtr<ID3D11Buffer> bufCom;
     if (existing) {
-        // borrow & AddRef to make a ComPtr
+        
         ID3D11Buffer* raw = existing.get();
-        if (raw) { raw->AddRef(); bufCom.Attach(raw); }  // <-- AddRef before Attach        // ComPtr from shared_ptr (via operator=) AddRefs
+        if (raw) { raw->AddRef(); bufCom.Attach(raw); } 
     }
     else {
-        // local creation (IMMUTABLE when possible)
+     
         D3D11_BUFFER_DESC bd = p.desc;
         const bool hasInit = !p.data.empty();
         if (hasInit && bd.Usage == D3D11_USAGE_DEFAULT && bd.CPUAccessFlags == 0)
@@ -576,10 +575,10 @@ AssetSystem::createBufferSRV_(const BufferPayload& p, const BufferSRVMeta& meta)
         if (FAILED(hr)) throw std::runtime_error("CreateBuffer (SRV) failed");
     }
 
-    // 2) Build the SRV using the *meta* you passed in (you were ignoring it).
+   
     D3D11_SHADER_RESOURCE_VIEW_DESC sd{};
     sd.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
-    sd.Format = meta.typedFormat;            // <- use meta
+    sd.Format = meta.typedFormat;            
     sd.Buffer.FirstElement = 0;
     sd.Buffer.NumElements = std::max<UINT>(1, p.desc.ByteWidth / std::max<UINT>(1, meta.bytesPerElement));
 
@@ -607,8 +606,8 @@ AssetSystem::createCBufferFromRaw_(const void* bytes, UINT sizeBytes)
 
     D3D11_BUFFER_DESC bd{};
     bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-    bd.ByteWidth = byteWidth;                    // must be multiple of 16
-    bd.Usage = D3D11_USAGE_DYNAMIC;            // fallback is static
+    bd.ByteWidth = byteWidth;                   
+    bd.Usage = D3D11_USAGE_DYNAMIC;       
     bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
  
     D3D11_SUBRESOURCE_DATA srd{};
@@ -658,7 +657,7 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
         //EvaluateExpressionEoF(ops, externs, cb0, &Tfx.PixelShader.TFX_Constants, temps);
 
 
-        // --------- Shaders (your existing) ----------
+       
         const uint32_t vsId = Tfx.VertexShader.ShaderTag.reference;
         const uint32_t psId = Tfx.PixelShader.ShaderTag.reference;
        
@@ -676,15 +675,15 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
             {
                 if (R_->HasSampler(sampId)) return true;
 
-                // Try to build from tag bytes if you have a sampler blob
+              
                 TagHash sTag(sampId);
                 std::optional<D3D11_SAMPLER_DESC> descOpt;
                 if (sTag.data && sTag.size) {
-                    // NOTE: Do NOT define BuildSamplerDescFromTag here; just call it.
+                  
                     descOpt = BuildSamplerDescFromTag(sTag);
                 }
 
-                // Fallback default if no blob / parse failed
+         
                 D3D11_SAMPLER_DESC d{};
                 if (descOpt) {
                     d = *descOpt;
@@ -715,7 +714,7 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
                     // any padding up to byteSize stays zeroed
                 }
                 else {
-                    // no blob? register an empty 16-byte cbuffer
+                
                     meta.byteSize = 16u;
                 }
 
@@ -727,7 +726,7 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
         if (ensureShaderPayload(vsId)) fVS = EnqueueVertexShader(vsId).future;
         if (ensureShaderPayload(psId)) fPS = EnqueuePixelShader(psId).future;
 
-        // --------- Textures (your existing) ----------
+        // --------- Textures
         using TexFuture = std::shared_future<std::shared_ptr<EntropyAssets::Texture2DRes>>;
         using TexFuture3D = std::shared_future<std::shared_ptr<EntropyAssets::Texture3DRes>>;
         std::vector<std::pair<UINT, TexFuture>> psTexF;
@@ -735,7 +734,7 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
         psTexF.reserve(Tfx.PixelShader.Textures.size());
         for (const auto& t : Tfx.PixelShader.Textures) {
             const UINT slot = t.TextureIndex;
-            const uint32_t texId = t.Texture.tagHash32;   // your mapping
+            const uint32_t texId = t.Texture.tagHash32;
             TagHash texTag(texId);
             if (texTag.sub_type == 3) {
                 //printf("Found 3s tex");
@@ -786,12 +785,12 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
         for (size_t i = 0; i < Tfx.PixelShader.Samplers.size(); ++i)
         {
             const auto& s = Tfx.PixelShader.Samplers[i];
-            const uint32_t id = s.sampler.reference;                      // sampler id (32-bit)
+            const uint32_t id = s.sampler.reference;                     
 
-            // prefer explicit slot if present; otherwise index
+         
             const UINT slot = i;
 
-            // **critical**: put a payload into the registry BEFORE enqueue
+           
             if (!ensureSamplerPayload(id)) continue;
 
             psSampF.emplace_back(slot, EnqueueSampler(id).future);

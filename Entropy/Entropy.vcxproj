@@ -299,6 +299,7 @@
     <ClInclude Include="src\Renderer\Loaders\Map.h" />
     <ClInclude Include="src\Renderer\Loaders\RenderLights.h" />
     <ClInclude Include="src\Renderer\Loaders\RenderStatic.h" />
+    <ClInclude Include="src\Renderer\Loaders\RenderTerrain.h" />
     <ClInclude Include="src\Renderer\Loaders\Scope.h" />
     <ClInclude Include="src\Renderer\Loaders\TextureLoader.h" />
     <ClInclude Include="src\Runtime\Assets\AssetCache.h" />

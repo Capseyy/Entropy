@@ -10,12 +10,13 @@
 #include "RenderStatic.h"
 #include "RenderLights.h"
 #include "RenderEntity.h"
-//#include "TigerEngine/Entity/entity.h"                   // std::cbrt, std::abs
+#include "RenderTerrain.h"
 
 
 class Graphics;
-struct RenderStatic; // if not already included, forward-declare is fine for member usage
+struct RenderStatic; 
 struct RenderLight;
+struct RenderTerrain;
 
 struct EntityVecPair
 {
@@ -32,6 +33,7 @@ public:
 	std::vector<RenderStatic> statics;
 	std::vector<RenderLight> lights;
 	std::vector<RenderEntity> entities;
+	std::vector<RenderTerrain> terrain_patches;
 	void ProcessMap();
 	void load_datatable_into_scene(TagHash, glm::quat quat = {}, glm::vec4 pos = {}, EntityType et = EntityType::Standard);
 	void load_entity_into_scene(TagHash& tag, glm::quat quat, glm::vec4 pos, int recursion_depth = 0, EntityType et = EntityType::Standard);

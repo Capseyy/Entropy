@@ -98,7 +98,7 @@ void LoadZone::load_entity_into_scene(TagHash& tag, glm::quat quat, glm::vec4 po
         for (const auto& table_entry : ent_resource.relative_table) {
             auto WH = table_entry.Parse<WideHash>(resource.entity_resource);
             if (WH.success && WH.reference == 0x80809AD8) {
-                if (recursion_depth >= 5) {
+                if (recursion_depth >= 10) {
                     //printf("Max recursion depth reached when loading entity %08x\n", tag.hash);
                     return;
                 }

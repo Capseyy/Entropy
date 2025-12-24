@@ -131,6 +131,14 @@ struct ResolvedDynamicPart {
 	bool ready = false;
 };
 
+struct ResolvedTerrainPart {
+	std::shared_ptr<ID3D11Buffer> ib, vb0, vb1;
+	UINT stride0 = 0, stride1 = 0, stride2 = 0;
+	DXGI_FORMAT idxFmt = DXGI_FORMAT_R16_UINT;
+	uint32_t indexStart = 0, indexCount = 0;
+	bool ready = false;
+};
+
 struct InstanceData
 {
 	DirectX::XMFLOAT4 translation; // xyz + maybe w (leave as 4 floats for alignment)
@@ -170,13 +178,15 @@ private:
 	bool InitializeRenderGlobals();
 	void InitializeInputLayouts();
 	void InitAnnotation();
+	void EnsureBufferRegistered(TagHash Tag, StaticBufKind which, UINT flags);
 	void DrawEntity(const RenderEntity& rs, const View& view, TfxRenderStage = TfxRenderStage::GenerateGbuffer);
+	void DrawTerrain(const RenderTerrain& rt, const View& view);
 	void RunPostprocessChain();
-	//Asset Cache
+	Microsoft::WRL::ComPtr<ID3D11Buffer> g_terrain_cb;
 	std::unordered_map<uint32_t, std::shared_future<std::shared_ptr<ID3D11Buffer>>> bufferFut_;      // VB/UV/IB
 	std::unordered_map<uint32_t, std::shared_future<std::shared_ptr<EntropyAssets::BufferSRVRes>>> bufferSrvFut_; // color SRV
 	std::shared_ptr<EntropyAssets::Technique> GetStaticTechniqueOrEnqueue(uint32_t techId);
-
+	void CreateTerrainCB64();
 	std::unordered_map<uint64_t, ResolvedEntityPart> entityPartCache_;
 
 	std::mutex bufferCacheMutex_;
@@ -190,7 +200,7 @@ private:
 	std::unordered_map<uint64_t, ResolvedDynamicPart> dynamicPartCache_;
 
 	std::unordered_map<uint64_t, ResolvedSpecial> specialsCache_;
-	std::array<Microsoft::WRL::ComPtr<ID3D11InputLayout>, 15> tiger_input_layouts;
+	std::array<Microsoft::WRL::ComPtr<ID3D11InputLayout>, 23> tiger_input_layouts;
 	std::vector<DrawPacket> packets_;
 	Microsoft::WRL::ComPtr<ID3D11Device>           pDevice;
 	Microsoft::WRL::ComPtr<ID3D11DeviceContext>    pContext;
@@ -328,6 +338,7 @@ private:
 	std::vector<RenderStatic> staticsToDraw;
 	std::vector<RenderLight> lightsToDraw;
 	std::vector<RenderEntity> entitiesToDraw;
+	std::vector<RenderTerrain> terrainToDraw;
 
 	Microsoft::WRL::ComPtr<ID3D11BlendState> bsAdditive2RT;
 

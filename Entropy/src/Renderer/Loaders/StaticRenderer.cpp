@@ -45,8 +45,7 @@ using namespace DirectX;
 
 RenderStatic StaticRenderer::Build()
 {
-    // Construct RenderStatic with required arguments
-    // Assuming RenderStatic requires a reference to techniques vector
+
     auto static_tag = TagHash(static_hash_);
     auto s = bin::parse<SStaticModel>(static_tag.data, static_tag.size, bin::Endian::Little);
 
