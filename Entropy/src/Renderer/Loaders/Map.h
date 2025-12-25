@@ -11,7 +11,10 @@
 #include "RenderLights.h"
 #include "RenderEntity.h"
 #include "RenderTerrain.h"
-
+#include <vector>
+#include <optional>
+#include <cstdint>
+#include <unordered_set>
 
 class Graphics;
 struct RenderStatic; 
@@ -24,6 +27,20 @@ struct EntityVecPair
 	glm::quat quat;
 };
 
+struct CachedSpawn
+{
+	uint32_t sem_hash32 = 0xFFFFFFFFu;                 
+	std::vector<Unk_808072C5> tech_maps;
+	std::vector<uint32_t> ext_techs;
+	std::optional<Aabb> occlusion_bounds;
+	EntityType et = EntityType::ChildEntity;
+};
+
+static inline uint64_t MakeEntityCacheKey(uint32_t entity_hash32, uint32_t remainingDepth, EntityType et)
+{
+	return (uint64_t(entity_hash32) << 32) ^ (uint64_t(remainingDepth) << 8) ^ uint64_t(uint8_t(et));
+}
+
 class LoadZone
 {
 public:
@@ -34,6 +51,7 @@ public:
 	std::vector<RenderLight> lights;
 	std::vector<RenderEntity> entities;
 	std::vector<RenderTerrain> terrain_patches;
+	std::unordered_map<uint64_t, std::vector<CachedSpawn>> entity_spawn_cache;
 	void ProcessMap();
 	void load_datatable_into_scene(TagHash, glm::quat quat = {}, glm::vec4 pos = {}, EntityType et = EntityType::Standard);
 	void load_entity_into_scene(TagHash& tag, glm::quat quat, glm::vec4 pos, int recursion_depth = 0, EntityType et = EntityType::Standard);
@@ -47,4 +65,5 @@ public:
 	std::unordered_map<uint64_t, std::string> loaded_entity_names;
 	std::unordered_map<uint64_t, EntityVecPair> loaded_entity_instances; //used for mapping combatants to correct positions
 	std::unordered_map<uint64_t, std::vector<uint64_t>> spawn_rule_maps;
+	std::vector<CachedSpawn> collect_entity_spawns(TagHash entityTag, uint32_t remainingDepth, EntityType et);
 };

@@ -48,68 +48,33 @@ uint32_t LoadZone::RegisterBufferBlob(const void* bytes, size_t size, uint32_t i
 
 void LoadZone::load_entity_into_scene(TagHash& tag, glm::quat quat, glm::vec4 pos, int recursion_depth, EntityType et)
 {
-    const SEntity entity = bin::parse<SEntity>(tag.data, tag.size);
+    const uint32_t maxDepth = 10;
 
-    for (const auto& resource : entity.resources) {
+    if (recursion_depth >= int(maxDepth))
+        return;
 
-        const auto ent_resource =
-            bin::parse<SEntityResource>(resource.entity_resource.data,
-                resource.entity_resource.size);
+    // remaining depth budget (including this node)
+    const uint32_t remainingDepth = maxDepth - uint32_t(recursion_depth);
 
-        if (ent_resource.resource18.type == 0x80806D8F)
-        {
-            const auto e =
-                ent_resource.resource18.Parse<Unk_80806D8F>(resource.entity_resource);
+    // Build/fetch cached expanded spawn list
+    auto spawns = collect_entity_spawns(tag, remainingDepth, et);
 
-            load_entity_model_into_scene(
-                e.MeshFile, quat, pos, e.entity_material_map, e.materials, {}, et);
-        }
-        else if (ent_resource.resource18.type == 0x80808179) {
-            const auto e =
-                ent_resource.resource18.Parse<Unk_80808179>(resource.entity_resource);
-            for (const auto& unk_entry : e.unk10) {
-                if (unk_entry.unk10.type == 0x808067B9) {
-                    const auto e =
-                        unk_entry.unk10.Parse<Unk_808067B9>(resource.entity_resource);
-                    for (const auto& psys : e.particle_systems) {
-                        if (psys.particle_system.success) {
-                            const auto psystem =
-                                bin::parse<SParticleSystem>(psys.particle_system.data,
-                                psys.particle_system.size);
-                            if (psystem.particle_mesh.success){
-								const TagHash mesh_tag(psystem.particle_mesh.tagHash32);
-                                const auto mesh_parent =
-                                    bin::parse<Unk_80806929>(mesh_tag.data,
-                                        mesh_tag.size);
-								std::vector<uint32_t> ext_techs;
-								ext_techs.push_back(psystem.technique_hash);
-                                for (const auto& mesh_entry : mesh_parent.unk10) {
-                              
-                                    load_entity_model_into_scene(
-                                        mesh_entry.sem, quat, pos, {}, ext_techs, {}, EntityType::ParticleSystem);
-									}
-                                }
-							}
-                    }
-				}
-            }
-        }
+    // Instantiate (multiple instances still work because this is per call)
+    for (auto& s : spawns)
+    {
+        TagHash sem(s.sem_hash32);
 
-        for (const auto& table_entry : ent_resource.relative_table) {
-            auto WH = table_entry.Parse<WideHash>(resource.entity_resource);
-            if (WH.success && WH.reference == 0x80809AD8) {
-                if (recursion_depth >= 10) {
-                    //printf("Max recursion depth reached when loading entity %08x\n", tag.hash);
-                    return;
-                }
-                auto th = TagHash(WH.tagHash32);
-                load_entity_into_scene(th, quat, pos, recursion_depth+=1, EntityType::ChildEntity);
-            }
-        }
-
+        load_entity_model_into_scene(
+            sem,
+            quat,
+            pos,
+            s.tech_maps,
+            s.ext_techs,
+            s.occlusion_bounds,
+            s.et
+        );
     }
-
-} 
+}
 
 void LoadZone::load_entity_model_into_scene(TagHash sem,
     glm::quat quat,

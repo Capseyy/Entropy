@@ -5,8 +5,8 @@
 #undef max
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
-#include <glm/gtc/type_ptr.hpp>         // glm::make_mat4
-#include <glm/gtx/matrix_decompose.hpp> // glm::decompose
+#include <glm/gtc/type_ptr.hpp>         
+#include <glm/gtx/matrix_decompose.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <cmath>
 
@@ -149,6 +149,7 @@ inline void LoadZone::load_datatable_into_scene(TagHash table, glm::quat quat_ov
 				const auto& u18 = header.unk18[i];
 
 				if (u8.unk70 == 5) continue;
+				//if (u8.unk70 != 2) continue;
 
 				const glm::mat4 M = glm::make_mat4(u8.transform.data());
 
@@ -287,6 +288,7 @@ void LoadZone::load_activity_phase(TagHash table) {
 		const auto& resource = spawn_pair.first;
 		const auto& activity_resource_tag = spawn_pair.second;
 		for (const auto& combatant : resource.combatant_instances) {
+
 			bool loaded = false;
 			if (combatant.entity_data_table.success) {
 				auto it = this->spawn_rule_maps.find(resource.sr_id);
@@ -360,4 +362,107 @@ void LoadZone::load_activity_phase(TagHash table) {
 	/*for (const auto& name_pair : loaded_entity_names) {
 		printf("Loaded Entity Name: %s for World ID: %llu\n", name_pair.second.c_str(), name_pair.first);
 	}*/
+}
+
+
+std::vector<CachedSpawn> LoadZone::collect_entity_spawns(TagHash entityTag, uint32_t remainingDepth, EntityType et)
+{
+	if (remainingDepth == 0) return {};
+
+	const uint64_t key = MakeEntityCacheKey(entityTag.hash, remainingDepth, et);
+	if (auto it = entity_spawn_cache.find(key); it != entity_spawn_cache.end())
+		return it->second; 
+
+	static thread_local std::unordered_set<uint32_t> stack;
+	if (!stack.insert(entityTag.hash).second)
+		return {};
+
+	std::vector<CachedSpawn> out;
+
+	const SEntity entity = bin::parse<SEntity>(entityTag.data, entityTag.size);
+
+	for (const auto& resource : entity.resources)
+	{
+		const auto ent_resource =
+			bin::parse<SEntityResource>(resource.entity_resource.data, resource.entity_resource.size);
+
+		// --- models directly referenced by this entity ---
+		if (ent_resource.resource18.type == 0x80806D8F)
+		{
+			const auto e =
+				ent_resource.resource18.Parse<Unk_80806D8F>(resource.entity_resource);
+
+			CachedSpawn s{};
+			s.sem_hash32 = e.MeshFile.hash;
+			s.tech_maps = e.entity_material_map;
+			s.ext_techs = e.materials;
+			s.et = et;
+			out.emplace_back(std::move(s));
+		}
+		else if (ent_resource.resource18.type == 0x80808179)
+		{
+			const auto e =
+				ent_resource.resource18.Parse<Unk_80808179>(resource.entity_resource);
+
+			for (const auto& unk_entry : e.unk10)
+			{
+				if (unk_entry.unk10.type != 0x808067B9) continue;
+
+				const auto e2 =
+					unk_entry.unk10.Parse<Unk_808067B9>(resource.entity_resource);
+
+				for (const auto& psys : e2.particle_systems)
+				{
+					if (!psys.particle_system.success) continue;
+
+					const auto psystem =
+						bin::parse<SParticleSystem>(psys.particle_system.data,
+							psys.particle_system.size);
+
+					if (!psystem.particle_mesh.success) continue;
+
+					const TagHash mesh_tag(psystem.particle_mesh.tagHash32);
+					const auto mesh_parent =
+						bin::parse<Unk_80806929>(mesh_tag.data, mesh_tag.size);
+
+					std::vector<uint32_t> ext_techs;
+					ext_techs.push_back(psystem.technique_hash);
+
+					for (const auto& mesh_entry : mesh_parent.unk10)
+					{
+						CachedSpawn s{};
+						s.sem_hash32 = mesh_entry.sem.hash;
+						s.ext_techs = ext_techs;
+						s.et = EntityType::ParticleSystem;
+						out.emplace_back(std::move(s));
+					}
+				}
+			}
+		}
+
+	
+		for (const auto& table_entry : ent_resource.relative_table)
+		{
+			auto WH = table_entry.Parse<WideHash>(resource.entity_resource);
+			if (!WH.success || WH.reference != 0x80809AD8) continue;
+
+			
+			if (et == EntityType::Combatant)
+				continue;
+
+			TagHash childTag(WH.tagHash32);
+
+			
+			auto childSpawns = collect_entity_spawns(childTag, remainingDepth - 1, EntityType::ChildEntity);
+
+			
+			out.insert(out.end(),
+				std::make_move_iterator(childSpawns.begin()),
+				std::make_move_iterator(childSpawns.end()));
+		}
+	}
+
+	stack.erase(entityTag.hash);
+	entity_spawn_cache.emplace(key, out);
+	return out;
 }
