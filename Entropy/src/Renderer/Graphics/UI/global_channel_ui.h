@@ -2,8 +2,11 @@
 #pragma once
 #include "TigerEngine/Technique/Tfx/extern.h"
 #include "TigerEngine/Technique/Tfx/global_channels.h"
+#include "TigerEngine/Technique/Tfx/global_channel_usage.h"
 #include "Renderer/Graphics/ImGui/imgui.h"
 #include <array>
+#include <vector>
+#include <numeric>
 #include <algorithm>
 #include <cctype>
 
@@ -11,7 +14,7 @@ inline bool EditChannelWidget(int idx, GlobalChannel& g)
 {
     bool changed = false;
 
-    // label is hidden (##) so the row's visible label can be clean
+
     char idbuf[32];
     snprintf(idbuf, sizeof(idbuf), "##ch%03d", idx);
 
@@ -43,18 +46,19 @@ inline bool EditChannelWidget(int idx, GlobalChannel& g)
     return changed;
 }
 
-// Returns true if any value changed. If autoPublish==true, publishes on change.
+
 inline bool ShowGlobalChannelsEditor(std::array<GlobalChannel, 256>& chans,
     ExternStorage& externs,
     bool autoPublish = true)
 {
     bool anyChanged = false;
 
-    // --- Header controls ---
+    
     static char filter[64] = "";
     static bool showUnnamed = false;
-    static bool onlyChanged = false; // (not tracked per-row here, but left for future)
+    static bool onlyChanged = false;
     ImGui::SeparatorText("Global Channels");
+    ImGui::TextDisabled("Per-frame uses shown; counts reset each frame.");
 
     ImGui::SetNextItemWidth(240);
     ImGui::InputTextWithHint("##filter", "filter (index or name substring)", filter, IM_ARRAYSIZE(filter));
@@ -87,26 +91,43 @@ inline bool ShowGlobalChannelsEditor(std::array<GlobalChannel, 256>& chans,
         ImGuiTableFlags_BordersOuterH;
 
     const float tableHeight = ImGui::GetTextLineHeightWithSpacing() * 18.0f; // ~18 rows visible
-    if (ImGui::BeginTable("gc_table", 3, flags, ImVec2(0, tableHeight)))
+    if (ImGui::BeginTable("gc_table", 4, flags, ImVec2(0, tableHeight)))
     {
         ImGui::TableSetupColumn("Idx", ImGuiTableColumnFlags_WidthFixed, 48.0f);
+        ImGui::TableSetupColumn("Uses", ImGuiTableColumnFlags_WidthFixed, 64.0f);
         ImGui::TableSetupColumn("Name / Type", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableHeadersRow();
 
-        for (int i = 0; i < 256; ++i)
+        static bool sortByUses = true;
+        ImGui::SameLine();
+        ImGui::Checkbox("sort by uses", &sortByUses);
+
+        std::vector<int> orderIdx(256);
+        std::iota(orderIdx.begin(), orderIdx.end(), 0);
+        if (sortByUses) {
+            std::stable_sort(orderIdx.begin(), orderIdx.end(), [](int a, int b) {
+                const uint32_t ua = tfx::g_global_channel_uses[a];
+                const uint32_t ub = tfx::g_global_channel_uses[b];
+                if (ua != ub) return ua > ub; // desc
+                return a < b;
+            });
+        }
+
+        for (int ii = 0; ii < 256; ++ii)
+        {
+            const int i = orderIdx[ii];
         {
             const GlobalChannel& g = chans[i];
             const bool named = (g.name && g.name[0] != '\0');
 
-            // filter by name or index
             if (!f.empty())
             {
                 bool pass = false;
-                // index match?
+          
                 char ibuf[16]; snprintf(ibuf, sizeof(ibuf), "%d", i);
                 std::string il = ibuf;
-                // name match?
+         
                 std::string nl = named ? g.name : "";
                 std::transform(nl.begin(), nl.end(), nl.begin(), [](unsigned char c) { return std::tolower(c); });
 
@@ -118,20 +139,21 @@ inline bool ShowGlobalChannelsEditor(std::array<GlobalChannel, 256>& chans,
 
             ImGui::TableNextRow();
 
-            // col 0: index
+     
             ImGui::TableSetColumnIndex(0);
             ImGui::Text("%03d", i);
 
-            // col 1: name + type tag
             ImGui::TableSetColumnIndex(1);
+            ImGui::Text("%u", tfx::g_global_channel_uses[i]);
+            ImGui::TableSetColumnIndex(2);
             const char* typeStr =
                 (g.type == ChannelType::Float) ? "Float" :
                 (g.type == ChannelType::FloatRanged) ? "FloatRanged" : "Color";
             if (named) ImGui::Text("%s  \xE2\x80\x94  %s", g.name, typeStr); // "name — type"
             else       ImGui::Text("<unnamed>  \xE2\x80\x94  %s", typeStr);
 
-            // col 2: widget
-            ImGui::TableSetColumnIndex(2);
+            // col 3: widget
+            ImGui::TableSetColumnIndex(3);
             ImGui::PushID(i);
             GlobalChannel tmp = g; // edit copy; write back only if changed
             if (EditChannelWidget(i, tmp))
@@ -141,6 +163,7 @@ inline bool ShowGlobalChannelsEditor(std::array<GlobalChannel, 256>& chans,
             }
             ImGui::PopID();
         }
+        }
 
         ImGui::EndTable();
     }
@@ -148,9 +171,7 @@ inline bool ShowGlobalChannelsEditor(std::array<GlobalChannel, 256>& chans,
     if (anyChanged && autoPublish)
     {
         PublishGlobalChannelsToExterns(externs, chans);
-        // Make sure GPU buffer gets updated this frame.
-        // If you already call externs.UploadAll(ctx) later, this is enough:
-        // just mark dirty.
+
         externs.scopes[TfxExtern::Generic].dirty = true;
     }
 

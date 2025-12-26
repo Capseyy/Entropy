@@ -8,6 +8,7 @@
 #include <unordered_set>
 #include "Renderer/Graphics/UI/ActivityBrowser.h"
 #include "TigerEngine/Map/TigerBuffer.h"
+#include "TigerEngine/Technique/Tfx/global_channel_usage.h"
 
 static int g_activation_budget_per_frame = 8;
 static int g_activations_this_frame = 0;
@@ -1779,6 +1780,8 @@ void Graphics::RenderFrame()
 	mainQueue->RunSlice(8, 1);
 	gTimer.tick();
 	g_activations_this_frame = 0;
+	// Per-frame: reset global channel usage stats (used by the editor UI)
+	tfx::ResetGlobalChannelUsagePerFrame();
 	packets_.clear();
 	frameWorlds_.clear();
 	// Per-frame externs

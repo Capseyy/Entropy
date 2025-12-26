@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <string>
 #include "extern.h"
+#include "global_channel_usage.h"
 #include <cmath>
 #define _USE_MATH_DEFINES
 #include <numbers>
@@ -401,6 +402,9 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
                                        // ----------- channels (NEW: actually fetch) -----------
         case TfxBytecode::PushGlobalChannelVector: {
             const auto d = std::get<PushGlobalChannelVectorData>(i.data);
+            // Track per-frame usage for the Global Channel editor.
+            tfx::MarkGlobalChannelUsed(d.unk1);
+
       
             Vec4 v = externs.getVec4(TfxExtern::Generic, size_t(d.unk1) * 16);
             push(v);

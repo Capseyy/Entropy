@@ -8,6 +8,8 @@
 #include <cstdio>
 #include <algorithm>
 #include <cmath>
+#include <random>
+#include <chrono>
 
 static inline std::string Hex8(uint32_t x) {
     char b[16]; std::snprintf(b, sizeof(b), "%08X", x);
@@ -17,9 +19,144 @@ static inline std::string Hex8(uint32_t x) {
 static int  g_selectedEntityIndex = -1;
 static char g_newChannelHex[16] = { 0 };
 
+
+inline void SetAllEntityChannelsToZero(std::vector<RenderEntity>& entities)
+{
+    for (auto& e : entities) {
+        for (auto& kv : e.channels) {
+            kv.second = 0.0f;
+        }
+    }
+}
+
+
+static bool  g_partyModeEnabled  = false;
+static float g_partyModeSpeed    = 0.35f;
+static float g_partyPhase        = 0.0f;
+static uint32_t g_partySessionSeed = 0;
+static float g_partyAmplitude = 5.0f;
+
+static inline uint32_t Hash32(uint32_t x)
+{
+    // decent 32-bit mixer
+    x ^= x >> 16;
+    x *= 0x7feb352dU;
+    x ^= x >> 15;
+    x *= 0x846ca68bU;
+    x ^= x >> 16;
+    return x;
+}
+
+static inline float U01FromU32(uint32_t x)
+{
+    // [0, 1)
+    return (float)(x & 0x00FFFFFFu) / (float)0x01000000u;
+}
+
+static inline float SNormFromU32(uint32_t x)
+{
+    // (-1, 1)
+    return (U01FromU32(x) * 2.0f) - 1.0f;
+}
+
+static inline uint32_t MakeSessionSeed()
+{
+    std::random_device rd;
+    uint32_t a = (uint32_t)rd();
+    uint32_t b = (uint32_t)rd();
+    uint64_t t = (uint64_t)std::chrono::high_resolution_clock::now().time_since_epoch().count();
+    uint32_t c = (uint32_t)(t ^ (t >> 32));
+    uint32_t s = a ^ (b * 0x9E3779B9u) ^ (c * 0x85EBCA6Bu);
+    return (s == 0) ? 1u : s;
+}
+
+static inline void EnsurePartySessionSeed()
+{
+    if (g_partySessionSeed == 0) {
+        g_partySessionSeed = MakeSessionSeed();
+    }
+}
+
+static inline uint32_t PartySeedFor(uint32_t entId, uint32_t chanHash)
+{
+    // Per-run (session seed) + per entity + per channel
+    EnsurePartySessionSeed();
+    uint32_t s = g_partySessionSeed;
+    s ^= Hash32(entId + 0x9e3779b9u);
+    s ^= Hash32(chanHash + 0x7f4a7c15u);
+    return Hash32(s);
+}
+
+static inline float PartyValueFor(uint32_t entId, uint32_t chanHash, float phase)
+{
+
+    const uint32_t base = PartySeedFor(entId, chanHash);
+
+    const float twoPi = 6.28318530717958647692f;
+
+    const float ph1 = U01FromU32(Hash32(base ^ 0xA1u)) * twoPi;
+    const float ph2 = U01FromU32(Hash32(base ^ 0xB2u)) * twoPi;
+    const float ph3 = U01FromU32(Hash32(base ^ 0xC3u)) * twoPi;
+
+
+    const float sp1 = 0.25f + 2.50f * U01FromU32(Hash32(base ^ 0xD4u)); // [0.25, 2.75]
+    const float sp2 = 0.05f + 1.25f * U01FromU32(Hash32(base ^ 0xE5u)); // [0.05, 1.30]
+    const float sp3 = 0.02f + 0.60f * U01FromU32(Hash32(base ^ 0xF6u)); // [0.02, 0.62]
+
+
+    const float a1 = 0.35f + 0.65f * U01FromU32(Hash32(base ^ 0x11u)); // [0.35, 1.0]
+    const float a2 = 0.00f + 0.60f * U01FromU32(Hash32(base ^ 0x22u)); // [0.0, 0.6]
+    const float a3 = 0.00f + 0.40f * U01FromU32(Hash32(base ^ 0x33u)); // [0.0, 0.4]
+
+
+    const float bias   = 0.20f * SNormFromU32(Hash32(base ^ 0x44u));     // [-0.2, 0.2]
+    const float wobPh  = U01FromU32(Hash32(base ^ 0x55u)) * twoPi;
+    const float wobSp  = 0.01f + 0.08f * U01FromU32(Hash32(base ^ 0x66u)); // very slow
+    const float wobAmp = 0.05f + 0.20f * U01FromU32(Hash32(base ^ 0x77u)); // small
+
+    const float wobble = wobAmp * std::sinf(phase * wobSp + wobPh);
+
+    float v = 0.0f;
+    v += a1 * std::sinf(phase * sp1 + ph1);
+    v += a2 * std::sinf(phase * sp2 + ph2);
+    v += a3 * std::sinf(phase * sp3 + ph3);
+    v += bias;
+    v += wobble;
+
+    const float denom = std::max(0.001f, (a1 + a2 + a3 + std::fabs(bias) + std::fabs(wobAmp)));
+    v /= denom;
+
+    if (v < -1.0f) v = -1.0f;
+    if (v > 1.0f) v = 1.0f;
+
+    return v * g_partyAmplitude;
+}
+
+inline void ApplyPartyModeToAllEntities(std::vector<RenderEntity>& entities, float deltaSeconds)
+{
+    EnsurePartySessionSeed();
+
+    // advance global phase (radians)
+    const float omega = g_partyModeSpeed * 2.0f * 3.14159265358979323846f;
+    g_partyPhase += omega * std::max(deltaSeconds, 0.0f);
+
+    for (auto& e : entities) {
+        const uint32_t eid = (uint32_t)e.id;
+        for (auto& kv : e.channels) {
+            kv.second = PartyValueFor(eid, kv.first, g_partyPhase);
+        }
+    }
+}
+
 inline void ShowEntityChannelEditorUI(std::vector<RenderEntity>& entities, XMFLOAT3 camPos)
 {
     if (!ImGui::Begin("Entity Channel Editor")) { ImGui::End(); return; }
+
+    // Party mode runs every frame while enabled.
+    const float dt = ImGui::GetIO().DeltaTime;
+    if (g_partyModeEnabled) {
+        ApplyPartyModeToAllEntities(entities, dt);
+    }
 
     struct Row { int idx; float dist2; };
     std::vector<Row> withChannels;
@@ -64,6 +201,29 @@ inline void ShowEntityChannelEditorUI(std::vector<RenderEntity>& entities, XMFLO
 
    
     ImGui::BeginChild("right", ImVec2(0, 0), true);
+
+    // -----------------------------------------------------------------
+    // Global controls
+    // -----------------------------------------------------------------
+    if (ImGui::Button("Zero ALL channels (all entities)")) {
+        SetAllEntityChannelsToZero(entities);
+    }
+    ImGui::SameLine();
+    if (ImGui::Checkbox("Party Mode", &g_partyModeEnabled) && g_partyModeEnabled) {
+        // Fresh randomized pattern every time you enable it.
+        g_partySessionSeed = MakeSessionSeed();
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button("Reseed")) {
+        g_partySessionSeed = MakeSessionSeed();
+    }
+
+    ImGui::SetNextItemWidth(260);
+    ImGui::DragFloat("Party Speed (cycles/sec)", &g_partyModeSpeed, 0.01f, 0.01f, 10.0f);
+    ImGui::SetNextItemWidth(260);
+    ImGui::DragFloat("Party Amplitude", &g_partyAmplitude, 0.1f, 0.0f, 50.0f);
+    ImGui::Separator();
 
 
     RenderEntity* entPtr = nullptr;

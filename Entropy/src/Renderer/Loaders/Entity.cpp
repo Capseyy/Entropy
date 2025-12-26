@@ -6,8 +6,8 @@
 #include "TigerEngine/Technique/input_layout.h"
 #include "TigerEngine/Map/TigerBuffer.h"
 #include "StaticRenderer.h"
-#include "TigerEngine/tag.h"       // TagHash(uint64_t) -> { data, size }
-#include "TigerEngine/Map/static.h"// SStaticModel, SStaticMeshData
+#include "TigerEngine/tag.h"      
+#include "TigerEngine/Map/static.h"
 #include <cstdint>
 #include "RenderStatic.h"     
 #include "RenderEntity.h"     
@@ -53,13 +53,11 @@ void LoadZone::load_entity_into_scene(TagHash& tag, glm::quat quat, glm::vec4 po
     if (recursion_depth >= int(maxDepth))
         return;
 
-    // remaining depth budget (including this node)
+    
     const uint32_t remainingDepth = maxDepth - uint32_t(recursion_depth);
 
-    // Build/fetch cached expanded spawn list
     auto spawns = collect_entity_spawns(tag, remainingDepth, et);
 
-    // Instantiate (multiple instances still work because this is per call)
     for (auto& s : spawns)
     {
         TagHash sem(s.sem_hash32);
@@ -96,6 +94,7 @@ void LoadZone::load_entity_model_into_scene(TagHash sem,
     re.rot = quat;
     re.id = sem.hash;
 	re.rtype = et;
+    re.occlusion_bounds = Aabb::FromCenterExtents(model.model_offset+pos, model.model_scale*pos.w);
     for (const auto& part_group : model.parts) {
         re.meshs.push_back(part_group);
         for (const auto& part : part_group.parts) {

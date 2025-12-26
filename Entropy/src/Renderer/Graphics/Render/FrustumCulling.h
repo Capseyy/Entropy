@@ -7,6 +7,7 @@
 #include <cfloat>
 #include <cstdio>
 #include <cstdarg>
+#include <glm/glm.hpp>
 
 using namespace DirectX;
 
@@ -25,9 +26,15 @@ struct Aabb {
                 (maxv.y - minv.y) * 0.5f,
                 (maxv.z - minv.z) * 0.5f };
     }
+    static Aabb FromCenterExtents(const glm::vec4& center, const glm::vec4& extents) {
+        return Aabb{
+            XMFLOAT3{ center.x - extents.x, center.y - extents.y, center.z - extents.z },
+            XMFLOAT3{ center.x + extents.x, center.y + extents.y, center.z + extents.z }
+        };
+    }
 };
 
-// ========================= Debug helpers =========================
+
 namespace culldbg {
 
     // printf-style
@@ -89,10 +96,9 @@ namespace culldbg {
 
     // ---------------- Frustum ----------------
     struct Frustum {
-        Plane L, R, T, B, N; // Left, Right, Top, Bottom, Near
+        Plane L, R, T, B, N; 
 
-        // Build from a *column-major* world_to_projective you upload to shaders.
-        // We read columns c1..c4 and use c4 ± cN (matches your expected layout).
+    
         static Frustum FromColumnMajor(const XMFLOAT4X4& M, bool near_is_c4_plus_c3)
         {
             // columns
@@ -114,7 +120,6 @@ namespace culldbg {
             return f;
         }
 
-        // Row-major convenience (if you have an XMMATRIX in regs)
         static Frustum FromRowMajor(FXMMATRIX VP, bool near_is_r4_minus_r3)
         {
             XMFLOAT4X4 m; XMStoreFloat4x4(&m, VP);
@@ -146,7 +151,6 @@ namespace culldbg {
         printPlane("Near ", f.N);
     }
 
-    // ---------------- AABB vs frustum with verbose debug ----------------
     inline bool aabb_in_frustum_dbg(const Frustum& f,
         const Aabb& b,
         int* outFailedPlane = nullptr,
@@ -156,8 +160,6 @@ namespace culldbg {
 
         const XMFLOAT3 c = b.center();
         const XMFLOAT3 e = b.extents();
-
-        // adaptive slack in world units
         const float eps = std::clamp(0.001f * (e.x + e.y + e.z), 0.05f, 5.0f);
 
         for (int i = 0; i < 5; ++i) {
@@ -182,11 +184,10 @@ namespace culldbg {
         return true;
     }
 
-    // Non-verbose convenience
     inline bool aabb_in_frustum(const Frustum& f, const Aabb& b) {
         return aabb_in_frustum_dbg(f, b, nullptr, false);
     }
 
-} // namespace culldbg
+}
 
-#endif // !__HLSL_VERSION
+#endif 
