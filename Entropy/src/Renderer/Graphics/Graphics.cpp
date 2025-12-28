@@ -9,6 +9,7 @@
 #include "Renderer/Graphics/UI/ActivityBrowser.h"
 #include "TigerEngine/Map/TigerBuffer.h"
 #include "TigerEngine/Technique/Tfx/global_channel_usage.h"
+#include "Renderer/Graphics/UI/TfxUI.h"
 
 static int g_activation_budget_per_frame = 8;
 static int g_activations_this_frame = 0;
@@ -243,10 +244,9 @@ void Graphics::SubmitPackets(ID3D11DeviceContext* ctx,
 	order.clear(); order.reserve(packets.size());
 	for (auto& d : packets) order.push_back({ MakeStateKey(d), d.sortKeyLow, &d });
 
-	// Opaque: state-first, Transparent: depth-first (back-to-front), then state
 	std::sort(order.begin(), order.end(), [stage](const Item& a, const Item& b) {
 		if (stage == TfxRenderStage::Transparents) {
-			if (a.low != b.low) return a.low > b.low;     // bigger depth first (back-to-front)
+			if (a.low != b.low) return a.low > b.low;   
 			if (a.key != b.key) return a.key < b.key;
 			return a.p->meshId < b.p->meshId;
 		}
@@ -287,7 +287,7 @@ void Graphics::SubmitPackets(ID3D11DeviceContext* ctx,
 		if (it.key != curKey) {
 			if (d.layout != curIL) { ctx->IASetInputLayout(d.layout); curIL = d.layout; }
 
-			// VBs
+
 			if (d.vb0 != curVBs[0] || d.vb1 != curVBs[1] ||
 				d.stride0 != curStrides[0] || d.stride1 != curStrides[1]) {
 				ID3D11Buffer* vbs[2] = { d.vb0, d.vb1 };
@@ -774,7 +774,7 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view, TfxRende
 {
 	ID3D11DeviceContext* ctx = pContext.Get();
 	const auto& mesh = rs.mesh;
-
+	bool farObject = true;
 	std::vector<ObjectVectors> visibleWorld;
 	{
 		using namespace culldbg;
@@ -787,7 +787,15 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view, TfxRende
 			if (!culldbg::aabb_in_frustum_dbg(fr, rs.bounds[i], &failed, /*verbose=*/false))
 				continue;
 			visibleWorld.push_back(rs.world[i]);
+			const glm::vec3 objPos = glm::vec3(rs.world[i].translation);
+			const float distSq = glm::length2(objPos - frameCameraPos);
+			if (distSq <= (lod_distance*lod_distance)) {
+				farObject = false;
+			}
 		}
+	}
+	if (farObject) {
+		return;
 	}
 	if (visibleWorld.empty()) return;
 
@@ -828,7 +836,18 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view, TfxRende
 		if (!seenPartIdx.insert(mg.part_index).second) continue; // dedupe
 
 		const auto& part = mesh.parts[mg.part_index];
-		if (part.LodCatagory > 2) continue;
+
+		if (farObject) {
+			if (part.LodCatagory < 8) {
+				continue;
+			}
+		}
+		else {
+			if (part.LodCatagory > 2) {
+				continue;
+			}
+		}
+
 
 
 		std::shared_ptr<EntropyAssets::Technique> tech = nullptr;
@@ -1241,10 +1260,18 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 	const View& view,
 	TfxRenderStage stage)
 {
+	bool farObject = true;
+	const glm::vec3 objPos = glm::vec3(rs.pos);
+	const float distSq = glm::length2(objPos - frameCameraPos);
+	if (distSq <= (lod_distance * lod_distance)) {
+		farObject = false;
+	}
+	if (farObject && (rs.rtype != EntityType::SkyEntity)) {
+		return; 
+	}
 	char buf[256];
 	if (!IsEntityTypeVisible(rs.rtype))
 		return;
-	// --- CULL ---
 	if (rs.occlusion_bounds)
 	{
 		using namespace culldbg;
@@ -1257,17 +1284,13 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 		}
 	}
 
-	
-
 	if (!m_instWritePtr)
 	{
-		
 		return;
 	}
 
 	if (m_instCursor >= m_instanceCapacity)
 	{
-		
 		return;
 	}
 
@@ -1318,14 +1341,12 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 				rs.id, meshIndex, (int)stage, (unsigned)ilIdx);
 			OutputDebugStringA(buf);
 		}
-
+		std::shared_ptr<EntropyAssets::Technique> ptech{};
 		for (size_t i = start; i < end; ++i)
 		{
 			const SDynamicMeshPart& part = dm.parts[i];
 
-
-			if (part.LodCatagory > 2)
-			{
+			if (part.LodCatagory > 2) {
 				continue;
 			}
 			
@@ -1334,9 +1355,38 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 				? part.technique.hash
 				: rs.external_mats[
 					rs.external_material_mapping[part.varient_shader_index].technique_start];
-			
-			
-			
+
+			if (rs.rtype == EntityType::ParticleSystem && rs.partical_technique) {
+				uint32_t ptechId = *rs.partical_technique;
+				//printf("Using particle technique %08X for entity %08X\n", ptechId, rs.id);
+				auto pitTech = TechCache_.find(ptechId);
+				if (pitTech == TechCache_.end())
+				{
+					continue;
+				}
+
+				if (!IsReady(pitTech->second))
+				{
+					continue;
+				}
+
+				
+				try
+				{
+					ptech = pitTech->second.get();
+				}
+				catch (const std::exception& e)
+				{
+
+					continue;
+				}
+
+				if (!ptech)
+				{
+
+					continue;
+				}
+			}
 
 			auto itTech = TechCache_.find(techId);
 			if (itTech == TechCache_.end())
@@ -1391,8 +1441,6 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 
 			ResolvedDynamicPart& resolved = itDyn->second;
 
-			
-
 			const bool hasSkinning =
 				(dm.skinning_buffer.hash != 0u &&
 					dm.skinning_buffer.hash != 0xFFFFFFFFu);
@@ -1419,10 +1467,64 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 				pContext->IASetVertexBuffers(0, 1, &vb, &str, &offset);
 			}
 
-
+			
 			tech->Bind_With_Channels(pDevice, pContext, externs, states, scopes, rs.channels);
+			
+			
+			//if (rs.rtype == EntityType::ParticleSystem && rs.partical_technique)
+			//{
+			//	ptech->Bind_Only_PS(pDevice, pContext, externs, states, scopes, rs.channels);
+			//	// Load test bytecode blob
+			//	TagHash th(0x80CE2BD0);
+			//	const auto test_particle = bin::parse<Unk_80806927>(th.data, th.size);
 
-			// --- CB1 setup: skinning vs non-skinning ---
+			//	// Build TFX program from raw bytecode/constants
+			//	TfxProgram testProg = TfxProgram::FromBytecode(
+			//		test_particle.TFX_Bytecode,
+			//		test_particle.TFX_Constants,
+			//		0x80CE2BD0
+			//	);
+
+			//	// Evaluate into a cb0 Vec4 array (same pattern as Technique::Bind)
+			//	std::vector<Vec4> cb0_test;
+			//	cb0_test.resize(120);            
+			//	testProg.Evaluate(externs, cb0_test, /*textures*/{});
+
+			//	ID3D11Buffer* buf = nullptr;
+
+			//	if (ptech->CBuffers_fallback != nullptr) {
+			//		buf = ptech->CBuffers_fallback->buffer.Get();
+			//	}
+			//	else {
+			//		
+			//	}
+
+			//	if (buf) {
+			//		D3D11_BUFFER_DESC desc{};
+			//		buf->GetDesc(&desc);
+
+			//		const size_t bytes_needed = cb0_test.size() * sizeof(Vec4);
+			//		const size_t bytes_copy = std::min<size_t>(bytes_needed, desc.ByteWidth);
+
+			//		if (desc.Usage == D3D11_USAGE_DYNAMIC) {
+			//			D3D11_MAPPED_SUBRESOURCE map{};
+			//			HRESULT hr = pContext->Map(buf, 0, D3D11_MAP_WRITE_DISCARD, 0, &map);
+			//			if (SUCCEEDED(hr) && map.pData) {
+			//				std::memcpy(map.pData, cb0_test.data(), bytes_copy);
+			//				pContext->Unmap(buf, 0);
+			//			}
+			//		}
+			//		else {
+			//			pContext->UpdateSubresource(buf, 0, nullptr, cb0_test.data(), 0, 0);
+			//		}
+
+			//		UINT slot = 0;
+			//		pContext->PSSetConstantBuffers(slot, 1, &buf);
+			//	}
+
+			//	// Now bind only PS from the actual particle technique (your normal path)
+			//	
+			//}
 			if (hasSkinning && entity_vs_override)
 			{
 				pContext->VSSetShader(entity_vs_override.Get(), nullptr, 0);
@@ -1453,7 +1555,6 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 			if (resolved.vCol)
 				pContext->VSSetShaderResources(0, 1, resolved.vCol->srv.GetAddressOf());
 
-			// --- Draw ---
 			pContext->DrawIndexedInstanced(
 				resolved.indexCount,
 				1,
@@ -1726,7 +1827,14 @@ for (auto& ent : entitiesToDraw)
             }
         }
     }
-}
+	if (ent.partical_technique) {
+		auto it = TechCache_.find(*ent.partical_technique);
+		if (it == TechCache_.end()) {
+			TagHash th(*ent.partical_technique);
+			it = TechCache_.emplace(*ent.partical_technique, assets->EnqueueTechnique(th)).first;
+		}
+	}
+	}
 }
 
 
@@ -1778,6 +1886,10 @@ void Graphics::RenderFrame()
 	
 	//mainQueue->Drain();
 	mainQueue->RunSlice(8, 1);
+	auto pos = camera.GetPositionFloat3();
+	frameCameraPos.x = pos.x;
+	frameCameraPos.y = pos.y;
+	frameCameraPos.z = pos.z;
 	gTimer.tick();
 	g_activations_this_frame = 0;
 	// Per-frame: reset global channel usage stats (used by the editor UI)
@@ -2153,6 +2265,7 @@ void Graphics::RenderFrame()
 	ImGui_ImplDX11_NewFrame();
 	ImGui_ImplWin32_NewFrame();
 	ImGui::NewFrame();
+	DrawTfxBytecodeInspectorUI();
 	ImGui::Begin("Debug Menu");
 	static float value = 50.0f;
 	ImGui::Checkbox("Draw gbuffer", &drawrt0);
@@ -2160,11 +2273,12 @@ void Graphics::RenderFrame()
 	ImGui::Checkbox("Draw Rt2", &drawrt2);
 	ImGui::Checkbox("Draw Light_diffuse", &drawLight_diffuse);
 	ImGui::Checkbox("Draw Light_specular", &drawLight_specular);
-	ImGui::Checkbox("Draw Depth", &drawDepth);
 	ImGui::Checkbox("Draw Shading", &drawShading);
-	ImGui::Checkbox("Draw drawLight_ibl", &drawLight_ibl);
-	ImGui::Checkbox("Draw ShadingRead", &drawShadingRead);
 	ImGui::Checkbox("Global Lighting", &stageGlobalLighting);
+	ImGui::SliderFloat("Lod/View Distance", &lod_distance, 0.0f, 1000.0f);
+	if (lod_distance == 1000.0f) {
+		lod_distance = INFINITY;
+	}
 	if (ImGui::CollapsingHeader("Entity Type Filters"))
 	{
 		auto checkboxType = [](const char* label, EntityType t)
@@ -2269,19 +2383,20 @@ void Graphics::RenderFrame()
 				a.display_name = ta.dev_name;
 				a.activity_id = ta.id;
 
-				// --- maps / loadzones ---
+
 				a.maps.reserve(ta.bubbles.size());
 				for (const auto& tm : ta.bubbles) {
 					
-					a.maps.push_back(MapDef{ tm.first.c_str(), tm.second });
+					a.maps.push_back(MapDef{ tm.name.c_str(), tm.parent_hash, tm.bubble_hash });
 				}
 
 				
 				a.phases.reserve(ta.phases.size());
 				for (const auto& tp : ta.phases) {
 					a.phases.push_back(PhaseDef{
-						tp.first,   // phase display name
-						tp.second          // phase id / hash / enum
+						tp.name,   
+						tp.parent_hash,    
+						tp.bubble_hash
 						});
 				}
 
@@ -2293,10 +2408,10 @@ void Graphics::RenderFrame()
 
 		ActivityBrowserCallbacks cbs;
 
-		// New: map + phase chosen
 		cbs.on_map_phase_chosen = [&](const ActivityDef& act,
 			const MapDef& map,
-			const PhaseDef& phase)
+			const PhaseDef& phase,
+			const bool loadCombatant)
 			{
 				char buf[256];
 				std::snprintf(buf, sizeof(buf),
@@ -2306,7 +2421,7 @@ void Graphics::RenderFrame()
 					map.map_hash,
 					phase.display_name.c_str(),
 					phase.phase_tag);
-				// OutputDebugStringA(buf);
+				
 
 				this->staticsToDraw.clear();
 				this->lightsToDraw.clear();
@@ -2318,7 +2433,7 @@ void Graphics::RenderFrame()
 
 				loadzone->ProcessMap(); 
 
-				loadzone->load_activity_phase(TagHash(phase.phase_tag));
+				loadzone->load_activity_phase(TagHash(phase.phase_tag), loadCombatant);
 				this->staticsToDraw = loadzone->statics;
 				this->lightsToDraw = loadzone->lights;
 				this->entitiesToDraw = loadzone->entities;
@@ -2326,7 +2441,7 @@ void Graphics::RenderFrame()
 				this->terrainToDraw = loadzone->terrain_patches;
 			};
 
-		cbs.on_map_chosen = [&](const ActivityDef& act, const MapDef& map) {
+		cbs.on_map_chosen = [&](const ActivityDef& act, const MapDef& map, bool loadCombatant) {
 			this->staticsToDraw.clear();
 			this->lightsToDraw.clear();
 			this->entitiesToDraw.clear();
@@ -2343,6 +2458,26 @@ void Graphics::RenderFrame()
 			this->terrainToDraw = loadzone->terrain_patches;
 			};
 
+		cbs.on_load_all_activity_phases = [&](const ActivityDef& act, const MapDef& map, bool loadCombatant) {
+			this->staticsToDraw.clear();
+			this->lightsToDraw.clear();
+			this->entitiesToDraw.clear();
+			this->terrainToDraw.clear();
+
+			loadzone = std::make_unique<LoadZone>(*this);
+			loadzone->parentHash = map.map_hash;
+			loadzone->ProcessMap();
+			dynamicPartCache_.clear();
+			for (const auto& phase : act.phases) {
+				if (phase.bubble_hash != map.map_name_hash) { continue; }
+				loadzone->load_activity_phase(TagHash(phase.phase_tag),loadCombatant);
+			}
+			this->staticsToDraw = loadzone->statics;
+			this->lightsToDraw = loadzone->lights;
+			this->entitiesToDraw = loadzone->entities;
+			this->staticAO1 = loadzone->AOMap1;
+			this->terrainToDraw = loadzone->terrain_patches;
+			};
 		DrawActivityBrowser(provider, cbs);
 	}
 
@@ -2818,7 +2953,7 @@ bool Graphics::InitializeScene()
 	//this->staticAO1 = loadzone->AOMap1;
 	//loadzone->load_datatable_into_scene(TagHash(0x80AD26AB));
 	//loadzone->load_datatable_into_scene(TagHash(0x80FDC30D));
-	auto e_to_load = TagHash(0x80CC0D57);
+	auto e_to_load = TagHash(0x80CE3F1F);
 	loadzone->load_entity_into_scene(e_to_load, glm::quat(0, 0, 0, 0) , glm::vec4(1), 0);
 	//loadzone->load_datatable_into_scene(TagHash(0x80D40A7F));
 	if (loadzone) {

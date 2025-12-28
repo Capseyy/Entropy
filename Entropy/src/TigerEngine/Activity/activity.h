@@ -4,12 +4,25 @@
 #include <string>
 #include "TigerEngine/package.h"
 
+struct TigerActivityPhase {
+	uint32_t parent_hash;
+	std::string name;
+	uint32_t bubble_hash;
+};
+
+struct TigerBubble {
+	uint32_t parent_hash;
+	std::string name;
+	uint32_t bubble_hash;
+};
+
+
 class TigerActivity {
 public:
 	uint32_t id;
 	std::string dev_name;
-	std::vector<std::pair<std::string, uint32_t>> bubbles;
-	std::vector<std::pair<std::string, uint32_t>> phases;
+	std::vector<TigerBubble> bubbles;
+	std::vector<TigerActivityPhase> phases;
 	void ProcessActivity(uint32_t activity_hash);
 };
 

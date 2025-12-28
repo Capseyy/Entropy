@@ -71,4 +71,5 @@ struct RenderEntity {
     std::optional<Aabb> occlusion_bounds;
     CB1Payload_override cb1_single;
 	EntityType rtype = EntityType::Standard;
+    std::optional<uint32_t> partical_technique;
 };

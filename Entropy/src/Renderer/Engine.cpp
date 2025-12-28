@@ -62,30 +62,30 @@ void Engine::Update()
 
 	if (keyboard.KeyIsPressed('S'))
 	{
-		DirectX::XMVECTOR forward = gfx.camera.GetForwardVector();     // XMVECTOR
-		DirectX::XMVECTOR delta = DirectX::XMVectorScale(forward, cameraSpeed * dt); // scale by scalar
-		this->gfx.camera.AdjustPosition(delta);               // whatever type it expects
+		DirectX::XMVECTOR forward = gfx.camera.GetForwardVector();    
+		DirectX::XMVECTOR delta = DirectX::XMVectorScale(forward, cameraSpeed * dt);
+		this->gfx.camera.AdjustPosition(delta); 
 	}
 
 	if (keyboard.KeyIsPressed('W'))
 	{
-		DirectX::XMVECTOR backward = gfx.camera.GetBackwardVector();     // XMVECTOR
-		DirectX::XMVECTOR delta = DirectX::XMVectorScale(backward, cameraSpeed * dt); // scale by scalar
-		this->gfx.camera.AdjustPosition(delta);               // whatever type it expects
+		DirectX::XMVECTOR backward = gfx.camera.GetBackwardVector();   
+		DirectX::XMVECTOR delta = DirectX::XMVectorScale(backward, cameraSpeed * dt);
+		this->gfx.camera.AdjustPosition(delta);              
 	}
 
 	if (keyboard.KeyIsPressed('A'))
 	{
-		DirectX::XMVECTOR left = gfx.camera.GetLeftVector();     // XMVECTOR
-		DirectX::XMVECTOR delta = DirectX::XMVectorScale(left, cameraSpeed * dt); // scale by scalar
-		this->gfx.camera.AdjustPosition(delta);               // whatever type it expects
+		DirectX::XMVECTOR left = gfx.camera.GetLeftVector();    
+		DirectX::XMVECTOR delta = DirectX::XMVectorScale(left, cameraSpeed * dt); 
+		this->gfx.camera.AdjustPosition(delta);              
 	}
 
 	if (keyboard.KeyIsPressed('D'))
 	{
-		DirectX::XMVECTOR right = gfx.camera.GetRightVector();     // XMVECTOR
-		DirectX::XMVECTOR delta = DirectX::XMVectorScale(right, cameraSpeed * dt); // scale by scalar
-		this->gfx.camera.AdjustPosition(delta);               // whatever type it expects
+		DirectX::XMVECTOR right = gfx.camera.GetRightVector();    
+		DirectX::XMVECTOR delta = DirectX::XMVectorScale(right, cameraSpeed * dt);
+		this->gfx.camera.AdjustPosition(delta);  
 	}
 
 }

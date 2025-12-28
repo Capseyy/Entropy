@@ -41,6 +41,7 @@
 #include "Renderer/Loaders/ecs/Entity.h"
 #include "TigerEngine/Entity/entity.h"
 
+
 enum class StaticBufKind { Index, Vertex, UV, Color };
 
 enum class TfxRenderStage : uint8_t {
@@ -169,7 +170,7 @@ public:
 	std::unique_ptr<MainThreadQueue>       mainQueue;
 	std::unique_ptr<RuntimeAssetRegistry>  registry;
 	std::unique_ptr<AssetSystem>           assets;
-
+	std::shared_ptr<EntropyAssets::Technique> GetStaticTechniqueOrEnqueue(uint32_t techId);
 
 private:
 	bool InitializeDirectX(HWND hWnd);
@@ -185,7 +186,7 @@ private:
 	Microsoft::WRL::ComPtr<ID3D11Buffer> g_terrain_cb;
 	std::unordered_map<uint32_t, std::shared_future<std::shared_ptr<ID3D11Buffer>>> bufferFut_;      // VB/UV/IB
 	std::unordered_map<uint32_t, std::shared_future<std::shared_ptr<EntropyAssets::BufferSRVRes>>> bufferSrvFut_; // color SRV
-	std::shared_ptr<EntropyAssets::Technique> GetStaticTechniqueOrEnqueue(uint32_t techId);
+	
 	void CreateTerrainCB64();
 	std::unordered_map<uint64_t, ResolvedEntityPart> entityPartCache_;
 
@@ -367,5 +368,8 @@ private:
 	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> temp_angle_lookup;
 	Microsoft::WRL::ComPtr<ID3D11Buffer> cb13_;
 
+	float_t lod_distance = 50.0f;
 	GBufferRT gbufA;
+
+	glm::vec3 frameCameraPos{ 0.0f,0.0f,0.0f };
 };

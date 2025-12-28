@@ -115,7 +115,7 @@ std::shared_ptr<ID3D11Buffer> AssetSystem::createBuffer_(const BufferPayload& p)
 // Shaders
 //------------------------------------------------------------------------------
 std::shared_ptr<EntropyAssets::VertexShader>
-AssetSystem::createVertexShader_(uint32_t id, const ShaderPayload& p)
+AssetSystem::createVertexShader_(uint32_t id, const ShaderPayload& p, uint32_t tech_id)
 {
     ComPtr<ID3D11VertexShader> vs;
     HRESULT hr = device_->CreateVertexShader(
@@ -125,7 +125,7 @@ AssetSystem::createVertexShader_(uint32_t id, const ShaderPayload& p)
             p.bytecode.size() >= 4 ? *(const uint32_t*)p.bytecode.data() : 0u);
         throw std::runtime_error("CreateVertexShader failed");
     }
-    SetDebugNameFmt(vs.Get(), "VS_%08X", id);
+    SetDebugNameFmt(vs.Get(), "TECH_%08X", tech_id);
     //printf("CreateVS hr=0x%08X size=%zu magic=0x%08X\n", (unsigned)hr, p.bytecode.size(),
      //   p.bytecode.size() >= 4 ? *(const uint32_t*)p.bytecode.data() : 0u);
 
@@ -136,7 +136,7 @@ AssetSystem::createVertexShader_(uint32_t id, const ShaderPayload& p)
 }
 
 std::shared_ptr<EntropyAssets::PixelShader>
-AssetSystem::createPixelShader_(const ShaderPayload& p)
+AssetSystem::createPixelShader_(const ShaderPayload& p, uint32_t tech_id)
 {
     ComPtr<ID3D11PixelShader> ps;
     HRESULT hr = device_->CreatePixelShader(
@@ -144,7 +144,7 @@ AssetSystem::createPixelShader_(const ShaderPayload& p)
     if (FAILED(hr)) {
         throw std::runtime_error("CreatePixelShader failed");
     }
-    //SetDebugNameFmt(ps.Get(), "VS_%08X", );
+    SetDebugNameFmt(ps.Get(), "TECH_%08X", tech_id);
     auto out = std::make_shared<EntropyAssets::PixelShader>();
     out->ps = ps;
     return out;
@@ -181,26 +181,26 @@ std::shared_ptr<EntropyAssets::VertexShader> AssetSystem::createVS_(const Shader
     return out;
 }
 
-AssetHandle<EntropyAssets::VertexShader> AssetSystem::EnqueueVertexShader(uint32_t id)
+AssetHandle<EntropyAssets::VertexShader> AssetSystem::EnqueueVertexShader(uint32_t id, uint32_t tech_id)
 {
 	//printf("EnqueueVertexShader ID %0x8\n", id);
     auto fut = pool_.Submit([=] {
         return vsCache_.GetOrLoad(id, [&] {
             ShaderPayload payload = R_->GetShader(id);
-            return createVertexShader_(id, payload);
+            return createVertexShader_(id, payload,tech_id);
             }).get();
         }).share();
 
     AssetHandle<EntropyAssets::VertexShader> h; h.future = fut; return h;
 }
 
-AssetHandle<EntropyAssets::PixelShader> AssetSystem::EnqueuePixelShader(uint32_t id)
+AssetHandle<EntropyAssets::PixelShader> AssetSystem::EnqueuePixelShader(uint32_t id, uint32_t tech_id)
 {
     //printf("EnqueuePixelShader ID %0x8\n", id);
     auto fut = pool_.Submit([=] {
         return psCache_.GetOrLoad(id, [&] {
             ShaderPayload payload = R_->GetShader(id);
-            return createPixelShader_(payload);
+            return createPixelShader_(payload, tech_id);
             }).get();
         }).share();
 
@@ -645,19 +645,7 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
         }
 
         STechnique Tfx = bin::parse<STechnique>(techniqueId.data, techniqueId.size, bin::Endian::Little);
-        //printf("Starting Eval for MAT %08X \n", id);
-        //auto lines = Disassemble(Tfx.PixelShader.TFX_Bytecode, Tfx.PixelShader.TFX_Constants);
-        //std::vector<Vec4> cb0(64, Vec4::ZERO());   // output constant buffer
-        //std::array<Vec4, 16> temps{};               // 16 temp slots
 
-        //// 4) Externs provider
-        //ExternStorage externs;
-
-        //// 5) Run
-        //EvaluateExpressionEoF(ops, externs, cb0, &Tfx.PixelShader.TFX_Constants, temps);
-
-
-       
         const uint32_t vsId = Tfx.VertexShader.ShaderTag.reference;
         const uint32_t psId = Tfx.PixelShader.ShaderTag.reference;
        
@@ -723,8 +711,8 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
             };
         std::shared_future<std::shared_ptr<EntropyAssets::VertexShader>> fVS;
         std::shared_future<std::shared_ptr<EntropyAssets::PixelShader>>  fPS;
-        if (ensureShaderPayload(vsId)) fVS = EnqueueVertexShader(vsId).future;
-        if (ensureShaderPayload(psId)) fPS = EnqueuePixelShader(psId).future;
+        if (ensureShaderPayload(vsId)) fVS = EnqueueVertexShader(vsId,techniqueId.hash).future;
+        if (ensureShaderPayload(psId)) fPS = EnqueuePixelShader(psId, techniqueId.hash).future;
 
         // --------- Textures
         using TexFuture = std::shared_future<std::shared_ptr<EntropyAssets::Texture2DRes>>;

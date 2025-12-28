@@ -30,22 +30,22 @@ namespace tfx_eval_detail {
     inline Vec4 sin_rot_est(const Vec4& a) { return sin_rot_est_clamped(wrap_to_half(a)); }
     inline Vec4 cos_rot_est(const Vec4& a) { return sin_rot_est(a + Vec4(0.25f, 0.25f, 0.25f, 0.25f)); }
     inline Vec4 sin_cos_rot_est(const Vec4& a) {
-        
+
         return sin_rot_est(a + Vec4(0.0f, 0.25f, 0.0f, 0.25f));
     }
 
 
     inline float hsum4(const Vec4& v) { return v.x + v.y + v.z + v.w; }
 
-   
+
     inline Vec4 yzww(const Vec4& v) { return Vec4(v.y, v.z, v.w, v.w); }
 
-  
+
     inline Vec4 triangle4(const Vec4& x) { return abs4(wrap_to_half(x)) * Vec4::splat(2.0f); }
 
-   
 
-    inline float hermite_smooth(float v) { 
+
+    inline float hermite_smooth(float v) {
         float v2 = v * v;
         return (-2.0f * v + 3.0f) * v2;
     }
@@ -117,10 +117,10 @@ namespace tfx_eval_detail {
         return Vec4(f(a.x), f(a.y), f(a.z), f(a.w));
     }
     inline Vec4 saturate4(const Vec4& a) { return clamp4(a, Vec4::zero(), Vec4::one()); }
-    
+
     inline Vec4 floor4(const Vec4& a) { return Vec4(std::floor(a.x), std::floor(a.y), std::floor(a.z), std::floor(a.w)); }
     inline Vec4 ceil4(const Vec4& a) { return Vec4(std::ceil(a.x), std::ceil(a.y), std::ceil(a.z), std::ceil(a.w)); }
-   
+
     inline Vec4 sign4(const Vec4& a) {
         auto s = [](float x) { return (x > 0) - (x < 0); };
         return Vec4((float)s(a.x), (float)s(a.y), (float)s(a.z), (float)s(a.w));
@@ -183,7 +183,7 @@ namespace tfx_eval_detail {
     }
 
 
-    
+
 
 
 } // namespace tfx_eval_detail
@@ -375,21 +375,21 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             auto d = std::get<PushExternInputMat4Data>(i.data);
             Mat4 m = externs.getMat4(d.ext, size_t(d.offset) * 16);
 
-           
+
             cachedM = m;
             temp[0] = m.x_axis;
             temp[1] = m.y_axis;
             temp[2] = m.z_axis;
             temp[3] = m.w_axis;
 
-          
+
             if (ip + 1 < ops.size() && ops[ip + 1].op == TfxBytecode::PopOutputMat4) {
                 push(m.x_axis);
                 push(m.y_axis);
                 push(m.z_axis);
                 push(m.w_axis);
             }
-            // Otherwise, do NOT push anything—TransformVec4 will use cachedM.
+            // Otherwise, do NOT push anything?TransformVec4 will use cachedM.
             break;
         }
 
@@ -405,14 +405,14 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             // Track per-frame usage for the Global Channel editor.
             tfx::MarkGlobalChannelUsed(d.unk1);
 
-      
+
             Vec4 v = externs.getVec4(TfxExtern::Generic, size_t(d.unk1) * 16);
             push(v);
             break;
         }
         case TfxBytecode::PushObjectChannelVector: {
             const auto* d = std::get_if<PushObjectChannelVectorData>(&i.data);
-			
+
             if (!channel_floats.empty()) {
                 //printf("PushObjectChannelVector: hash_be=0x%08X\n", d->hash_be);
                 const auto it = channel_floats.find(d->hash_be);
@@ -420,11 +420,11 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
                 push(Vec4::splat(float_value));
             }
             else {
-                                // Fallback: push 1.0f if no channel floats provided
-				push(Vec4::splat(1.0f));
+                // Fallback: push 1.0f if no channel floats provided
+                push(Vec4::splat(1.0f));
             }
 
-            
+
             break;
         }
         case TfxBytecode::PushTexDimensions:
@@ -432,19 +432,19 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             const auto d = std::get<PushTexParamData>(i.data);
 
             Vec4 dims = Vec4(0.25f, 0.25f, 0.25f, 0.0625f);
-      
+
             const Vec4 v = swizzle_fields(dims, d.fields);
-            
-        
+
+
             /*std::printf("    PushTexDimensions(Rust): idx=%u fields=0x%02X base=%s -> %s\n",
                     d.index, d.fields, to_str(dims).c_str(), to_str(v).c_str());*/
-            
+
 
             push(v);
             break;
         }
 
-                                                 // ------------- temps / outputs -------------
+        // ------------- temps / outputs -------------
         case TfxBytecode::PushTemp: { auto d = std::get<PushTempData>(i.data); push(temp[d.slot]); break; }
         case TfxBytecode::PopTemp: { auto d = std::get<PopTempData>(i.data);  temp[d.slot] = pop1(ip, "PopTemp"); break; }
         case TfxBytecode::PushFromOutput: {
@@ -780,10 +780,10 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
 
 
         default:
-            if (OpName(i.op) == "Unknown"){
+            if (OpName(i.op) == "Unknown") {
                 std::fprintf(stderr, "[eval] unhandled opcode %s at ip=%zu in tech %08X\n", OpName(i.op), ip, technique_id);
             }
-            
+
             break;
         }
     }
@@ -800,12 +800,12 @@ CollectObjectChannelU32(const std::vector<TfxData>& ops)
             continue;
 
         if (const auto* d = std::get_if<PushObjectChannelVectorData>(&ins.data)) {
-           
-			const uint32_t key = d->hash_be;
+
+            const uint32_t key = d->hash_be;
 
             out.push_back(key);
         }
-       
+
     }
 
     return out;

@@ -49,8 +49,8 @@ public:
     AssetHandle<ID3D11Buffer> EnqueueBuffer(uint32_t id);
 
     // Shaders
-    AssetHandle<EntropyAssets::VertexShader>   EnqueueVertexShader(uint32_t id);
-    AssetHandle<EntropyAssets::PixelShader>    EnqueuePixelShader(uint32_t id);
+    AssetHandle<EntropyAssets::VertexShader>   EnqueueVertexShader(uint32_t id,uint32_t tech_id);
+    AssetHandle<EntropyAssets::PixelShader>    EnqueuePixelShader(uint32_t id, uint32_t tech_id);
     AssetHandle<EntropyAssets::ComputeShader>  EnqueueComputeShader(uint32_t id);
     AssetHandle<EntropyAssets::GeometryShader> EnqueueGeometryShader(uint32_t id);
     AssetHandle<EntropyAssets::HullShader>     EnqueueHullShader(uint32_t id);
@@ -105,10 +105,10 @@ private:
     template<typename TShaderIface>
     void createShader_(ID3D11Device* dev, const void* bc, size_t bcSize, ComPtr<TShaderIface>& out);
     std::shared_ptr<EntropyAssets::VertexShader>
-        createVertexShader_(uint32_t id, const ShaderPayload& p);
+        createVertexShader_(uint32_t id, const ShaderPayload& p, uint32_t tech_id);
 
     std::shared_ptr<EntropyAssets::PixelShader>
-        createPixelShader_(const ShaderPayload& p);
+        createPixelShader_(const ShaderPayload& p, uint32_t tech_id);
 
     std::shared_ptr<EntropyAssets::BufferSRVRes>
         createBufferSRV_(const BufferPayload& p, const BufferSRVMeta& meta);

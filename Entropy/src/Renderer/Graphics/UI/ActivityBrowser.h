@@ -8,34 +8,36 @@
 struct MapDef {
     std::string display_name;
     uint32_t    map_hash = 0;
+	uint32_t    map_name_hash = 0;
 };
 
-// NEW: phase info (from TigerActivity.phases)
 struct PhaseDef {
     std::string display_name;
     uint32_t    phase_tag = 0;
+    uint32_t bubble_hash;
 };
 
 struct ActivityDef {
     std::string display_name;
     uint32_t    activity_id = 0;
-    std::vector<MapDef>   maps;    // loadzones
-    std::vector<PhaseDef> phases;  // NEW: activity phases (TigerActivity.phases)
+    std::vector<MapDef>   maps;
+    std::vector<PhaseDef> phases;
 };
 
 using ActivityProvider = std::function<const std::vector<ActivityDef>& ()>;
 
 struct ActivityBrowserCallbacks {
-    // existing callbacks
-    std::function<void(const ActivityDef&, const MapDef&)> on_map_chosen = nullptr;
-    std::function<void(const ActivityDef&)>                on_activity_selected = nullptr;
+    std::function<void(const ActivityDef&, const MapDef&, bool )> on_map_chosen = nullptr;
 
-    // NEW: called when both a map and phase are selected
-    // (if set, it will be preferred over on_map_chosen)
-    std::function<void(const ActivityDef&, const MapDef&, const PhaseDef&)> on_map_phase_chosen = nullptr;
+    std::function<void(const ActivityDef&, bool )> on_activity_selected = nullptr;
+
+    std::function<void(const ActivityDef&, const MapDef&, const PhaseDef&, bool)>
+        on_map_phase_chosen = nullptr;
+
+    std::function<void(const ActivityDef&, const MapDef&, bool )>
+        on_load_all_activity_phases = nullptr;
 };
 
-// ---------- updated drop-in replacement ----------
 inline void DrawActivityBrowser(ActivityProvider provider, const ActivityBrowserCallbacks& cb = {})
 {
     if (!provider) { ImGui::TextDisabled("No ActivityProvider set."); return; }
@@ -43,22 +45,21 @@ inline void DrawActivityBrowser(ActivityProvider provider, const ActivityBrowser
 
     static int   selectedActivity = -1;
     static int   selectedMap = -1;
-    static int   selectedPhase = -1;   // NEW: selected phase index
+    static int   selectedPhase = -1;
 
     static ImGuiTextFilter activityFilter;
     static ImGuiTextFilter mapFilter;
 
+    static bool loadCombatant = false;
+
     ImGui::TextUnformatted("Activity & Map Browser");
     ImGui::Separator();
-
-    // Toolbar
-    if (ImGui::Button("Refresh")) { /* hook optional refresh */ }
+   
     ImGui::SameLine();
     ImGui::TextDisabled("%d activities", (int)activities.size());
 
     activityFilter.Draw("Filter activities");
 
-    // ---------- LEFT: Activities ----------
     ImGui::BeginGroup();
     if (ImGui::BeginChild("##activities", ImVec2(ImGui::GetContentRegionAvail().x * 0.35f, 340), true)) {
         if (activities.empty()) {
@@ -72,7 +73,6 @@ inline void DrawActivityBrowser(ActivityProvider provider, const ActivityBrowser
                     visible.push_back(i);
             }
 
-            // If current selection is filtered out, clear it
             if (selectedActivity >= 0) {
                 if (selectedActivity >= (int)activities.size() ||
                     !activityFilter.PassFilter(activities[selectedActivity].display_name.c_str()))
@@ -91,10 +91,10 @@ inline void DrawActivityBrowser(ActivityProvider provider, const ActivityBrowser
                 if (ImGui::Selectable(a.display_name.c_str(), isSel)) {
                     selectedActivity = idx;
                     selectedMap = -1;
-                    selectedPhase = -1;     // reset phase on new activity
+                    selectedPhase = -1;
 
                     if (cb.on_activity_selected)
-                        cb.on_activity_selected(a);
+                        cb.on_activity_selected(a, loadCombatant);
                 }
                 if (isSel) ImGui::SetItemDefaultFocus();
                 ImGui::PopID();
@@ -109,7 +109,7 @@ inline void DrawActivityBrowser(ActivityProvider provider, const ActivityBrowser
     ImGui::EndChild();
     ImGui::EndGroup();
 
-    // ---------- RIGHT: Phases + Maps ----------
+  
     ImGui::SameLine();
 
     ImGui::BeginGroup();
@@ -123,7 +123,7 @@ inline void DrawActivityBrowser(ActivityProvider provider, const ActivityBrowser
 
             ImGui::TextDisabled("Maps in: %s", act.display_name.c_str());
 
-            // ---------- NEW: Phase selection menu ----------
+            // ---------- Phase selection menu ----------
             if (!act.phases.empty()) {
                 // Clamp selection
                 if (selectedPhase < 0 || selectedPhase >= (int)act.phases.size())
@@ -144,7 +144,6 @@ inline void DrawActivityBrowser(ActivityProvider provider, const ActivityBrowser
                 }
             }
             else {
-                // No phases; reset selection
                 selectedPhase = -1;
                 ImGui::TextDisabled("No phases available for this activity.");
             }
@@ -174,17 +173,6 @@ inline void DrawActivityBrowser(ActivityProvider provider, const ActivityBrowser
                     if (ImGui::Selectable(m.display_name.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns)) {
                         selectedMap = i;
                     }
-
-                    // Double-click: map + (optional) phase
-                    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-                        if (cb.on_map_phase_chosen && selectedPhase >= 0 && selectedPhase < (int)act.phases.size()) {
-                            cb.on_map_phase_chosen(act, m, act.phases[selectedPhase]);
-                        }
-                        else if (cb.on_map_chosen) {
-                            cb.on_map_chosen(act, m);
-                        }
-                    }
-
                     ImGui::PopID();
 
                     ImGui::TableNextColumn();
@@ -203,6 +191,22 @@ inline void DrawActivityBrowser(ActivityProvider provider, const ActivityBrowser
 
             ImGui::Separator();
 
+            // NEW: Toggle + Button row
+            ImGui::Checkbox("Load Combatant", &loadCombatant);
+            ImGui::SameLine();
+
+            const bool canLoadAllPhases = !act.phases.empty();
+            if (!canLoadAllPhases) ImGui::BeginDisabled();
+            if (ImGui::Button("Load All Activity Phases")) {
+                const auto& m = maps[selectedMap];
+                if (cb.on_load_all_activity_phases) {
+                    cb.on_load_all_activity_phases(act,m, loadCombatant);
+                }
+            }
+            if (!canLoadAllPhases) ImGui::EndDisabled();
+
+            ImGui::Separator();
+
             const bool mapIndexValid =
                 (selectedMap >= 0 && selectedMap < (int)maps.size() &&
                     mapFilter.PassFilter(maps[selectedMap].display_name.c_str()));
@@ -211,14 +215,13 @@ inline void DrawActivityBrowser(ActivityProvider provider, const ActivityBrowser
             if (ImGui::Button("Load Selected Map")) {
                 const auto& m = maps[selectedMap];
 
-                // Prefer phase-aware callback if set and we have a valid phase
                 if (cb.on_map_phase_chosen && selectedPhase >= 0 &&
                     selectedPhase < (int)act.phases.size())
                 {
-                    cb.on_map_phase_chosen(act, m, act.phases[selectedPhase]);
+                    cb.on_map_phase_chosen(act, m, act.phases[selectedPhase],loadCombatant);
                 }
                 else if (cb.on_map_chosen) {
-                    cb.on_map_chosen(act, m);
+                    cb.on_map_chosen(act, m, loadCombatant);
                 }
             }
             if (!mapIndexValid) ImGui::EndDisabled();

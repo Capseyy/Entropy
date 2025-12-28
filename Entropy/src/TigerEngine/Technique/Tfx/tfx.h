@@ -33,7 +33,7 @@ enum class TfxBytecode : uint8_t {
     Unk11_EoF = 0x12,
     Lerp = 0x13,
     LerpSaturated = 0x14,
-   
+
 
     MultiplyAdd = 0x15,
     Clamp = 0x16,

@@ -73,10 +73,11 @@ inline void LoadZone::load_datatable_into_scene(TagHash table, glm::quat quat_ov
 		EntityVecPair evp{};
 		evp.pos = entry.translation;
 		evp.quat = entry.rotation;
-		this->loaded_entity_instances[entry.world_id] = evp;
-		
-		switch (entry.resource.type)
-		{
+
+		this->loaded_entity_instances.insert_or_assign(entry.world_id, evp);
+		if (et != EntityType::Combatant) {
+			switch (entry.resource.type)
+			{
 		case 0x80806cc9: {
 			//printf("Found static placement\n");
 			auto const resource = entry.resource.Parse<Unk_80806CC9>(table);
@@ -99,8 +100,8 @@ inline void LoadZone::load_datatable_into_scene(TagHash table, glm::quat quat_ov
 				ls.rot = light_parent.transforms[i].quat;
 				ls.pos = light_parent.transforms[i].pos;
 				ls.scale = light_parent.transforms[i].scale;
-				auto tech = gfx.assets->EnqueueTechnique(light_parent.lights[i].technique_shading);
-				ls.technique = tech.get();
+				// Non-blocking: allow technique to resolve asynchronously; renderer can handle nullptr until ready.
+				ls.technique = gfx.GetStaticTechniqueOrEnqueue(light_parent.lights[i].technique_shading.hash);
 				ls.idx = i;
 				ls.parent = resource.light_collection.hash;
 				ls.unk50 = light_parent.lights[i].unk50;
@@ -118,9 +119,9 @@ inline void LoadZone::load_datatable_into_scene(TagHash table, glm::quat quat_ov
 			ls.light_matrix = expensive_light.light_space_transform;
 			ls.pos = entry.translation;
 			ls.rot = entry.rotation;
-			auto tech = gfx.assets->EnqueueTechnique(expensive_light.technique_shading);
 			ls.parent = resource.expensive_light.hash;
-			ls.technique = tech.get();
+			// Non-blocking: allow technique to resolve asynchronously; renderer can handle nullptr until ready.
+			ls.technique = gfx.GetStaticTechniqueOrEnqueue(expensive_light.technique_shading.hash);
 			ls.unk50 = expensive_light.unk50;
 			this->lights.push_back(ls);
 			break;
@@ -149,7 +150,6 @@ inline void LoadZone::load_datatable_into_scene(TagHash table, glm::quat quat_ov
 				const auto& u18 = header.unk18[i];
 
 				if (u8.unk70 == 5) continue;
-				//if (u8.unk70 != 2) continue;
 
 				const glm::mat4 M = glm::make_mat4(u8.transform.data());
 
@@ -189,6 +189,7 @@ inline void LoadZone::load_datatable_into_scene(TagHash table, glm::quat quat_ov
 		}
 		default:
 			break;
+			}
 		}
 		if (pos_ovd != glm::vec4()) {
 			auto th = TagHash(entry.entity.tagHash32);
@@ -206,7 +207,7 @@ inline void LoadZone::load_datatable_into_scene(TagHash table, glm::quat quat_ov
 }
 
 
-void LoadZone::load_activity_phase(TagHash table) {
+void LoadZone::load_activity_phase(TagHash table, bool loadCombatant) {
 	const auto activity_phase = bin::parse<Unk_80808EBE>(table.data, table.size);
 	std::vector<std::pair<Unk_808046B5,TagHash>> spawn_rule_maps_temp;
 	for (const auto& entry : activity_phase.activity_resource) {
@@ -257,6 +258,7 @@ void LoadZone::load_activity_phase(TagHash table) {
 		}
 		case 0x808046b5: { //combatant instancer
 			//printf("Combatant Instancer\n");
+			if (!loadCombatant) break;
 			auto const resource = activity_resource.unk18.Parse<Unk_808046B5>(activity_resource_tag);
 			std::pair<Unk_808046B5, TagHash> pr;
 			pr.first = resource;
@@ -287,66 +289,47 @@ void LoadZone::load_activity_phase(TagHash table) {
 	for (const auto& spawn_pair : spawn_rule_maps_temp) {
 		const auto& resource = spawn_pair.first;
 		const auto& activity_resource_tag = spawn_pair.second;
-		for (const auto& combatant : resource.combatant_instances) {
 
-			bool loaded = false;
-			if (combatant.entity_data_table.success) {
-				auto it = this->spawn_rule_maps.find(resource.sr_id);
-				if (it != this->spawn_rule_maps.end()) {
-					for (const auto& wid : it->second) {
-						auto ev_it = this->loaded_entity_instances.find(wid);
-						if (ev_it != this->loaded_entity_instances.end()) {
-							glm::vec4 pos = ev_it->second.pos;
-							pos.w = 1.0f;
-							glm::quat rot = ev_it->second.quat;
-							loaded = true;
-							load_datatable_into_scene(TagHash(combatant.entity_data_table.tagHash32), rot, pos, EntityType::Combatant);
-						}
-					}
+		// Pre-resolve spawn transforms once per combatant instancer.
+		std::vector<EntityVecPair> sr_transforms;
+		if (auto it = this->spawn_rule_maps.find(resource.sr_id); it != this->spawn_rule_maps.end()) {
+			sr_transforms.reserve(it->second.size());
+			for (const auto& wid : it->second) {
+				if (auto ev_it = this->loaded_entity_instances.find(wid); ev_it != this->loaded_entity_instances.end()) {
+					sr_transforms.push_back(ev_it->second);
 				}
 			}
-			else {
+		}
+
+		auto spawn_one = [&](uint32_t dt_hash32) -> bool {
+			if (dt_hash32 == 0xFFFFFFFFu || dt_hash32 == 0u) return false;
+			if (!sr_transforms.empty()) {
+				glm::vec4 pos = sr_transforms[0].pos;
+				pos.w = 1.0f;
+				glm::quat rot = sr_transforms[0].quat;
+				load_datatable_into_scene(TagHash(dt_hash32), rot, pos, EntityType::Combatant);
+				return true;
+			}
+			return false;
+		};
+
+		for (const auto& combatant : resource.combatant_instances) {
+			bool loaded = false;
+			if (combatant.entity_data_table.success) {
+				loaded = spawn_one(combatant.entity_data_table.tagHash32);
+			} else {
 				if (combatant.unk68.type == 0x8080462b) {
 					const auto unk_462b = combatant.unk68.Parse<Unk_8080462B>(activity_resource_tag);
 					for (const auto& instance : unk_462b.combatant_instances) {
-						auto it = this->spawn_rule_maps.find(resource.sr_id);
-						if (it != this->spawn_rule_maps.end()) {
-							for (const auto& wid : it->second) {
-								auto ev_it = this->loaded_entity_instances.find(wid);
-								if (ev_it != this->loaded_entity_instances.end()) {
-									glm::vec4 pos = ev_it->second.pos;
-									pos.w = 1.0f;
-									glm::quat rot = ev_it->second.quat;
-									loaded = true;
-									load_datatable_into_scene(TagHash(instance.entity_data_table.tagHash32), rot, pos, EntityType::Combatant);
-								}
-							}
-						}
+						loaded = spawn_one(instance.entity_data_table.tagHash32);
+						if (loaded) break;
 					}
 				}
 				else if (combatant.unk68.type == 0x80804690) { //used for contest combatants
 					const auto unk_4690 = combatant.unk68.Parse<Unk_80804690>(activity_resource_tag);
-					if (activity_resource_tag.hash == 0x8137F6FE) {
-						int u = 1;
-					}
 					for (const auto& instance : unk_4690.combatant_instances) {
-						auto it = this->spawn_rule_maps.find(resource.sr_id);
-						if (it != this->spawn_rule_maps.end()) {
-							for (const auto& wid : it->second) {
-								auto ev_it = this->loaded_entity_instances.find(wid);
-								if (ev_it != this->loaded_entity_instances.end()) {
-									glm::vec4 pos = ev_it->second.pos;
-									pos.w = 1.0f;
-									glm::quat rot = ev_it->second.quat;
-
-									loaded = true;
-									load_datatable_into_scene(TagHash(instance.entity_data_table.tagHash32), rot, pos, EntityType::Combatant);
-								}
-							}
-						}
-						if (loaded) {
-							break;
-						}
+						loaded = spawn_one(instance.entity_data_table.tagHash32);
+						if (loaded) break;
 					}
 				}
 			}
@@ -386,7 +369,6 @@ std::vector<CachedSpawn> LoadZone::collect_entity_spawns(TagHash entityTag, uint
 		const auto ent_resource =
 			bin::parse<SEntityResource>(resource.entity_resource.data, resource.entity_resource.size);
 
-		// --- models directly referenced by this entity ---
 		if (ent_resource.resource18.type == 0x80806D8F)
 		{
 			const auto e =
@@ -401,6 +383,7 @@ std::vector<CachedSpawn> LoadZone::collect_entity_spawns(TagHash entityTag, uint
 		}
 		else if (ent_resource.resource18.type == 0x80808179)
 		{
+			
 			const auto e =
 				ent_resource.resource18.Parse<Unk_80808179>(resource.entity_resource);
 
@@ -434,6 +417,7 @@ std::vector<CachedSpawn> LoadZone::collect_entity_spawns(TagHash entityTag, uint
 						s.sem_hash32 = mesh_entry.sem.hash;
 						s.ext_techs = ext_techs;
 						s.et = EntityType::ParticleSystem;
+						s.partical_technique = psystem.technique_hash;
 						out.emplace_back(std::move(s));
 					}
 				}
@@ -447,8 +431,8 @@ std::vector<CachedSpawn> LoadZone::collect_entity_spawns(TagHash entityTag, uint
 			if (!WH.success || WH.reference != 0x80809AD8) continue;
 
 			
-			if (et == EntityType::Combatant)
-				continue;
+			/*if (et == EntityType::Combatant)
+				continue;*/
 
 			TagHash childTag(WH.tagHash32);
 

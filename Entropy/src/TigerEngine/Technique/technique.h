@@ -164,3 +164,10 @@ void VSMain(
   o8 = t0.Load(vertex_id);
 }
 )";
+
+struct Unk_80806927 {
+	uint64_t FileSize;
+	SkipTo<0x58> Unk08;
+	std::vector<uint8_t> TFX_Bytecode;
+	std::vector<Vec4> TFX_Constants;
+};

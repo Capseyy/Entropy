@@ -26,13 +26,13 @@ struct CB1Cpu {
     float             uv_scale;      // x of cb1[1]
     float             uv_off_x;      // y of cb1[1]
     float             uv_off_y;      // z of cb1[1]
-    std::uint32_t     flags_or_maxColorBits; // packed bits, sent as float in cb1[1].w
+    std::uint32_t     flags_or_maxColorBits;
 };
 
-// GPU layout: 32B header + N * 64B rows (4 x float4 per instance)
+
 struct CB1HeaderGPU {
-    DirectX::XMFLOAT4 meshOffset_meshScale; // xyz, w
-    DirectX::XMFLOAT4 uvScale_uvOffset;     // x=scale, y=offX, z=offY, w=bits-as-float
+    DirectX::XMFLOAT4 meshOffset_meshScale;
+    DirectX::XMFLOAT4 uvScale_uvOffset;  
 };
 struct CB1InstanceRowGPU {
     DirectX::XMFLOAT4 row0;
@@ -58,22 +58,21 @@ static void EnsureCB1_StaticReusable(ID3D11Device* device,
     bd.Usage = D3D11_USAGE_DYNAMIC;
     bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 
-    // IMPORTANT: no initial data for a dynamic CB
     HRESULT hr = device->CreateBuffer(&bd, nullptr, b.GetAddressOf());
-    // handle hr if you want
+   
 }
 
 
 static void UpdateCB1_StaticReusable(
     ID3D11DeviceContext* ctx,
-    const MeshParams& hdr,           // meshOffset/Scale + UV + max_colour bits
-    const ObjectVectors* worlds,     // pointer into your frameWorlds_ arena (can be null if count==0)
+    const MeshParams& hdr,          
+    const ObjectVectors* worlds,   
     uint32_t worldCount,
     ID3D11Buffer* cb1)
 {
     using namespace DirectX;
 
-    // 64KB constant buffer cap -> max instances = (65536 - 32) / 64 = 1023
+
     constexpr UINT kCB1_CAP_BYTES = 64u * 1024u;
     constexpr UINT kHDR_BYTES = 32u; // 2 * float4
     constexpr UINT kROW_BYTES = 16u; // float4
@@ -119,18 +118,18 @@ static void UpdateCB1_StaticReusable(
 
 static inline uint32_t EncodeDepthKey(const XMFLOAT4X4& world_to_camera, const ObjectVectors& ov)
 {
-    // view-space Z from instance translation
+  
     const float x = ov.translation.x, y = ov.translation.y, z = ov.translation.z, w = 1.0f;
     const float* m = &world_to_camera.m[0][0]; // row-major
     const float vz = m[2] * x + m[6] * y + m[10] * z + m[14] * w;
-    // larger (farther) should sort first => map to unsigned with clamp
+   
     const float nz = std::min(std::max(vz, -1e6f), 1e6f);
     const float k = (nz + 1e6f) * (1.0f / 2e6f); // 0..1
     return (uint32_t)(k * 0xFFFFFFu);
 }
 
 struct DrawPacket {
-    // “state” that, if unchanged, lets us skip rebinding:
+
     uint32_t                  meshId = 0;
     uint8_t                   inputLayoutIndex = 0;
     ID3D11InputLayout* layout = nullptr;
@@ -150,21 +149,20 @@ struct DrawPacket {
     UINT                      firstIndex = 0;
     std::vector<ObjectVectors>* instanceWorlds = nullptr;
 
-    // per-draw varying bits
-    Microsoft::WRL::ComPtr<ID3D11Buffer> instancesCB; // your instancing CB (g_cb1 or per-mesh CB)
+   
+    Microsoft::WRL::ComPtr<ID3D11Buffer> instancesCB; 
     UINT                      instanceCount = 0;
     MeshParams cb1;
-    // optional: for front-to-back, material, etc.
+
     uint32_t                  sortKeyLow = 0;
-    UINT baseInstance = 0;   // NEW: start index into gInstances
-    std::uint32_t     flags_or_maxColorBits; // packed bits, sent as float in cb1[1].w
+    UINT baseInstance = 0;  
+    std::uint32_t     flags_or_maxColorBits; 
     uint32_t worldOffset = 0;
     uint32_t worldCount = 0;
 };
 
 
 static inline uint64_t MakeStateKey(const DrawPacket& p) {
-    // A cheap, stable grouping key. Collisions are practically harmless.
     return  (uint64_t)(uintptr_t)p.tech ^
         ((uint64_t)(uintptr_t)p.layout << 13) ^
         ((uint64_t)(uintptr_t)p.vb0 << 17) ^

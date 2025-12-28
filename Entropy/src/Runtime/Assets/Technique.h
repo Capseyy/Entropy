@@ -52,7 +52,7 @@ namespace EntropyAssets {           // <<< add
     struct Technique {
         uint32_t id = 0;
 
-        // shaders
+       
         std::vector<std::shared_ptr<VertexShader>>   VS;
         std::vector<std::shared_ptr<PixelShader>>    PS;
         std::vector<std::shared_ptr<ComputeShader>>  CS;
@@ -60,20 +60,19 @@ namespace EntropyAssets {           // <<< add
         std::vector<std::shared_ptr<HullShader>>     HS;
         std::vector<std::shared_ptr<DomainShader>>   DS;
 
-        // PS textures
+  
         std::vector<std::shared_ptr<Texture2DRes>>   Textures;
         std::vector<UINT>                            psTextureSlots;
 
         std::vector<std::shared_ptr<Texture3DRes>>   Textures3D;
         std::vector<UINT>                            psTextureSlots3D;
 
-        // NEW: PS samplers
+     
         std::vector<std::shared_ptr<SamplerRes>>     Samplers;
-        std::vector<UINT>                            psSamplerSlots;   // <— add
+        std::vector<UINT>                            psSamplerSlots;  
 
-        // NEW: PS cbuffer (you can have more than one if your format allows)
         std::vector<std::shared_ptr<CBufferRes>>     CBuffers;
-        std::vector<UINT>                            psCBSlots;        // <— add
+        std::vector<UINT>                            psCBSlots;       
 
         std::shared_ptr<CBufferRes>                  CBuffers_fallback = nullptr;
         UINT                                         psCBSlots_fallback;
@@ -85,13 +84,13 @@ namespace EntropyAssets {           // <<< add
         std::vector<std::shared_ptr<Texture3DRes>>   Textures3D_VS;
         std::vector<UINT>                            vsTextureSlots3D;
 
-        // NEW: PS samplers
+ 
         std::vector<std::shared_ptr<SamplerRes>>     Samplers_VS;
-        std::vector<UINT>                            vsSamplerSlots;   // <— add
+        std::vector<UINT>                            vsSamplerSlots;  
 
-        // NEW: PS cbuffer (you can have more than one if your format allows)
+       
         std::vector<std::shared_ptr<CBufferRes>>     CBuffers_VS;
-        std::vector<UINT>                            vsCBSlots;        // <— add
+        std::vector<UINT>                            vsCBSlots;      
 
         std::shared_ptr<CBufferRes>                  CBuffers_fallback_VS = nullptr;
         UINT                                         vsCBSlots_fallback;
@@ -105,6 +104,9 @@ namespace EntropyAssets {           // <<< add
         
         bool Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice, Microsoft::WRL::ComPtr<ID3D11DeviceContext> pContext, ExternStorage& externs, RenderStates& states, std::vector<std::pair<std::string, TigerScope>>& scopes);
         bool Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11Device> pDevice, Microsoft::WRL::ComPtr<ID3D11DeviceContext> pContext, ExternStorage& externs, RenderStates& states, std::vector<std::pair<std::string, TigerScope>>& scopes, std::unordered_map<uint32_t, float_t> channels);
+        bool Bind_Only_PS(Microsoft::WRL::ComPtr<ID3D11Device> pDevice,
+            Microsoft::WRL::ComPtr<ID3D11DeviceContext> pContext, ExternStorage& externs, RenderStates& states, std::vector<std::pair<std::string, TigerScope>>& scopes, std::unordered_map<uint32_t, float_t> channels);
+        
     };
 
-} // namespace EntropyAssets       // <<< add
+} 
