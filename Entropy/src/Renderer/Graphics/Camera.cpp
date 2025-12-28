@@ -11,6 +11,12 @@ Camera::Camera()
 	this->UpdateViewMatrix();
 }
 
+static float Clamp(float v, float lo, float hi)
+{
+	return (v < lo) ? lo : (v > hi) ? hi : v;
+}
+
+
 void Camera::SetProjectionValues(float fovDegrees, float aspectRatio, float nearZ, float farZ)
 {
 	this->fov = fovDegrees;
@@ -106,7 +112,7 @@ void Camera::AdjustRotation(float x, float y, float z)
 {
 	this->rot.x += x;
 	this->rot.y += y;
-	this->rot.z += z;
+	this->rot.z -= z;
 	this->rotVector = XMLoadFloat3(&this->rot);
 	this->UpdateViewMatrix();
 }
@@ -147,28 +153,46 @@ const XMVECTOR& Camera::GetLeftVector()
 	return this->vec_left;
 }
 
-void Camera::UpdateViewMatrix() //Updates view matrix and also updates the movement vectors
+void Camera::UpdateViewMatrix()
 {
-	//Calculate camera rotation matrix
-	XMMATRIX camRotationMatrix = XMMatrixRotationRollPitchYaw(this->rot.x, this->rot.y, this->rot.z);
+	
+	const float eps = 0.001f;
+	if (this->rot.x > XM_PIDIV2 - eps) this->rot.x = XM_PIDIV2 - eps;
+	if (this->rot.x < -XM_PIDIV2 + eps) this->rot.x = -XM_PIDIV2 + eps;
 
-	XMVECTOR camTarget = XMVector3TransformCoord(this->DEFAULT_FORWARD_VECTOR, camRotationMatrix);
-	camTarget += this->posVector;
+	const float pitch = this->rot.x;
+	const float yaw = this->rot.z;
 
-	XMVECTOR upDir = XMVector3TransformCoord(this->DEFAULT_UP_VECTOR, camRotationMatrix);
+	XMVECTOR forward = XMVectorSet(
+		sinf(yaw) * cosf(pitch),   // x
+		cosf(yaw) * cosf(pitch),   // y
+		sinf(pitch),               // z
+		0.0f
+	);
+	forward = XMVector3Normalize(forward);
 
+	const XMVECTOR worldUp = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
 
-	XMMATRIX view = XMMatrixLookAtLH(this->posVector, camTarget, upDir);
+	XMVECTOR right = XMVector3Normalize(XMVector3Cross(forward, worldUp));
+	XMVECTOR up = XMVector3Normalize(XMVector3Cross(right, forward));
+
+	XMVECTOR camTarget = XMVectorAdd(this->posVector, forward);
+	XMMATRIX view = XMMatrixLookAtLH(this->posVector, camTarget, up);
 
 	static const XMMATRIX MirrorX = XMMatrixScaling(1.0f, 1.0f, 1.0f);
 	this->viewMatrix = MirrorX * view;
 
-	XMMATRIX vecRotationMatrix = XMMatrixRotationRollPitchYaw(this->rot.x, this->rot.y, this->rot.z);
-	this->vec_forward = XMVector3TransformCoord(this->DEFAULT_FORWARD_VECTOR, vecRotationMatrix);
-	this->vec_backward = XMVector3TransformCoord(this->DEFAULT_BACKWARD_VECTOR, vecRotationMatrix);
-	this->vec_left = XMVector3TransformCoord(this->DEFAULT_LEFT_VECTOR, vecRotationMatrix);
-	this->vec_right = XMVector3TransformCoord(this->DEFAULT_RIGHT_VECTOR, vecRotationMatrix);
+
+	XMVECTOR flatForward = XMVector3Normalize(XMVectorSet(sinf(yaw), cosf(yaw), 0.0f, 0.0f));
+	XMVECTOR flatRight = XMVector3Normalize(XMVector3Cross(flatForward, worldUp));
+
+
+	this->vec_forward = forward;
+	this->vec_backward = XMVectorNegate(forward);
+	this->vec_right = XMVectorNegate(flatRight);
+	this->vec_left = flatRight;
 }
+
 
 float Camera::GetSpeed()
 {
