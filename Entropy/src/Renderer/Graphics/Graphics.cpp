@@ -1346,7 +1346,7 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 		{
 			const SDynamicMeshPart& part = dm.parts[i];
 
-			if (part.LodCatagory > 2) {
+			if (part.LodCatagory > 3) {
 				continue;
 			}
 			
@@ -1757,7 +1757,7 @@ for (auto& ent : entitiesToDraw)
             for (size_t i = starts[s]; i < ends[s]; ++i)
             {
                 const auto& part = dm.parts[i];
-                if (part.LodCatagory > 2)
+                if (part.LodCatagory > 3)
                     continue;
 				const uint64_t key = ((uint64_t)ent.id << 32) | uint32_t(i);
 				auto& resolved = dynamicPartCache_[key];
@@ -2294,10 +2294,12 @@ void Graphics::RenderFrame()
 		if (ImGui::Button("Show All")) {
 			g_entityTypeVisibleMask =
 				(1u << (uint32_t)EntityType::Standard) |
+				(1u << (uint32_t)EntityType::Activity) |
 				(1u << (uint32_t)EntityType::ParticleSystem) |
 				(1u << (uint32_t)EntityType::Combatant) |
 				(1u << (uint32_t)EntityType::SkyEntity) |
-				(1u << (uint32_t)EntityType::ChildEntity);
+				(1u << (uint32_t)EntityType::ChildEntity)|
+				(1u << (uint32_t)EntityType::CombatantChild);
 		}
 		ImGui::SameLine();
 		if (ImGui::Button("Hide All")) {
@@ -2310,6 +2312,7 @@ void Graphics::RenderFrame()
 		checkboxType("Combatant", EntityType::Combatant);
 		checkboxType("SkyEntity", EntityType::SkyEntity);
 		checkboxType("ChildEntity", EntityType::ChildEntity);
+		checkboxType("CombatantChild", EntityType::CombatantChild);
 	}
 	if (ImGui::CollapsingHeader("ViewExtern"))
 	{
@@ -2953,7 +2956,7 @@ bool Graphics::InitializeScene()
 	//this->staticAO1 = loadzone->AOMap1;
 	//loadzone->load_datatable_into_scene(TagHash(0x80AD26AB));
 	//loadzone->load_datatable_into_scene(TagHash(0x80FDC30D));
-	auto e_to_load = TagHash(0x80CE3F1F);
+	auto e_to_load = TagHash(0x80CDFDC6);
 	loadzone->load_entity_into_scene(e_to_load, glm::quat(0, 0, 0, 0) , glm::vec4(1), 0);
 	//loadzone->load_datatable_into_scene(TagHash(0x80D40A7F));
 	if (loadzone) {

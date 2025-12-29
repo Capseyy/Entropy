@@ -48,7 +48,13 @@ uint32_t LoadZone::RegisterBufferBlob(const void* bytes, size_t size, uint32_t i
 
 void LoadZone::load_entity_into_scene(TagHash& tag, glm::quat quat, glm::vec4 pos, int recursion_depth, EntityType et)
 {
-    const uint32_t maxDepth = 2;
+    uint32_t maxDepth = 2;
+    if (et == EntityType::Combatant) {
+        maxDepth = 2;
+    }
+    else {
+		maxDepth = 5;
+    }
     if (recursion_depth >= int(maxDepth))
         return;
 
@@ -61,10 +67,10 @@ void LoadZone::load_entity_into_scene(TagHash& tag, glm::quat quat, glm::vec4 po
         printf("Used cached entity prototypes for %08x with depth %d\n", tag.hash, remainingDepth);
         return;
     }
-
     if (et == EntityType::Combatant){
         printf("Caching entity prototypes for combatant %08x with depth %d\n", tag.hash, remainingDepth);
     }
+    
     auto spawns = collect_entity_spawns(tag, remainingDepth, et);
 
     std::vector<RenderEntity> protos;
@@ -85,7 +91,7 @@ void LoadZone::load_entity_into_scene(TagHash& tag, glm::quat quat, glm::vec4 po
 
         proto.pos = glm::vec4(0, 0, 0, 1);
         proto.rot = glm::quat(1, 0, 0, 0);
-        proto.cb1_single = {}; // will be set per instance
+        proto.cb1_single = {};
 
         protos.emplace_back(std::move(proto));
     }
@@ -103,9 +109,7 @@ void LoadZone::load_entity_model_into_scene(TagHash sem,
     std::optional<uint32_t> particle_tech)
 {
     const SEntityModel model = bin::parse<SEntityModel>(sem.data, sem.size);
-    if (sem.hash == 0x80E32C94) {
-		int u = 1;
-    }
+
     RenderEntity re{};
     re.external_mats = ext_techs;
     re.occlusion_bounds = occlustion_bounds;

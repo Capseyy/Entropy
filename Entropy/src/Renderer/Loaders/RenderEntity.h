@@ -15,6 +15,7 @@ enum class EntityType : uint8_t {
     Combatant = 4,
     SkyEntity = 5,
     ChildEntity = 6,
+    CombatantChild =7,
 };
 
 
@@ -24,7 +25,8 @@ static uint32_t g_entityTypeVisibleMask =
 (1u << (uint32_t)EntityType::ParticleSystem) |
 (1u << (uint32_t)EntityType::Combatant) |
 (1u << (uint32_t)EntityType::SkyEntity) |
-(1u << (uint32_t)EntityType::ChildEntity);
+(1u << (uint32_t)EntityType::ChildEntity)|
+(1u << (uint32_t)EntityType::CombatantChild);
 
 static inline bool IsEntityTypeVisible(EntityType t)
 {

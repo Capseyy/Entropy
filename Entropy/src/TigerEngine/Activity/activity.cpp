@@ -38,13 +38,18 @@ void TigerActivity::ProcessActivity(uint32_t activity_hash) {
 
 void GenerateTigerActivities() {
 	auto& namedTags = GlobalData::getNamedTags();
+	std::vector<uint32_t> usedTags;
 	for (auto& tag : namedTags) {
 		if (tag.reference == 0x80808E8E) {
+			if (std::find(usedTags.begin(), usedTags.end(), tag.tag.hash) != usedTags.end()) {
+				continue;
+			}
 			TigerActivity ta;
 			ta.id = tag.tag.hash;
 			ta.dev_name = tag.name;
 			ta.ProcessActivity(static_cast<uint32_t>(tag.tag.hash));
 			GlobalData::globalActivities().emplace_back(ta);
+			usedTags.emplace_back(tag.tag.hash);
 		}
 	}
 }

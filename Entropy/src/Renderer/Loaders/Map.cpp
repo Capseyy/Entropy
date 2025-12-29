@@ -435,9 +435,15 @@ std::vector<CachedSpawn> LoadZone::collect_entity_spawns(TagHash entityTag, uint
 				continue;*/
 
 			TagHash childTag(WH.tagHash32);
-
+			EntityType newType;
+			if (et == EntityType::Combatant) {
+				newType = EntityType::CombatantChild;
+			}
+			else {
+				newType = et;
+			}
 			
-			auto childSpawns = collect_entity_spawns(childTag, remainingDepth - 1, EntityType::ChildEntity);
+			auto childSpawns = collect_entity_spawns(childTag, remainingDepth - 1, newType);
 
 			
 			out.insert(out.end(),
