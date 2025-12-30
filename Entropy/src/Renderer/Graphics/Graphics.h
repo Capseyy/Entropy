@@ -369,7 +369,7 @@ private:
 	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> sky_hemisphere_lookup;
 	Microsoft::WRL::ComPtr<ID3D11Buffer> cb13_;
 
-	float_t lod_distance = 50.0f;
+	float_t lod_distance = 1000.0f;
 	GBufferRT gbufA;
 
 	glm::vec3 frameCameraPos{ 0.0f,0.0f,0.0f };

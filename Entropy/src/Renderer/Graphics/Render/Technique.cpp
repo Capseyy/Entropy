@@ -126,32 +126,35 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
     struct PsSamplerBind { UINT slot; UINT sampler_index; };
     std::vector<PsSamplerBind> psBinds;
 
-    //{
-    //    std::vector<int> sstack; sstack.reserve(16);
+    {
+        std::vector<int> sstack;
+        sstack.reserve(16);
 
-    //    auto ops = ParseAll(this->pixeldata.TFX_Bytecode, /*trace=*/false);
-    //    for (const auto& op : ops) {
-    //        switch (op.op) {
-    //        case TfxBytecode::PushSampler: {
-    //            auto d = std::get<PushSamplerData>(op.data);
-    //            sstack.push_back(int(d.index));
-    //            break;
-    //        }
-    //        case TfxBytecode::SetShaderSampler: {
-    //            auto d = std::get<SetShaderBindingData>(op.data);
-    //            // stage: 1 == Pixel (from your EoF table)
-    //            if (!sstack.empty()) {
-    //                int idx = sstack.back(); sstack.pop_back();
-    //                if (d.stage == 1) {
-    //                    psBinds.push_back(PsSamplerBind{ UINT(d.slot), UINT(idx) });
-    //                }
-    //            }
-    //            break;
-    //        }
-    //        default: break;
-    //        }
-    //    }
-    //}
+        auto ops = ParseAll(this->pixeldata.TFX_Bytecode, /*trace=*/false);
+        for (const auto& op : ops) {
+            switch (op.op) {
+            case TfxBytecode::PushSampler: {
+                auto d = std::get<PushSamplerData>(op.data);
+                sstack.push_back(int(d.index));
+                break;
+            }
+            case TfxBytecode::SetShaderSampler: {
+                auto d = std::get<SetShaderBindingData>(op.data);
+                // stage: 1 == Pixel (from your EoF table)
+                if (!sstack.empty()) {
+                    int idx = sstack.back();
+                    sstack.pop_back();
+                    if (d.stage == 1) {
+                        psBinds.push_back(PsSamplerBind{ UINT(d.slot), UINT(idx) });
+                    }
+                }
+                break;
+            }
+            default:
+                break;
+            }
+        }
+    }
     for (const auto& b : psBinds) {
         if (b.sampler_index < this->Samplers.size() && this->Samplers[b.sampler_index]) {
             ID3D11SamplerState* s = this->Samplers[b.sampler_index]->sampler.Get();
@@ -190,11 +193,13 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
     // Textures (SRVs)
     for (UINT slot = 0; slot < ShaderBindingState::MaxSlots; ++slot) {
         if (!binds.textures[1][slot]) continue; // stage 1 == PS
+
         ID3D11ShaderResourceView* srv = nullptr;
         if (binds.textures[1][slot]) {
             srv = binds.textures[1][slot]->Get();
-			//printf("Bound PS texture at slot %u\n", slot);
+            // printf("Bound PS texture at slot %u\n", slot);
         }
+
         pContext->PSSetShaderResources(slot, 1, &srv);
     }
         
@@ -637,13 +642,16 @@ bool EntropyAssets::Technique::Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11D
         }
     }
 
+    
     for (UINT slot = 0; slot < ShaderBindingState::MaxSlots; ++slot) {
         if (!binds.textures[1][slot]) continue; // stage 1 == PS
+
         ID3D11ShaderResourceView* srv = nullptr;
         if (binds.textures[1][slot]) {
             srv = binds.textures[1][slot]->Get();
-            printf("Bound PS texture at slot %u\n", slot);
+            // printf("Bound PS texture at slot %u\n", slot);
         }
+
         pContext->PSSetShaderResources(slot, 1, &srv);
     }
 
