@@ -3,6 +3,7 @@
 #include <d3dcompiler.h>
 #include "UI/AtmosphereExternUI.h"
 #include "UI/FrameGlobalLightingExternUI.h"
+#include "UI/DeferredExternUI.h"
 #include "UI/global_channel_ui.h"
 #include "UI/ChannelEditor.h"
 #include <unordered_set>
@@ -269,7 +270,7 @@ void Graphics::SubmitPackets(ID3D11DeviceContext* ctx,
 		float bf[4] = { 1,1,1,1 };
 		ctx->OMSetBlendState(states.blend_states[8].Get(), bf, 0xFFFFFFFF); // alpha blend
 		ctx->OMSetDepthStencilState(depthStencilDecal.Get(), 0);            // read-only depth
-		ctx->RSSetState(states.rasterizer_states[2].Get());                 // no-cull
+		ctx->RSSetState(rasterizerStateGBuffer.Get());                 // no-cull
 
 		// extra SRVs used by many transparent shaders (matches your old immediate path)
 		ID3D11ShaderResourceView* s0[] = { this->temp_angle_lookup.Get() };
@@ -329,6 +330,7 @@ void Graphics::SubmitPackets(ID3D11DeviceContext* ctx,
 		if (stage == TfxRenderStage::Transparents) {
 			ctx->PSSetShaderResources(3, 1, s2);
 		}
+		ctx->RSSetState(rasterizerStateGBuffer.Get());
 		ctx->DrawIndexedInstanced(d.indexCount, d.instanceCount, d.firstIndex, 0, d.baseInstance);
 	}
 
@@ -544,6 +546,8 @@ void Graphics::PublishGlobalTexturesToFrameExtern()
 	setSrv(FrameOff::kSpecularLobeLookup, "specular_lobe_lookup_texture");
 	setSrv(FrameOff::kSpecularLobe3DLookup, "specular_lobe_3d_lookup_texture");
 	setSrv(FrameOff::kSpecularTintLookup, "specular_tint_lookup_texture");
+	ID3D11ShaderResourceView* p = gbufA.depth.texCopySRV.Get();
+	externs.MemcpyScope(TfxExtern::Deferred, 0x78, &p, sizeof(p));
 }
 
 std::shared_future<std::shared_ptr<EntropyAssets::BufferSRVRes>>&
@@ -1909,7 +1913,7 @@ void Graphics::RenderFrame()
 	frameCameraPos.z = pos.z;
 	gTimer.tick();
 	g_activations_this_frame = 0;
-	// Per-frame: reset global channel usage stats (used by the editor UI)
+	
 	tfx::ResetGlobalChannelUsagePerFrame();
 	packets_.clear();
 	frameWorlds_.clear();
@@ -2172,7 +2176,7 @@ void Graphics::RenderFrame()
 		ScopedGpuEvent e(anno_.Get(), L"transparency_pass");
 		SetFullViewport(pContext.Get(), float(windowWidth), float(windowHeight));
 
-		
+
 		m_instCursor = 0;
 		D3D11_MAPPED_SUBRESOURCE map{};
 		pContext->Map(m_instanceSB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &map);
@@ -2181,13 +2185,19 @@ void Graphics::RenderFrame()
 
 		ID3D11ShaderResourceView* srvs[] = { m_instanceSRV.Get() };
 		pContext->VSSetShaderResources(15, 1, srvs);
+		ID3D11ShaderResourceView* srv_stage[] = { gbufA.rt0.srv.Get() };
+		pContext->PSSetShaderResources(23, 1, srv_stage); // t14
+		pContext->RSSetState(rasterizerStateGBuffer.Get());
+		for (auto& rs : staticsToDraw) {
+			pContext->RSSetState(rasterizerStateGBuffer.Get());
+			DrawStaticMesh(rs, viewState, TfxRenderStage::Transparents);
+		}
 
-		
-		for (auto& rs : staticsToDraw) DrawStaticMesh(rs, viewState, TfxRenderStage::Transparents);
-		
 		SubmitPackets(pContext.Get(), packets_, TfxRenderStage::Transparents);
-		for (auto& re : entitiesToDraw)
+		for (auto& re : entitiesToDraw){
+			pContext->RSSetState(rasterizerStateGBuffer.Get());
 			DrawEntity(re, viewState, TfxRenderStage::Transparents);
+		}
 
 
 		pContext->Unmap(m_instanceSB.Get(), 0);
@@ -2369,6 +2379,12 @@ void Graphics::RenderFrame()
 		if (ImGui::Button("Ensure + Defaults (once)")) { EnsureFrameCapacity(externs); FrameSetDefaults(externs); }
 		bool changed = ShowFrameExternEditor(externs);
 		if (changed) externs.Upload(pContext.Get(), TfxExtern::Frame);
+	}
+
+	if (ImGui::CollapsingHeader("Deferred")) {
+		if (ImGui::Button("Ensure + Defaults (once)")) { EnsureDeferredCapacity(externs); DeferredSetDefaults(externs); }
+		bool changed = ShowDeferredExternEditor(externs);
+		if (changed) externs.Upload(pContext.Get(), TfxExtern::Deferred);
 	}
 
 	if (ImGui::CollapsingHeader("GlobalLighting")) {

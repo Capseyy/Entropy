@@ -55,10 +55,6 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
     ShaderBindingState bindingState{};
     const auto sel = DecodeStateSelection(this->StateSelection);
 
-    if (this->id == 0x81087E3B) {
-        int debug_break = 1;
-    }
-
     // Blend ----------------------------------------------------------
     if (sel.blend && *sel.blend < states.blend_states.size() &&
         states.blend_states[*sel.blend]) {

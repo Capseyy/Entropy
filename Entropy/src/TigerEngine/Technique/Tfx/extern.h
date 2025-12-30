@@ -422,26 +422,38 @@ struct GlobalLightingExtern {
 #pragma pack(pop)
 
 
+#pragma pack(push, 1)
 struct DeferredExtern {
-    Vec4  depth_constants = Vec4(0.0f, 1.0f / 0.01f, 0.0f, 0.0f);   // 0x00
-    Vec4  unk10 = Vec4::zero();                                      // 0x10
-    Vec4  unk20 = Vec4::zero();                                      // 0x20
-    float unk30 = 0.0f;                                              // 0x30
-    uint32_t _pad34 = 0;                                             // 0x34
-    // SRVs
-    ID3D11ShaderResourceView* deferred_depth = nullptr;              // 0x38
-    ID3D11ShaderResourceView* deferred_rt0 = nullptr;              // 0x48
-    ID3D11ShaderResourceView* deferred_rt1 = nullptr;              // 0x50
-    ID3D11ShaderResourceView* deferred_rt2 = nullptr;              // 0x58
-    ID3D11ShaderResourceView* light_diffuse = nullptr;              // 0x60
-    ID3D11ShaderResourceView* light_specular = nullptr;              // 0x68
-    ID3D11ShaderResourceView* light_ibl_specular = nullptr;          // 0x70
-    ID3D11ShaderResourceView* unk78 = nullptr;                       // 0x78
-    ID3D11ShaderResourceView* unk80 = nullptr;                       // 0x80
-    ID3D11ShaderResourceView* unk88 = nullptr;                       // 0x88
-    ID3D11ShaderResourceView* unk90 = nullptr;                       // 0x90
-    ID3D11ShaderResourceView* sky_hemisphere_mips = nullptr;         // 0x98
+    // 0x00..0x2F (constants)
+    Vec4  depth_constants = Vec4(0.0f, 1.0f / 0.01f, 0.0f, 0.0f); // 0x00
+    Vec4  unk10 = Vec4::zero();                                 // 0x10
+    Vec4  unk20 = Vec4::zero();                                 // 0x20
+    float unk30 = 0.0f;                                         // 0x30
+    uint32_t _pad34 = 0;                                        // 0x34
+
+    // 0x38..0x9F (TextureView / SRV*)
+    ID3D11ShaderResourceView* deferred_depth = nullptr;         // 0x38
+    uint8_t _pad40[0x48 - 0x40]{};                              // 0x40..0x47 (reserved/unused)
+
+    // GBuffer
+    ID3D11ShaderResourceView* gbuffer_albedo = nullptr;         // 0x48 (was deferred_rt0)
+    ID3D11ShaderResourceView* gbuffer_normal = nullptr;         // 0x50 (was deferred_rt1)
+    ID3D11ShaderResourceView* gbuffer_material = nullptr;       // 0x58 (was deferred_rt2)
+
+    // Lighting accumulators
+    ID3D11ShaderResourceView* light_diffuse = nullptr;          // 0x60
+    ID3D11ShaderResourceView* light_specular = nullptr;         // 0x68
+    ID3D11ShaderResourceView* light_ibl_specular = nullptr;     // 0x70
+
+    // Post / masks
+    ID3D11ShaderResourceView* ssao = nullptr;                   // 0x78
+    ID3D11ShaderResourceView* shadow_mask = nullptr;            // 0x80
+    ID3D11ShaderResourceView* unk88 = nullptr;                  // 0x88 (unidentified)
+    ID3D11ShaderResourceView* unk90 = nullptr;                  // 0x90 (unidentified)
+    ID3D11ShaderResourceView* sky_hemisphere_mips = nullptr;    // 0x98
 };
+#pragma pack(pop)
+
 
 #pragma pack(push, 1)
 struct AtmosphereExtern {
