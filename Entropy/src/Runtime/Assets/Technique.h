@@ -51,7 +51,6 @@ namespace EntropyAssets {           // <<< add
 
     struct Technique {
         uint32_t id = 0;
-
        
         std::vector<std::shared_ptr<VertexShader>>   VS;
         std::vector<std::shared_ptr<PixelShader>>    PS;

@@ -350,7 +350,7 @@ private:
 	void DrawLight(const RenderLight& rs, const View& view);
 	void CreateLightVolumeResources();
 
-
+	void PublishGlobalTexturesToFrameExtern();
 	Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerStateBiased;
 	std::array< GlobalChannel,256> channels = GetGlobalChannelDefaults();
 

@@ -525,6 +525,26 @@ Graphics::GetOrEnqueueBuffer(uint32_t id, UINT addFlags)
 	return it->second;
 }
 
+void Graphics::PublishGlobalTexturesToFrameExtern()
+{
+	EnsureFrameCapacity(externs);
+
+	auto setSrv = [&](size_t off, const char* key)
+		{
+			ID3D11ShaderResourceView* p = nullptr;
+			auto it = global_textures.find(key);
+			if (it != global_textures.end())
+				p = it->second.Get();
+
+			externs.MemcpyScope(TfxExtern::Frame, off, &p, sizeof(p));
+		};
+
+	setSrv(FrameOff::kIridescenceLookup, "iridescence_lookup_texture");
+	// If you have these keys in your map, wire them too:
+	setSrv(FrameOff::kSpecularLobeLookup, "specular_lobe_lookup_texture");
+	setSrv(FrameOff::kSpecularLobe3DLookup, "specular_lobe_3d_lookup_texture");
+	setSrv(FrameOff::kSpecularTintLookup, "specular_tint_lookup_texture");
+}
 
 std::shared_future<std::shared_ptr<EntropyAssets::BufferSRVRes>>&
 Graphics::GetOrEnqueueBufferSRV(uint32_t id)
@@ -1942,11 +1962,7 @@ void Graphics::RenderFrame()
 
 	PrewarmVisibleAssets(viewState);
 
-	/*m_instCursor = 0;
-	D3D11_MAPPED_SUBRESOURCE map{};
-	pContext->Map(m_instanceSB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &map);
-	m_instWritePtr = static_cast<uint8_t*>(map.pData);*/
-
+	PublishGlobalTexturesToFrameExtern();
 	
 	ID3D11ShaderResourceView* vsSrvs[] = { m_instanceSRV.Get() };
 	pContext->VSSetShaderResources(15, 1, vsSrvs); // t15

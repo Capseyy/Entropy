@@ -19,18 +19,33 @@ public:
         return p;
     }
 
-    // Evaluate into cb0 (vector<float4>)
-    void Evaluate(const ExternStorage& externs, std::vector<Vec4>& cb, std::vector<std::shared_ptr<EntropyAssets::Texture2DRes>> texs) const {
+    // Evaluate into cb0 (vector<float4>). Optionally capture texture/sampler/uav bindings.
+    void Evaluate(
+        const ExternStorage& externs,
+        std::vector<Vec4>& cb,
+        std::vector<std::shared_ptr<EntropyAssets::Texture2DRes>> texs,
+        ShaderBindingState* outBindings = nullptr,
+        bool trace = false) const
+    {
         std::array<Vec4, 16> temp{};
-        EvaluateExpressionEoF(ops, externs, cb, constants, temp, {}, texs, id, nullptr,false);
+        EvaluateExpressionEoF(ops, externs, cb, constants, temp, {}, std::move(texs), id, outBindings, trace);
     }
+
     void Evaluate_Trace(const ExternStorage& externs, std::vector<Vec4>& cb, std::vector<std::shared_ptr<EntropyAssets::Texture2DRes>> texs) const {
         std::array<Vec4, 16> temp{};
-        EvaluateExpressionEoF(ops, externs, cb, constants, temp, {}, texs, id, nullptr);
+        EvaluateExpressionEoF(ops, externs, cb, constants, temp, {}, std::move(texs), id, nullptr, true);
     }
-    void Evaluate_With_Channels(const ExternStorage& externs, std::vector<Vec4>& cb, std::unordered_map<uint32_t, float_t> channels, std::vector<std::shared_ptr<EntropyAssets::Texture2DRes>> texs, bool trace = false) const {
+
+    void Evaluate_With_Channels(
+        const ExternStorage& externs,
+        std::vector<Vec4>& cb,
+        std::unordered_map<uint32_t, float_t> channels,
+        std::vector<std::shared_ptr<EntropyAssets::Texture2DRes>> texs,
+        ShaderBindingState* outBindings = nullptr,
+        bool trace = false) const
+    {
         std::array<Vec4, 16> temp{};
-        EvaluateExpressionEoF(ops, externs, cb, constants, temp, channels,  texs, id, nullptr,trace);
+        EvaluateExpressionEoF(ops, externs, cb, constants, temp, std::move(channels), std::move(texs), id, outBindings, trace);
     }
 
     std::string DecompilePretty() const {

@@ -2,6 +2,7 @@
 #undef min
 #undef max
 #include "TigerEngine/Technique/Tfx/tfx_program.h"
+#include "TigerEngine/Technique/Tfx/tfx_eval.h" 
 #undef TRANSPARENT
 
 
@@ -24,7 +25,6 @@ namespace TfxScope{
     inline Bits from_bits_truncate(Bits v) { return v & ((Bits(1) << 41) - 1); }
     inline bool has(Bits s, Bits b) { return (s & b) != 0; }
 }
-
 
 struct DecodedSelection {
     std::optional<uint8_t> blend;
@@ -52,7 +52,7 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
     uint32_t StateSelection = this->StateSelection;
     uint64_t UsedScopes = this->usedScopes;
     auto used = TfxScope::from_bits_truncate(this->usedScopes);
-
+    ShaderBindingState bindingState{};
     const auto sel = DecodeStateSelection(this->StateSelection);
 
     if (this->id == 0x81087E3B) {
@@ -89,8 +89,10 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
         this->pixeldata.TFX_Constants, this->id);
 
     auto& cb0 = this->pixeldata.SamplerFallback;
-    
-    prog.Evaluate(externs, cb0, this->Textures);
+
+    // Evaluate constants and collect any explicit shader bindings emitted by the bytecode.
+    ShaderBindingState binds{};
+    prog.Evaluate(externs, cb0, this->Textures, &binds, false);
  
     if (this->CBuffers.empty() && this->CBuffers_fallback != nullptr)  {
         ID3D11Buffer* buf = this->CBuffers_fallback->buffer.Get();
@@ -124,33 +126,32 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
     struct PsSamplerBind { UINT slot; UINT sampler_index; };
     std::vector<PsSamplerBind> psBinds;
 
-    {
-        // Minimal stack for sampler indices
-        std::vector<int> sstack; sstack.reserve(16);
+    //{
+    //    std::vector<int> sstack; sstack.reserve(16);
 
-        auto ops = ParseAll(this->pixeldata.TFX_Bytecode, /*trace=*/false);
-        for (const auto& op : ops) {
-            switch (op.op) {
-            case TfxBytecode::PushSampler: {
-                auto d = std::get<PushSamplerData>(op.data);
-                sstack.push_back(int(d.index));
-                break;
-            }
-            case TfxBytecode::SetShaderSampler: {
-                auto d = std::get<SetShaderBindingData>(op.data);
-                // stage: 1 == Pixel (from your EoF table)
-                if (!sstack.empty()) {
-                    int idx = sstack.back(); sstack.pop_back();
-                    if (d.stage == 1) {
-                        psBinds.push_back(PsSamplerBind{ UINT(d.slot), UINT(idx) });
-                    }
-                }
-                break;
-            }
-            default: break;
-            }
-        }
-    }
+    //    auto ops = ParseAll(this->pixeldata.TFX_Bytecode, /*trace=*/false);
+    //    for (const auto& op : ops) {
+    //        switch (op.op) {
+    //        case TfxBytecode::PushSampler: {
+    //            auto d = std::get<PushSamplerData>(op.data);
+    //            sstack.push_back(int(d.index));
+    //            break;
+    //        }
+    //        case TfxBytecode::SetShaderSampler: {
+    //            auto d = std::get<SetShaderBindingData>(op.data);
+    //            // stage: 1 == Pixel (from your EoF table)
+    //            if (!sstack.empty()) {
+    //                int idx = sstack.back(); sstack.pop_back();
+    //                if (d.stage == 1) {
+    //                    psBinds.push_back(PsSamplerBind{ UINT(d.slot), UINT(idx) });
+    //                }
+    //            }
+    //            break;
+    //        }
+    //        default: break;
+    //        }
+    //    }
+    //}
     for (const auto& b : psBinds) {
         if (b.sampler_index < this->Samplers.size() && this->Samplers[b.sampler_index]) {
             ID3D11SamplerState* s = this->Samplers[b.sampler_index]->sampler.Get();
@@ -184,11 +185,26 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
         }
     }
 
+    
+    
+    // Textures (SRVs)
+    for (UINT slot = 0; slot < ShaderBindingState::MaxSlots; ++slot) {
+        if (!binds.textures[1][slot]) continue; // stage 1 == PS
+        ID3D11ShaderResourceView* srv = nullptr;
+        if (binds.textures[1][slot]) {
+            srv = binds.textures[1][slot]->Get();
+			//printf("Bound PS texture at slot %u\n", slot);
+        }
+        pContext->PSSetShaderResources(slot, 1, &srv);
+    }
+        
+    
+
     if (this->vertexdata.TFX_Bytecode.size() != 0 && this->vertexdata.contstant_buffer.hash == 0xffffffff) {
         TfxProgram prog_vs = TfxProgram::FromBytecode(this->vertexdata.TFX_Bytecode,
             this->vertexdata.TFX_Constants, this->id);
         auto& cb0_vs = this->vertexdata.SamplerFallback;
-        prog_vs.Evaluate(externs, cb0_vs,this->Textures_VS);
+        prog_vs.Evaluate(externs, cb0_vs, this->Textures_VS, nullptr, false);
         if (this->CBuffers_VS.empty() && this->CBuffers_fallback_VS != nullptr) {
             ID3D11Buffer* buf = this->CBuffers_fallback_VS->buffer.Get();
 
@@ -306,7 +322,7 @@ bool EntropyAssets::Technique::Bind_Only_PS(Microsoft::WRL::ComPtr<ID3D11Device>
  
     {
         
-        prog.Evaluate_With_Channels(externs, cb0, channels, this->Textures, false);
+        prog.Evaluate_With_Channels(externs, cb0, channels, this->Textures, nullptr, false);
 
     }
 
@@ -494,11 +510,11 @@ bool EntropyAssets::Technique::Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11D
 
     auto& cb0 = this->pixeldata.SamplerFallback;
 
-    {
+    ShaderBindingState binds{};
 
-        prog.Evaluate_With_Channels(externs, cb0, channels, this->Textures, false);
+    prog.Evaluate_With_Channels(externs, cb0, channels, this->Textures, &binds, false);
 
-    }
+    
 
     if (this->CBuffers.empty() && this->CBuffers_fallback != nullptr) {
         ID3D11Buffer* buf = this->CBuffers_fallback->buffer.Get();
@@ -597,7 +613,7 @@ bool EntropyAssets::Technique::Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11D
         TfxProgram prog_vs = TfxProgram::FromBytecode(this->vertexdata.TFX_Bytecode,
             this->vertexdata.TFX_Constants, this->id);
         auto& cb0_vs = this->vertexdata.SamplerFallback;
-        prog_vs.Evaluate_With_Channels(externs, cb0_vs, channels, this->Textures_VS);
+        prog_vs.Evaluate_With_Channels(externs, cb0_vs, channels, this->Textures_VS, nullptr, false);
         if (this->CBuffers_VS.empty() && this->CBuffers_fallback_VS != nullptr) {
             ID3D11Buffer* buf = this->CBuffers_fallback_VS->buffer.Get();
 
@@ -620,7 +636,17 @@ bool EntropyAssets::Technique::Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11D
             pContext->VSSetConstantBuffers(UINT(this->vsCBSlots_fallback), 1, &buf);
         }
     }
-    // Bind all technique constant buffers (your existing behavior)
+
+    for (UINT slot = 0; slot < ShaderBindingState::MaxSlots; ++slot) {
+        if (!binds.textures[1][slot]) continue; // stage 1 == PS
+        ID3D11ShaderResourceView* srv = nullptr;
+        if (binds.textures[1][slot]) {
+            srv = binds.textures[1][slot]->Get();
+            printf("Bound PS texture at slot %u\n", slot);
+        }
+        pContext->PSSetShaderResources(slot, 1, &srv);
+    }
+
     if (!this->CBuffers_VS.empty()) {
         for (size_t i = 0; i < this->CBuffers_VS.size(); ++i) {
             ID3D11Buffer* b = this->CBuffers_VS[i]->buffer.Get();

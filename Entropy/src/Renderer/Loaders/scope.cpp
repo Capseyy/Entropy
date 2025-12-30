@@ -186,7 +186,7 @@ void TigerScope::UpdateScopeBuffers(ComPtr<ID3D11DeviceContext> pContext, Extern
             TfxProgram prog = TfxProgram::FromBytecode(this->Scope.stage_pixel.TFX_Bytecode,
                 this->Scope.stage_pixel.TFX_Constants, 0);
             auto& cb = this->Scope.stage_pixel.SamplerFallback; // std::vector<Vec4>
-            prog.Evaluate(externs, cb,{});                         // fills cb with Vec4s
+            prog.Evaluate(externs, cb, {}, nullptr, false);        // fills cb with Vec4s
             UploadCB(pContext.Get(), pscbuffer.Get(), cb);
         }
         
@@ -199,7 +199,7 @@ void TigerScope::UpdateScopeBuffers(ComPtr<ID3D11DeviceContext> pContext, Extern
                 this->Scope.stage_vertex.TFX_Constants, 0);
             auto& cb_vs = this->Scope.stage_vertex.SamplerFallback; // std::vector<Vec4>
 
-            prog_vs.Evaluate(externs, cb_vs,{});
+            prog_vs.Evaluate(externs, cb_vs, {}, nullptr, false);
 
             UploadCB(pContext.Get(), vscbuffer.Get(), cb_vs);
         }

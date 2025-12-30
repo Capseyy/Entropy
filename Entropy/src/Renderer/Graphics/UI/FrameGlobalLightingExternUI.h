@@ -5,57 +5,97 @@
 
 
 // ==================== Frame ====================
-namespace FrameOff {
-    // Offsets we actively edit in UI (stay the same)
-    constexpr size_t kGameTime = 0x00; // float
-    constexpr size_t kRenderTime = 0x04; // float
-    constexpr size_t kUnk0C = 0x0C; // float
-    constexpr size_t kUnk10 = 0x10; // float (default 0.50)
-    constexpr size_t kDeltaGameTime = 0x14; // float
-    constexpr size_t kExposureTime = 0x18; // float
-    constexpr size_t kExposureScale = 0x1C; // float
+namespace FrameOff
+{
+    // --- scalars ---
+    constexpr size_t kGameTime = 0x00;
+    constexpr size_t kRenderTime = 0x04;
+    constexpr size_t kUnk0C = 0x0C;
+    constexpr size_t kUnk10 = 0x10; // default 0.50
+    constexpr size_t kDeltaGameTime = 0x14;
+    constexpr size_t kExposureTime = 0x18;
+    constexpr size_t kExposureScale = 0x1C; // default 1.0
 
-    // A known non-zero default that lives beyond 0x20 (so we seed it when expanding):
-    constexpr size_t kUnk1C0 = 0x1C0; // Vec4 default (1,1,0,1)
+    constexpr size_t kUnk20 = 0x20;
+    constexpr size_t kUnk24 = 0x24;
+    constexpr size_t kExposureIllumRelative = 0x28;
+    constexpr size_t kUnk2C = 0x2C;
+
+    constexpr size_t kUnk40 = 0x40;
+    constexpr size_t kUnk70 = 0x70;
+
+    // --- SRV pointers (TextureView) ---
+    constexpr size_t kUnk78 = 0x78;
+    constexpr size_t kUnk80 = 0x80;
+    constexpr size_t kUnk88 = 0x88;
+    constexpr size_t kUnk90 = 0x90;
+    constexpr size_t kUnk98 = 0x98;
+    constexpr size_t kUnkA0 = 0xA0;
+
+    constexpr size_t kSpecularLobeLookup = 0xA8;
+    constexpr size_t kSpecularLobe3DLookup = 0xB0;
+    constexpr size_t kSpecularTintLookup = 0xB8;
+    constexpr size_t kIridescenceLookup = 0xC0;
+
+    // --- Vec4 ---
+    constexpr size_t kUnkD0 = 0xD0;
+    constexpr size_t kUnk150 = 0x150;
+    constexpr size_t kUnk160 = 0x160;
+    constexpr size_t kUnk170 = 0x170;
+    constexpr size_t kUnk180 = 0x180;
+
+    // --- scalars ---
+    constexpr size_t kUnk190 = 0x190;
+    constexpr size_t kUnk194 = 0x194;
+
+    // --- Vec4 defaults ---
+    constexpr size_t kUnk1A0 = 0x1A0; // default zero
+    constexpr size_t kUnk1B0 = 0x1B0; // default one
+    constexpr size_t kUnk1C0 = 0x1C0; // default (1,1,0,1)
+
+    // --- trailing SRVs ---
+    constexpr size_t kUnk1E0 = 0x1E0;
+    constexpr size_t kUnk1E8 = 0x1E8;
+    constexpr size_t kUnk1F0 = 0x1F0;
+
+    // whole struct size
+    constexpr size_t kSize = sizeof(FrameExtern); // should be 0x1F8
 }
 
 inline void EnsureFrameCapacity(ExternStorage& ex)
 {
-    // If frame scope is missing or empty, seed it with full FrameExtern defaults.
     auto it = ex.scopes.find(TfxExtern::Frame);
     if (it == ex.scopes.end() || it->second.cpu.empty()) {
-        ex.set(TfxExtern::Frame, FrameExtern{}); // alloc full 0x1F8 and default values
+        ex.set(TfxExtern::Frame, FrameExtern{});
         return;
     }
 
     auto& scope = it->second;
-
-    // If existing buffer is smaller (e.g. old 0x20 UI version), grow it to full size.
-    const size_t want = sizeof(FrameExtern); // 0x1F8
+    const size_t want = sizeof(FrameExtern);
     if (scope.cpu.size() < want) {
         const size_t oldSize = scope.cpu.size();
         scope.cpu.resize(want, 0u);
         scope.dirty = true;
 
-        // Preserve existing front fields; also seed known non-zero defaults in the new tail.
-        // Only write defaults if the newly added region covers them.
-        if (oldSize <= FrameOff::kUnk1C0) {
-            const Vec4 def_1C0(1.0f, 1.0f, 0.0f, 1.0f);
-            ex.MemcpyScope(TfxExtern::Frame, FrameOff::kUnk1C0, &def_1C0, sizeof(def_1C0));
-        }
-        // Ensure unk10 default (0.50) if it was never set (typical when coming from a zeroed 0x20)
-        if (oldSize <= FrameOff::kUnk10) {
-            float f = 0.50f;
-            ex.MemcpyScope(TfxExtern::Frame, FrameOff::kUnk10, &f, sizeof(f));
-        }
+        // Seed defaults only if that region was newly added
+        auto seed_f = [&](size_t off, float v) {
+            if (oldSize <= off) ex.MemcpyScope(TfxExtern::Frame, off, &v, sizeof(v));
+            };
+        auto seed_v4 = [&](size_t off, const Vec4& v) {
+            if (oldSize <= off) ex.MemcpyScope(TfxExtern::Frame, off, &v, sizeof(v));
+            };
+
+        seed_f(FrameOff::kUnk10, 0.50f);
+        seed_f(FrameOff::kExposureScale, 1.0f);
+
+        seed_v4(FrameOff::kUnk1B0, Vec4::one());
+        seed_v4(FrameOff::kUnk1C0, Vec4(1.0f, 1.0f, 0.0f, 1.0f));
     }
 }
 
 inline void FrameSetDefaults(ExternStorage& ex)
 {
-    // Set full struct defaults (matches your new FrameExtern POD)
     FrameExtern def{};
-    // def.unk10 already 0.50f; def.unk1c0 already (1,1,0,1) in your struct
     ex.set(TfxExtern::Frame, def);
 }
 
@@ -66,19 +106,23 @@ inline bool ShowFrameExternEditor(ExternStorage& ex)
     auto rf = [&](size_t o) { return ex.getFloat(TfxExtern::Frame, o); };
     auto wf = [&](size_t o, float v) { ex.MemcpyScope(TfxExtern::Frame, o, &v, sizeof(v)); };
 
+    auto rv = [&](size_t o) { return ex.getVec4(TfxExtern::Frame, o); };
+    auto wv = [&](size_t o, const Vec4& v) { ex.MemcpyScope(TfxExtern::Frame, o, &v, sizeof(v)); };
+
+    auto rs = [&](size_t o) { return ex.getSRV(TfxExtern::Frame, o); };
+    auto ws = [&](size_t o, ID3D11ShaderResourceView* p) { ex.MemcpyScope(TfxExtern::Frame, o, &p, sizeof(p)); };
+
     bool changed = false;
 
-    if (ImGui::BeginTable("frame_tbl", 2, ImGuiTableFlags_SizingStretchSame)) {
-        ImGui::TableNextRow(); ImGui::TableSetColumnIndex(0);
-        ImGui::TextUnformatted("Controls");
-        ImGui::TableSetColumnIndex(1);
-        if (ImGui::Button("Reset Defaults")) { FrameSetDefaults(ex); changed = true; }
+    if (ImGui::Button("Reset Frame Defaults")) { FrameSetDefaults(ex); changed = true; }
+    ImGui::Separator();
 
+    // ---- Scalars ----
+    if (ImGui::CollapsingHeader("Frame Scalars", ImGuiTreeNodeFlags_DefaultOpen))
+    {
         auto rowF = [&](const char* label, size_t off, float step = 0.01f, float minv = -FLT_MAX, float maxv = FLT_MAX) {
-            ImGui::TableNextRow(); ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(label);
-            ImGui::TableSetColumnIndex(1);
             float v = rf(off);
-            if (ImGui::DragFloat(std::string("##").append(label).c_str(), &v, step, minv, maxv)) { wf(off, v); changed = true; }
+            if (ImGui::DragFloat(label, &v, step, minv, maxv)) { wf(off, v); changed = true; }
             };
 
         rowF("game_time", FrameOff::kGameTime);
@@ -86,11 +130,73 @@ inline bool ShowFrameExternEditor(ExternStorage& ex)
         rowF("delta_game_time", FrameOff::kDeltaGameTime);
         rowF("exposure_time", FrameOff::kExposureTime);
         rowF("exposure_scale", FrameOff::kExposureScale, 0.01f, 0.0f, 16.0f);
-        rowF("unk0c", FrameOff::kUnk0C);
-        rowF("unk10", FrameOff::kUnk10);
 
-        ImGui::EndTable();
+        rowF("unk0c", FrameOff::kUnk0C);
+        rowF("unk10 (default 0.50)", FrameOff::kUnk10, 0.01f, 0.0f, 4.0f);
+        rowF("unk20", FrameOff::kUnk20);
+        rowF("unk24", FrameOff::kUnk24);
+        rowF("exposure_illum_relative", FrameOff::kExposureIllumRelative);
+        rowF("unk2c", FrameOff::kUnk2C);
+        rowF("unk40", FrameOff::kUnk40);
+        rowF("unk70", FrameOff::kUnk70);
+        rowF("unk190", FrameOff::kUnk190);
+        rowF("unk194", FrameOff::kUnk194);
     }
+
+    // ---- SRVs ----
+    if (ImGui::CollapsingHeader("Frame TextureViews (SRVs)", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        auto rowSRV = [&](const char* label, size_t off) {
+            ID3D11ShaderResourceView* p = rs(off);
+            ImGui::Text("%s = %p", label, (void*)p);
+            ImGui::SameLine();
+            if (ImGui::SmallButton((std::string("Clear##") + label).c_str())) {
+                ID3D11ShaderResourceView* nullp = nullptr;
+                ws(off, nullp);
+                changed = true;
+            }
+            };
+
+        rowSRV("unk78", FrameOff::kUnk78);
+        rowSRV("unk80", FrameOff::kUnk80);
+        rowSRV("unk88", FrameOff::kUnk88);
+        rowSRV("unk90", FrameOff::kUnk90);
+        rowSRV("unk98", FrameOff::kUnk98);
+        rowSRV("unka0", FrameOff::kUnkA0);
+
+        rowSRV("specular_lobe_lookup (0xA8)", FrameOff::kSpecularLobeLookup);
+        rowSRV("specular_lobe_3d_lookup (0xB0)", FrameOff::kSpecularLobe3DLookup);
+        rowSRV("specular_tint_lookup (0xB8)", FrameOff::kSpecularTintLookup);
+        rowSRV("iridescence_lookup (0xC0)", FrameOff::kIridescenceLookup);
+
+        rowSRV("unk1e0", FrameOff::kUnk1E0);
+        rowSRV("unk1e8", FrameOff::kUnk1E8);
+        rowSRV("unk1f0", FrameOff::kUnk1F0);
+    }
+
+    // ---- Vec4s ----
+    if (ImGui::CollapsingHeader("Frame Vec4", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        auto rowV4 = [&](const char* label, size_t off, float step = 0.01f) {
+            Vec4 v = rv(off);
+            float a[4]{ v.x, v.y, v.z, v.w };
+            if (ImGui::DragFloat4(label, a, step)) {
+                wv(off, Vec4(a[0], a[1], a[2], a[3]));
+                changed = true;
+            }
+            };
+
+        rowV4("unkd0", FrameOff::kUnkD0);
+        rowV4("unk150", FrameOff::kUnk150);
+        rowV4("unk160", FrameOff::kUnk160);
+        rowV4("unk170", FrameOff::kUnk170);
+        rowV4("unk180", FrameOff::kUnk180);
+
+        rowV4("unk1a0 (default zero)", FrameOff::kUnk1A0);
+        rowV4("unk1b0 (default one)", FrameOff::kUnk1B0);
+        rowV4("unk1c0 (default 1,1,0,1)", FrameOff::kUnk1C0);
+    }
+
     return changed;
 }
 
