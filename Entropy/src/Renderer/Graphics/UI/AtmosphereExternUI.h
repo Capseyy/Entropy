@@ -1,4 +1,4 @@
-// AtmosphereExternUI.h
+
 #pragma once
 #include "TigerEngine/Technique/Tfx/extern.h"
 #include "Renderer/Graphics/ImGui/imgui.h"

@@ -12,6 +12,10 @@
 #ifndef TFX_EVAL_HELPERS_DEFINED
 #define TFX_EVAL_HELPERS_DEFINED
 #include "Runtime/Assets/Technique.h"
+#include <array>
+#include <memory>
+#include <functional>
+
 namespace tfx_eval_detail {
 
     inline Vec4 abs4(const Vec4& a) { return Vec4(std::fabs(a.x), std::fabs(a.y), std::fabs(a.z), std::fabs(a.w)); }
@@ -191,6 +195,44 @@ namespace tfx_eval_detail {
 
 inline const char* OpName(TfxBytecode);
 
+struct ShaderBindingState
+{
+    static constexpr uint32_t MaxStages = 8;
+    static constexpr uint32_t MaxSlots  = 32;
+
+    // If your bytecode explicitly sets a binding, mark it as touched so the caller
+    // can override defaults (including binding nullptr to clear a slot).
+    std::array<std::array<bool, MaxSlots>, MaxStages> touched_textures{};
+    std::array<std::array<bool, MaxSlots>, MaxStages> touched_samplers{};
+    std::array<std::array<bool, MaxSlots>, MaxStages> touched_uavs{};
+
+    std::array<std::array<std::shared_ptr<EntropyAssets::Texture2DRes>, MaxSlots>, MaxStages> textures{};
+    std::array<std::array<uint32_t, MaxSlots>, MaxStages> samplers{};
+    std::array<std::array<uint32_t, MaxSlots>, MaxStages> uavs{};
+
+    void setTexture(uint32_t stage, uint32_t slot, std::shared_ptr<EntropyAssets::Texture2DRes> tex)
+    {
+        if (stage < MaxStages && slot < MaxSlots) {
+            textures[stage][slot] = std::move(tex);
+            touched_textures[stage][slot] = true;
+        }
+    }
+    void setSampler(uint32_t stage, uint32_t slot, uint32_t samplerIndex)
+    {
+        if (stage < MaxStages && slot < MaxSlots) {
+            samplers[stage][slot] = samplerIndex;
+            touched_samplers[stage][slot] = true;
+        }
+    }
+    void setUav(uint32_t stage, uint32_t slot, uint32_t uavIndex)
+    {
+        if (stage < MaxStages && slot < MaxSlots) {
+            uavs[stage][slot] = uavIndex;
+            touched_uavs[stage][slot] = true;
+        }
+    }
+};
+
 static inline std::string DescribePayload(const TfxData& i) {
     char b[64]; b[0] = 0;
     switch (i.op) {
@@ -271,18 +313,36 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
     std::unordered_map<uint32_t, float_t> channel_floats,
     std::vector<std::shared_ptr<EntropyAssets::Texture2DRes>> texs,
     uint32_t technique_id,
+    ShaderBindingState* outBindings,
     bool trace = true)
 {
     using namespace tfx_eval_detail;
 
     std::vector<Vec4> stack; stack.reserve(64);
     auto push = [&](const Vec4& v) { stack.push_back(v); };
-    auto pop1 = [&](size_t ip, const char* opname) -> Vec4 {
+
+    // MSVC-safe: give pop1 a concrete type
+    std::function<Vec4(size_t, const char*)> pop1 =
+        [&](size_t ip, const char* opname) -> Vec4 {
         if (stack.empty()) {
-            if (trace) std::fprintf(stderr, "[eval] stack underflow before %s at ip=%zu, returning 0\n", opname, ip);
+            if (trace) std::fprintf(stderr,
+                "[eval] stack underflow before %s at ip=%zu, returning 0\n", opname, ip);
             return Vec4::zero();
         }
-        auto v = stack.back(); stack.pop_back(); return v;
+        Vec4 v = stack.back();
+        stack.pop_back();
+        return v;
+        };
+
+    auto pop_u32 = [&](size_t ip, const char* opname) -> uint32_t {
+        Vec4 v = pop1(ip, opname);
+        float fx = std::round(v.x);
+        if (fx < 0.0f) fx = 0.0f;
+        return static_cast<uint32_t>(fx);
+        };
+
+    auto push_u32 = [&](uint32_t u) {
+        push(Vec4::splat(static_cast<float>(u)));
         };
 
     Mat4 cachedM{};
@@ -718,13 +778,66 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             cb[d.element + 0] = r0; cb[d.element + 1] = r1; cb[d.element + 2] = r2; cb[d.element + 3] = r3;
             break;
         }
+        case TfxBytecode::PushSampler: {
+            auto d = std::get<PushSamplerData>(i.data);
+            if (trace) std::printf("    PushSampler idx=%u\n", d.index);
+            break;
+        }
 
-                                       // ------------- resource/sampler ops: no buffer effect -------------
-        case TfxBytecode::PushSampler:
-        case TfxBytecode::SetShaderSampler:
-        case TfxBytecode::SetShaderTexture:
-        case TfxBytecode::SetShaderUav:
-        case TfxBytecode::PushExternInputTextureView:
+        case TfxBytecode::PushExternInputTextureView: {
+            auto d = std::get<PushExternInputTexData>(i.data);
+            const size_t byte_off = size_t(d.offset) * 8; // texture views are stored as pointers
+
+            ID3D11ShaderResourceView* srv = externs.getSRV(d.ext, byte_off);
+
+            uint32_t idx = (uint32_t)texs.size(); // sentinel => bind null
+            if (srv) {
+                for (uint32_t ti = 0; ti < (uint32_t)texs.size(); ++ti) {
+                    if (texs[ti] && texs[ti]->Get() == srv) { idx = ti; break; }
+                }
+            }
+
+            push_u32(idx);
+
+            if (trace) {
+                std::printf("    PushExternInputTextureView ext=%u off=%zu -> srv=%p idx=%u\n",
+                    (unsigned)d.ext, byte_off, (void*)srv, idx);
+            }
+            break;
+        }
+
+        case TfxBytecode::SetShaderTexture: {
+            auto d = std::get<SetShaderBindingData>(i.data);
+            uint32_t idx = pop_u32(ip, "SetShaderTexture");
+
+            std::shared_ptr<EntropyAssets::Texture2DRes> tex =
+                (idx < texs.size()) ? texs[idx] : nullptr;
+
+            if (outBindings) outBindings->setTexture(d.stage, d.slot, tex);
+
+            if (trace) {
+                std::printf("    SetShaderTexture stage=%u slot=%u idx=%u (%s)\n",
+                    d.stage, d.slot, idx, tex ? "ok" : "null");
+            }
+            break;
+        }
+
+        case TfxBytecode::SetShaderSampler: {
+            auto d = std::get<SetShaderBindingData>(i.data);
+            uint32_t idx = pop_u32(ip, "SetShaderSampler");
+            if (outBindings) outBindings->setSampler(d.stage, d.slot, idx);
+            if (trace) std::printf("    SetShaderSampler stage=%u slot=%u idx=%u\n", d.stage, d.slot, idx);
+            break;
+        }
+
+        case TfxBytecode::SetShaderUav: {
+            auto d = std::get<SetShaderBindingData>(i.data);
+            uint32_t idx = pop_u32(ip, "SetShaderUav");
+            if (outBindings) outBindings->setUav(d.stage, d.slot, idx);
+            if (trace) std::printf("    SetShaderUav stage=%u slot=%u idx=%u\n", d.stage, d.slot, idx);
+            break;
+        }
+
         case TfxBytecode::PushExternInputU32:
         case TfxBytecode::PushExternInputUav:
         case TfxBytecode::Unk49:

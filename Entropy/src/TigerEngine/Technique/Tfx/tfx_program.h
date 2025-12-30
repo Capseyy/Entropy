@@ -22,15 +22,15 @@ public:
     // Evaluate into cb0 (vector<float4>)
     void Evaluate(const ExternStorage& externs, std::vector<Vec4>& cb, std::vector<std::shared_ptr<EntropyAssets::Texture2DRes>> texs) const {
         std::array<Vec4, 16> temp{};
-        EvaluateExpressionEoF(ops, externs, cb, constants, temp, {}, texs, id, false);
+        EvaluateExpressionEoF(ops, externs, cb, constants, temp, {}, texs, id, nullptr,false);
     }
     void Evaluate_Trace(const ExternStorage& externs, std::vector<Vec4>& cb, std::vector<std::shared_ptr<EntropyAssets::Texture2DRes>> texs) const {
         std::array<Vec4, 16> temp{};
-        EvaluateExpressionEoF(ops, externs, cb, constants, temp, {}, texs, id);
+        EvaluateExpressionEoF(ops, externs, cb, constants, temp, {}, texs, id, nullptr);
     }
     void Evaluate_With_Channels(const ExternStorage& externs, std::vector<Vec4>& cb, std::unordered_map<uint32_t, float_t> channels, std::vector<std::shared_ptr<EntropyAssets::Texture2DRes>> texs, bool trace = false) const {
         std::array<Vec4, 16> temp{};
-        EvaluateExpressionEoF(ops, externs, cb, constants, temp, channels,  texs, id,trace);
+        EvaluateExpressionEoF(ops, externs, cb, constants, temp, channels,  texs, id, nullptr,trace);
     }
 
     std::string DecompilePretty() const {

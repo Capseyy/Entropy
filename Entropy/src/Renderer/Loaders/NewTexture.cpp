@@ -3,7 +3,7 @@
 #include "TigerEngine/Technique/texture.h"
 using Microsoft::WRL::ComPtr;
 
-// ---- 1:1 “load_data(hash, load_full_mip)” ----
+
 static std::optional<std::pair<STextureHeader, std::vector<uint8_t>>>
 LoadTextureData(TagHash hash, bool load_full_mip)
 {

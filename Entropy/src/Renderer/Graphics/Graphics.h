@@ -366,6 +366,7 @@ private:
 	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> white1x1SRV;
 	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> grey1x1SRV;
 	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> temp_angle_lookup;
+	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> sky_hemisphere_lookup;
 	Microsoft::WRL::ComPtr<ID3D11Buffer> cb13_;
 
 	float_t lod_distance = 50.0f;

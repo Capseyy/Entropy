@@ -264,8 +264,7 @@ void Graphics::SubmitPackets(ID3D11DeviceContext* ctx,
 	DXGI_FORMAT curFmt = DXGI_FORMAT_UNKNOWN;
 	D3D11_PRIMITIVE_TOPOLOGY curTopo = (D3D11_PRIMITIVE_TOPOLOGY)~0u;
 	EntropyAssets::Technique* curTech = nullptr;
-
-	// Per-pass static state (bind once if Transparent)
+	ID3D11ShaderResourceView* s2[] = { this->sky_hemisphere_lookup.Get() };
 	if (stage == TfxRenderStage::Transparents) {
 		float bf[4] = { 1,1,1,1 };
 		ctx->OMSetBlendState(states.blend_states[8].Get(), bf, 0xFFFFFFFF); // alpha blend
@@ -275,8 +274,10 @@ void Graphics::SubmitPackets(ID3D11DeviceContext* ctx,
 		// extra SRVs used by many transparent shaders (matches your old immediate path)
 		ID3D11ShaderResourceView* s0[] = { this->temp_angle_lookup.Get() };
 		ID3D11ShaderResourceView* s1[] = { this->gbufA.depth.texCopySRV.Get() };
+		
 		ctx->PSSetShaderResources(15, 1, s0);
 		ctx->PSSetShaderResources(10, 1, s1);
+		ctx->PSSetShaderResources(3, 1, s2);
 	}
 
 	for (const Item& it : order)
@@ -312,7 +313,6 @@ void Graphics::SubmitPackets(ID3D11DeviceContext* ctx,
 			{ 
 				d.tech->Bind(pDevice, pContext, externs, states, scopes);
 				
-				
 				curTech = d.tech; 
 			}
 
@@ -326,7 +326,9 @@ void Graphics::SubmitPackets(ID3D11DeviceContext* ctx,
 			d.worldCount, g_cb1.Get());
 		ID3D11Buffer* b1 = g_cb1.Get();
 		ctx->VSSetConstantBuffers(1, 1, &b1);
-
+		if (stage == TfxRenderStage::Transparents) {
+			ctx->PSSetShaderResources(3, 1, s2);
+		}
 		ctx->DrawIndexedInstanced(d.indexCount, d.instanceCount, d.firstIndex, 0, d.baseInstance);
 	}
 
@@ -573,6 +575,7 @@ static inline void BindGBufferForWriting(ID3D11DeviceContext* ctx, const GBuffer
 
 #pragma once
 #define IDB_ANGlE_LOOKUP 102
+#define IDB_SKY 105
 static inline void SetFullViewport(ID3D11DeviceContext* ctx, float w, float h)
 {
 	D3D11_VIEWPORT vp{ 0.0f, 0.0f, w, h, 0.0f, 1.0f };
@@ -1835,13 +1838,7 @@ for (auto& ent : entitiesToDraw)
 		}
 	}
 	}
-}
-
-
-		
-				
-
-		
+}	
 
 void Graphics::EnsureEntityBufferRegistered(const SDynamicMesh& mesh,
 	DynamicBufKind which,
@@ -2133,14 +2130,14 @@ void Graphics::RenderFrame()
 			gbufA.atmos_ss_far_lookup.srv.Get(),            // 0x10
 			nullptr,// 0x18
 			nullptr,
-			this->grey1x1SRV.Get(),// 0x28 (placeholder 3D)
-			this->grey1x1SRV.Get(),                  // 0x30 (placeholder 3D)
-			this->grey1x1SRV.Get(),                 // 0x38 (placeholder 3D)
-			nullptr,              // 0x40
-			nullptr /*volumetrics surface0*/,             // 0x48
-			nullptr /*volumetrics intensity 3D*/,         // 0x50
-			this->grey1x1SRV.Get(),                   // 0x58
-			gbufA.shading_result_read.srv.Get()              // 0x60
+			this->grey1x1SRV.Get(),
+			this->grey1x1SRV.Get(),                 
+			this->grey1x1SRV.Get(),                
+			nullptr,            
+			nullptr,
+			nullptr ,
+			this->grey1x1SRV.Get(),                  
+			gbufA.shading_result_read.srv.Get()             
 		);
 	}
 
@@ -2924,7 +2921,10 @@ void Graphics::LoadGlobalTextures() {
 	}
 	HRESULT hr = LoadEmbeddedTextureSRV(pDevice.Get(), 102,/*srgb*/false, this->temp_angle_lookup.GetAddressOf());
 	if (FAILED(hr))
-		ErrorLogger::Log(hr, "Failed to load baked texture");
+		ErrorLogger::Log(hr, "Failed to load baked texture1");
+	hr = LoadEmbeddedTextureSRV(pDevice.Get(), IDB_SKY,/*srgb*/false, this->sky_hemisphere_lookup.GetAddressOf());
+	if (FAILED(hr))
+		ErrorLogger::Log(hr, "Failed to load baked texture2");
 }
 
 bool Graphics::InitializeScene()

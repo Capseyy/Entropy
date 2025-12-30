@@ -74,7 +74,6 @@ public:
             std::vector<D3D11_INPUT_ELEMENT_DESC>& /*descs*/,
             std::vector<std::string>& /*semanticStorage*/)>;
 
-    void SetInputLayoutProvider(InputLayoutProvider fn) { layoutProvider_ = std::move(fn); }
 
 private:
     // ---------------- members ----------------
@@ -119,7 +118,4 @@ private:
     std::shared_ptr<EntropyAssets::SamplerRes>   createSampler_(const D3D11_SAMPLER_DESC& d);
     std::shared_ptr<EntropyAssets::CBufferRes>   createCBuffer_(UINT byteSize, const void* init);
     std::shared_ptr<EntropyAssets::Texture3DRes> createTexture3D_(const Texture3DPayload& p);
-  
-
-    InputLayoutProvider  layoutProvider_; // optional hook
 };

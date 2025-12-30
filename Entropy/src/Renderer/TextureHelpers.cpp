@@ -1,5 +1,4 @@
-// WIC loader: file + memory helpers
-// Put this in a .cpp (e.g., Graphics_Textures.cpp)
+
 #include <wincodec.h>
 #pragma comment(lib, "windowscodecs.lib")
 #include "Graphics/Graphics.h"
@@ -23,7 +22,6 @@ static DXGI_FORMAT ToSRGB(DXGI_FORMAT fmt, bool srgb)
     }
 }
 
-// Decode WIC frame (already opened) ? RGBA8 buffer
 static HRESULT CopyFrameToRGBA8(IWICBitmapSource* src, std::vector<uint8_t>& out, UINT& w, UINT& h)
 {
     Microsoft::WRL::ComPtr<IWICFormatConverter> cvt;
@@ -139,7 +137,6 @@ bool Graphics::LoadGlobalTextureOptional(const std::string& key,
         }
     }
 
-    // Fallback: baked resource (RCDATA)
     HMODULE mod = GetModuleHandleW(nullptr);
     HRSRC res = FindResourceW(mod, MAKEINTRESOURCEW(resourceId), RT_RCDATA);
     if (res)

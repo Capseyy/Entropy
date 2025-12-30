@@ -23,9 +23,7 @@
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "d3d11.lib")
 
-// =====================================================================================
-// Small helper namespace (inline functions; single definition; no ODR issues)
-// =====================================================================================
+
 namespace entropy_tex
 {
 

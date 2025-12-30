@@ -156,6 +156,7 @@ struct PushGlobalChannelVectorData { uint8_t unk1; };
 struct PushTexParamData { uint8_t index; uint8_t fields; };
 struct OneU8 { uint8_t v; };
 
+struct SetShaderBindingInitial { uint8_t element; };
 
 struct SetShaderBindingData { uint8_t value; uint8_t stage; uint8_t slot; };
 inline SetShaderBindingData DecodeBinding(uint8_t v) {
@@ -169,6 +170,7 @@ using TfxPayload = std::variant<std::monostate,
     PushConstantVec4Data, LerpConstantData,
     SplineConstData, GradientConstData,
     PushFromOutputData, PopOutputData, PopOutputMat4Data,
+    SetShaderBindingInitial,
     PushExternInputFloatData, PushExternInputVec4Data, PushExternInputMat4Data,
     PushExternInputTexData, PushExternInputU32Data, PushExternInputUavData,
     PushTempData, PopTempData, PushSamplerData,

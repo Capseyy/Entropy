@@ -1,4 +1,4 @@
-// TextureLoader.h
+
 #pragma once
 
 #include <atomic>
@@ -13,17 +13,12 @@
 #include <d3d11.h>
 #include <dxgiformat.h>
 
-#include "TigerEngine/tag.h"                 // TagHash
+#include "TigerEngine/tag.h"               
 #include "Runtime/Assets/RuntimeAssetRegistry.h"
 
-//------------------------------------------------------------------------------
-// Global toggle (Rust: pub static LOW_RES)
-//------------------------------------------------------------------------------
 inline std::atomic<bool> LOW_RES{ false };
 
-//------------------------------------------------------------------------------
-// Texture handle / return structs
-//------------------------------------------------------------------------------
+
 enum class TextureHandleKind { Tex2D, TexCube, Tex3D };
 
 struct TextureHandle
@@ -40,9 +35,7 @@ struct LoadedTexture
     DXGI_FORMAT format{};
 };
 
-//------------------------------------------------------------------------------
-// Format helpers
-//------------------------------------------------------------------------------
+
 inline bool IsBlockCompressed(DXGI_FORMAT f, UINT& blockBytes)
 {
     switch (f)

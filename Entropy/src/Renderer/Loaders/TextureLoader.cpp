@@ -10,7 +10,7 @@ static ComPtr<IWICImagingFactory> g_wicFactory;
 HRESULT EnsureWIC() {
     if (g_wicFactory) return S_OK;
     HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-    if (hr == RPC_E_CHANGED_MODE) hr = S_OK; // already initialized in different mode
+    if (hr == RPC_E_CHANGED_MODE) hr = S_OK; 
     if (FAILED(hr)) return hr;
 
     return CoCreateInstance(
@@ -18,9 +18,6 @@ HRESULT EnsureWIC() {
         IID_PPV_ARGS(g_wicFactory.GetAddressOf()));
 }
 
-// …helpers: format convert/copy to RGBA8 omitted for brevity …
-
-// Minimal frame?RGBA8 copier (you can drop your fuller version in here)
 static HRESULT CopyFrameToRGBA8(IWICBitmapFrameDecode* frame,
     std::vector<uint8_t>& rgba,
     UINT& w, UINT& h)
