@@ -169,7 +169,7 @@ public:
             return false;
         }
         file.read(reinterpret_cast<char*>(&Header), sizeof(PkgHeader));
-        size_t NamePos = filepath.rfind("\\");
+        size_t NamePos = filepath.rfind("/");
         auto PackageFileName = filepath.substr(NamePos + 1);
         size_t PatchPos = PackageFileName.rfind("_");
         PackageName = PackageFileName.substr(0, PatchPos);
@@ -250,9 +250,12 @@ public:
 
 void GetAllNamedTags();
 
-const std::string PackagePath = "C:/Program Files (x86)/Steam/steamapps/common/Destiny 2/packages";
+// Configurable at runtime (set during app startup).
+// Default is defined in package.cpp for backwards compatibility.
+extern std::string gPackagePath;
 
-//const std::string PackagePath = "G:/Steam/steamapps/common/Destiny 2/packages";
+inline const std::string& GetPackagePath() { return gPackagePath; }
+inline void SetPackagePath(std::string path) { gPackagePath = std::move(path); }
 
 #pragma once
 

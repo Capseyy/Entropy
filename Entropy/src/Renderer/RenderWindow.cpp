@@ -21,15 +21,16 @@ bool RenderWindow::Initialize(WindowContainer* pWindowContainer, HINSTANCE hInst
 	RECT wr;
 	wr.left = centerX;
 	wr.top = centerY;
-	wr.right = wr.left+ this->width;
-	wr.bottom = wr.top+ this->height;
-	AdjustWindowRect(&wr, WS_CAPTION | WS_MINIMIZEBOX | WS_SYSMENU, FALSE);
+	wr.right = wr.left + this->width;
+	wr.bottom = wr.top + this->height;
+	// Use a standard overlapped window style so the app can be resized/maximized.
+	AdjustWindowRect(&wr, WS_OVERLAPPEDWINDOW, FALSE);
 
 
 	handle = CreateWindowEx(0,
 		this->window_class_wide.c_str(),
 		this->window_title_wide.c_str(),
-		WS_CAPTION | WS_MINIMIZEBOX | WS_SYSMENU,
+		WS_OVERLAPPEDWINDOW,
 		wr.left,
 		wr.top,
 		wr.right - wr.left,
@@ -43,7 +44,8 @@ bool RenderWindow::Initialize(WindowContainer* pWindowContainer, HINSTANCE hInst
 		return false;
 	}
 
-	ShowWindow(handle, SW_SHOW);
+	// Default to maximized so the render area matches the current monitor/work-area.
+	ShowWindow(handle, SW_SHOWMAXIMIZED);
 	SetForegroundWindow(handle);
 	SetFocus(handle);
 

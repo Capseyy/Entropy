@@ -226,6 +226,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\Config\AppConfig.cpp" />
     <ClCompile Include="src\Renderer\Graphics\Render\FrustumCulling.h" />
     <ClCompile Include="src\Renderer\Loaders\ecs\Light.cpp" />
     <ClCompile Include="src\Renderer\Loaders\NewTexture.cpp" />
@@ -282,6 +283,7 @@
     <ClCompile Include="src\TigerEngine\Technique\Tfx\tfx_decompiler.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\Config\AppConfig.h" />
     <ClInclude Include="src\Renderer\Graphics\Render\RenderPacket.h" />
     <ClInclude Include="src\Renderer\Graphics\UI\ActivityBrowser.h" />
     <ClInclude Include="src\Renderer\Graphics\UI\ChannelEditor.h" />

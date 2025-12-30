@@ -8,6 +8,8 @@
 #include "TigerEngine/ClientStartup/RenderGlobals.h"
 #include "TigerEngine/Activity/activity.h"
 
+#include "Config/AppConfig.h"
+
 void EnsureConsole()
 {
 	AllocConsole();
@@ -21,6 +23,25 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int)
 
 {
 	EnsureConsole();
+	HRESULT hr = CoInitialize(NULL);
+	if (FAILED(hr))
+	{
+		ErrorLogger::Log(hr, "Failed to initialize COM library.");
+		return -1;
+	}
+
+	AppConfig cfg;
+	if (!LoadOrCreateConfig(cfg))
+	{
+		printf("Configuration cancelled. Exiting.\n");
+		return 0;
+	}
+	const std::wstring packagesW = DerivePackagesFolder(cfg.game_root);
+	if (!packagesW.empty())
+	{
+		SetPackagePath(WideToUtf8(packagesW));
+		printf("Using packages path: %s\n", GetPackagePath().c_str());
+	}
 	auto RedactedKeys = Read_Redacted_Keys();
 	auto pcache = GeneratePackageCache(RedactedKeys);
 	for (const auto& pkg : pcache) {
@@ -44,15 +65,19 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int)
 	std::chrono::duration<double> elapsed = end - start;
 	GenerateTigerActivities();
 	//SearchBungieFiles(0x255D6F5B);
-	HRESULT hr = CoInitialize(NULL);
-	if (FAILED(hr))
+	Engine engine;
+
+	RECT workArea{};
+	SystemParametersInfo(SPI_GETWORKAREA, 0, &workArea, 0);
+	int w = workArea.right - workArea.left;
+	int h = workArea.bottom - workArea.top;
+	if (w <= 0 || h <= 0)
 	{
-		ErrorLogger::Log(hr, "Failed to initialize COM library.");
-		return -1;
+		w = GetSystemMetrics(SM_CXSCREEN);
+		h = GetSystemMetrics(SM_CYSCREEN);
 	}
 
-	Engine engine;
-	if (engine.Initialize(hInstance, "Entropy", "EntropyEngineWindowClass", 2560, 1440))
+	if (engine.Initialize(hInstance, "Entropy", "EntropyEngineWindowClass", w, h))
 	{
 		while (engine.ProcessMessages() == true)
 		{

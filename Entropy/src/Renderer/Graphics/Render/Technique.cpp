@@ -237,6 +237,8 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
     }
 
 
+
+
     // Bind scopes explicitly by bit, matching enum order (index == bit position)
     if (TfxScope::has(used, TfxScope::FRAME)) { scopes[0].second.Bind(pContext); }
     if (TfxScope::has(used, TfxScope::VIEW)) { scopes[1].second.Bind(pContext); }
@@ -360,7 +362,6 @@ bool EntropyAssets::Technique::Bind_Only_PS(Microsoft::WRL::ComPtr<ID3D11Device>
     std::vector<PsSamplerBind> psBinds;
 
     {
-        // Minimal stack for sampler indices
         std::vector<int> sstack; sstack.reserve(16);
 
         auto ops = ParseAll(this->pixeldata.TFX_Bytecode, /*trace=*/false);
@@ -387,7 +388,6 @@ bool EntropyAssets::Technique::Bind_Only_PS(Microsoft::WRL::ComPtr<ID3D11Device>
         }
     }
 
-    // Bind samplers exactly to the slots requested by the bytecode
     for (const auto& b : psBinds) {
         if (b.sampler_index < this->Samplers.size() && this->Samplers[b.sampler_index]) {
             ID3D11SamplerState* s = this->Samplers[b.sampler_index]->sampler.Get();
@@ -395,7 +395,6 @@ bool EntropyAssets::Technique::Bind_Only_PS(Microsoft::WRL::ComPtr<ID3D11Device>
         }
     }
 
-    // (Optional) If there were no SetShaderSampler ops, fall back to your old linear binding:
     if (psBinds.empty()) {
         for (size_t i = 0; i < this->Samplers.size(); ++i) {
             ID3D11SamplerState* s = this->Samplers[i]->sampler.Get();
@@ -420,10 +419,6 @@ bool EntropyAssets::Technique::Bind_Only_PS(Microsoft::WRL::ComPtr<ID3D11Device>
         }
     }
 
-   
-
-
-    // Bind scopes explicitly by bit, matching enum order (index == bit position)
     if (TfxScope::has(used, TfxScope::FRAME)) { scopes[0].second.Bind(pContext); }
     if (TfxScope::has(used, TfxScope::VIEW)) { scopes[1].second.Bind(pContext); }
     if (TfxScope::has(used, TfxScope::RIGID_MODEL)) { scopes[2].second.Bind(pContext); }
@@ -657,7 +652,6 @@ bool EntropyAssets::Technique::Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11D
             pContext->VSSetConstantBuffers(UINT(i), 1, &b);
         }
     }
-
 
     // Bind scopes explicitly by bit, matching enum order (index == bit position)
     if (TfxScope::has(used, TfxScope::FRAME)) { scopes[0].second.Bind(pContext); }

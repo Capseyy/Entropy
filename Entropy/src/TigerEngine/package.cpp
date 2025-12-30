@@ -5,6 +5,9 @@
 #include "helpers.h"
 #include "tag.h"
 #include "package.h"
+
+
+std::string gPackagePath = "C:/Program Files (x86)/Steam/steamapps/common/Destiny 2/packages";
 #include "globaldata.h"
 #undef min
 #include <mutex>
@@ -119,17 +122,17 @@ bool Package::initOodle()
 {
     std::call_once(g_oodle_once, [] {
         // Build: <packages root>/bin/x64/oo2core_9_win64.dll
-        std::filesystem::path root = std::filesystem::path(PackagePath).parent_path();  // up from /packages
+        std::filesystem::path root = std::filesystem::path(gPackagePath).parent_path();
         std::filesystem::path dll = root / "bin" / "x64" / "oo2core_9_win64.dll";
 
         g_oodle_dll = LoadLibraryW(dll.wstring().c_str());
-        if (!g_oodle_dll) return; // stays nullptr; initOodle() will report failure
+        if (!g_oodle_dll) return; 
 
         g_oodle_decomp = reinterpret_cast<OodleLZ64_DecompressDef>(
             GetProcAddress(g_oodle_dll, "OodleLZ_Decompress"));
         });
 
-    // cache on the instance too (optional; avoids branching elsewhere)
+
     hOodleDll = g_oodle_dll;
     OodleLZ_Decompress = reinterpret_cast<int64_t>(g_oodle_decomp);
 
@@ -229,7 +232,6 @@ ExtractResult Package::ExtractEntry(const int EntryNumber)
         return { nullptr, false };
     }
 
-    // ---- map each patch file once ----
     struct PidMap { uint32_t pid; const MappedPkg* mp; };
     std::vector<PidMap> maps;
     maps.reserve(4);
@@ -241,7 +243,7 @@ ExtractResult Package::ExtractEntry(const int EntryNumber)
     }
 
     for (auto& m : maps) {
-        const std::string full = PackageName + "_" + std::to_string(m.pid) + ".pkg";
+        const std::string full = gPackagePath+"/"+  PackageName + "_" + std::to_string(m.pid) + ".pkg";
         m.mp = MapPkgOnce(full);
         if (!m.mp) {
             std::fprintf(stderr, "Failed to mmap %s\n", full.c_str());
@@ -288,8 +290,8 @@ ExtractResult Package::ExtractEntry(const int EntryNumber)
             }
             if (blk.bitFlag & 0x1) {
                 if (takeFrom == 0 && n == BLOCK_SIZE) {
-                    unsigned char* dest = fileBuffer + dstOff;     // capture from outer scope (lambda -> make a small inline function if needed)
-                    decompressBlock(blk, io, dest);                // change decompressBlock signature to accept out pointer directly
+                    unsigned char* dest = fileBuffer + dstOff;  
+                    decompressBlock(blk, io, dest);               
                     dstOff += BLOCK_SIZE;
                     return true;
                 }
@@ -408,7 +410,7 @@ std::unordered_map<int, Package> GeneratePackageCache(std::unordered_map<int, Re
     std::unordered_map<int, Package> PackageMap;
     std::unordered_map<int, std::string> PackageNames;
     std::vector<std::string> Files;
-    for (const auto& entry : fs::directory_iterator(PackagePath)) {
+    for (const auto& entry : fs::directory_iterator(gPackagePath)) {
         if (entry.is_regular_file()) {
             Files.push_back(entry.path().string());
         }
@@ -434,7 +436,7 @@ std::unordered_map<int, Package> GeneratePackageCache(std::unordered_map<int, Re
     }
     for (const auto& pair : PatchFinder) {
         Package pkg;
-        pkg.load(PackagePath + "/" + PackageNames[pair.first] + "_" + std::to_string(pair.second) + ".pkg");
+        pkg.load(gPackagePath + "/" + PackageNames[pair.first] + "_" + std::to_string(pair.second) + ".pkg");
 
         if (Redacted_Keys.contains(pkg.Header.packageGroupId)) {
             std::memcpy(pkg.redacted_nonce, Redacted_Keys[pkg.Header.packageGroupId].nonce, 12);
