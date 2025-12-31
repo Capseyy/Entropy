@@ -69,7 +69,7 @@ struct RenderEntity {
     std::vector<uint32_t> external_mats;
     uint32_t id;
     std::vector<Unk_808072C5> external_material_mapping;
-    std::unordered_map<uint32_t, float_t> channels;
+    std::unordered_map<uint32_t, Vec4> channels;
     std::optional<Aabb> occlusion_bounds;
     CB1Payload_override cb1_single;
 	EntityType rtype = EntityType::Standard;

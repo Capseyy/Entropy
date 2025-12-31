@@ -2988,8 +2988,8 @@ bool Graphics::InitializeScene()
 	//this->staticAO1 = loadzone->AOMap1;
 	//loadzone->load_datatable_into_scene(TagHash(0x80AD26AB));
 	//loadzone->load_datatable_into_scene(TagHash(0x80FDC30D));
-	auto e_to_load = TagHash(0x80CDFDC6);
-	loadzone->load_entity_into_scene(e_to_load, glm::quat(0, 0, 0, 0) , glm::vec4(1), 0);
+	auto e_to_load = TagHash(0x80CE4ACB);
+	loadzone->load_entity_into_scene(e_to_load, glm::quat(0, 0, 0, 0) , glm::vec4(100,100,100,1), 0);
 	//loadzone->load_datatable_into_scene(TagHash(0x80D40A7F));
 	if (loadzone) {
 		this->staticsToDraw = loadzone->statics;

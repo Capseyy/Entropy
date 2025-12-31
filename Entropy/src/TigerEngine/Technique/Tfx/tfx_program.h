@@ -39,7 +39,7 @@ public:
     void Evaluate_With_Channels(
         const ExternStorage& externs,
         std::vector<Vec4>& cb,
-        std::unordered_map<uint32_t, float_t> channels,
+        std::unordered_map<uint32_t, Vec4> channels,
         std::vector<std::shared_ptr<EntropyAssets::Texture2DRes>> texs,
         ShaderBindingState* outBindings = nullptr,
         bool trace = false) const

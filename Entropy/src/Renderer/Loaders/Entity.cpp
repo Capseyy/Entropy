@@ -63,6 +63,17 @@ void LoadZone::load_entity_into_scene(TagHash& tag, glm::quat quat, glm::vec4 po
     const uint64_t key = MakeEntityCacheKey(tag.hash, remainingDepth, et);
 
     if (auto it = entity_render_cache.find(key); it != entity_render_cache.end()) {
+        for (auto& proto : it->second) {
+            auto chIt = proto.channels.find(0xA7A7FE43);  // key to search for
+            if (chIt != proto.channels.end()) {
+                Vec4 a;
+				a.x = pos.x;
+				a.y = pos.y;
+				a.z = pos.z;
+				a.w = 1.0f;
+                chIt->second = a;               // new value
+            }
+        }
         spawn_from_cached_prototypes(it->second, quat, pos);
         printf("Used cached entity prototypes for %08x with depth %d\n", tag.hash, remainingDepth);
         return;
@@ -97,6 +108,17 @@ void LoadZone::load_entity_into_scene(TagHash& tag, glm::quat quat, glm::vec4 po
     }
 
     auto [insIt, _] = entity_render_cache.emplace(key, std::move(protos));
+    for (auto& proto : insIt->second) {
+        auto chIt = proto.channels.find(0xA7A7FE43);  // key to search for
+        if (chIt != proto.channels.end()) {
+            Vec4 a;
+            a.x = pos.x;
+            a.y = pos.y;
+            a.z = pos.z;
+            a.w = 1.0f;
+            chIt->second = a;               // new value
+        }
+    }
     spawn_from_cached_prototypes(insIt->second, quat, pos);
 }
 
@@ -129,10 +151,10 @@ void LoadZone::load_entity_model_into_scene(TagHash sem,
                 const auto technique = bin::parse<STechnique>(part.technique.data, part.technique.size, bin::Endian::Little);
                 TfxProgram prog = TfxProgram::FromBytecode(technique.PixelShader.TFX_Bytecode,
                     technique.PixelShader.TFX_Constants, part.technique.hash);
-                for (const auto ch : prog.channels) re.channels[ch] = 1.0f;
+                for (const auto ch : prog.channels) re.channels[ch] = Vec4::splat(1.0f);
                 prog = TfxProgram::FromBytecode(technique.VertexShader.TFX_Bytecode,
                     technique.VertexShader.TFX_Constants, part.technique.hash);
-                for (const auto ch : prog.channels) re.channels[ch] = 1.0f;
+                for (const auto ch : prog.channels) re.channels[ch] = Vec4::splat(1.0f);
             }
             else {
                 const auto tech_tag = TagHash(ext_techs[tech_maps[part.varient_shader_index].technique_start]);
@@ -140,10 +162,10 @@ void LoadZone::load_entity_model_into_scene(TagHash sem,
                 const auto technique = bin::parse<STechnique>(tech_tag.data, tech_tag.size, bin::Endian::Little);
                 TfxProgram prog = TfxProgram::FromBytecode(technique.PixelShader.TFX_Bytecode,
                     technique.PixelShader.TFX_Constants, tech_tag.hash);
-                for (const auto ch : prog.channels) re.channels[ch] = 1.0f;
+                for (const auto ch : prog.channels) re.channels[ch] = Vec4::splat(1.0f);
                 prog = TfxProgram::FromBytecode(technique.VertexShader.TFX_Bytecode,
                     technique.VertexShader.TFX_Constants, tech_tag.hash);
-                for (const auto ch : prog.channels) re.channels[ch] = 1.0f;
+                for (const auto ch : prog.channels) re.channels[ch] = Vec4::splat(1.0f);
             }
         }
         if (particle_tech && particle_tech != 0) {
@@ -151,10 +173,10 @@ void LoadZone::load_entity_model_into_scene(TagHash sem,
             const auto technique = bin::parse<STechnique>(tech_tag.data, tech_tag.size, bin::Endian::Little);
             TfxProgram prog = TfxProgram::FromBytecode(technique.PixelShader.TFX_Bytecode,
                 technique.PixelShader.TFX_Constants, tech_tag.hash);
-            for (const auto ch : prog.channels) re.channels[ch] = 1.0f;
+            for (const auto ch : prog.channels) re.channels[ch] = Vec4::splat(1.0f);
             prog = TfxProgram::FromBytecode(technique.VertexShader.TFX_Bytecode,
                 technique.VertexShader.TFX_Constants, tech_tag.hash);
-            for (const auto ch : prog.channels) re.channels[ch] = 1.0f;
+            for (const auto ch : prog.channels) re.channels[ch] = Vec4::splat(1.0f);
         }
        
     }
@@ -238,14 +260,14 @@ RenderEntity LoadZone::build_render_entity_prototype(
                     technique.PixelShader.TFX_Constants,
                     part.technique.hash
                 );
-                for (const auto ch : prog.channels) re.channels[ch] = 1.0f;
+                for (const auto ch : prog.channels) re.channels[ch] = Vec4::splat(1.0f);
 
                 prog = TfxProgram::FromBytecode(
                     technique.VertexShader.TFX_Bytecode,
                     technique.VertexShader.TFX_Constants,
                     part.technique.hash
                 );
-                for (const auto ch : prog.channels) re.channels[ch] = 1.0f;
+                for (const auto ch : prog.channels) re.channels[ch] = Vec4::splat(1.0f);
             }
             else {
                 const uint16_t vi = part.varient_shader_index;
@@ -266,14 +288,14 @@ RenderEntity LoadZone::build_render_entity_prototype(
                     technique.PixelShader.TFX_Constants,
                     tech_tag.hash
                 );
-                for (const auto ch : prog.channels) re.channels[ch] = 1.0f;
+                for (const auto ch : prog.channels) re.channels[ch] = Vec4::splat(1.0f);
 
                 prog = TfxProgram::FromBytecode(
                     technique.VertexShader.TFX_Bytecode,
                     technique.VertexShader.TFX_Constants,
                     tech_tag.hash
                 );
-                for (const auto ch : prog.channels) re.channels[ch] = 1.0f;
+                for (const auto ch : prog.channels) re.channels[ch] = Vec4::splat(1.0f);
             }
         }
     }

@@ -12,7 +12,10 @@
 #ifndef TFX_EVAL_HELPERS_DEFINED
 #define TFX_EVAL_HELPERS_DEFINED
 #include "Runtime/Assets/Technique.h"
+
 namespace tfx_eval_detail {
+
+    Vec4 GetCameraFloatTfx();
 
     inline Vec4 abs4(const Vec4& a) { return Vec4(std::fabs(a.x), std::fabs(a.y), std::fabs(a.z), std::fabs(a.w)); }
 
@@ -294,7 +297,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
     std::vector<Vec4>& cb,
     const std::vector<Vec4>& constants,
     std::array<Vec4, 16>& temp,
-    std::unordered_map<uint32_t, float_t> channel_floats,
+    std::unordered_map<uint32_t, Vec4> channel_floats,
     std::vector<std::shared_ptr<EntropyAssets::Texture2DRes>> texs,
     uint32_t technique_id,
     ShaderBindingState* outBindings,
@@ -397,6 +400,9 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
         case TfxBytecode::PushExternInputFloat: {
             auto d = std::get<PushExternInputFloatData>(i.data);
             float f = externs.getFloat(d.ext, size_t(d.offset) * 4);
+            if (trace) {
+                std::printf("    PushExternInputFloat: ext=%u offset=%u -> %g\n", (unsigned)d.ext, d.offset, f);
+            }
             push(Vec4::splat(f)); break;
         }
         case TfxBytecode::PushExternInputVec4: {
@@ -440,24 +446,29 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             // Track per-frame usage for the Global Channel editor.
             tfx::MarkGlobalChannelUsed(d.unk1);
 
-
+            if (trace) {
+                std::printf("    PushGlobalChannelVector: channel_id=%u\n", d.unk1);
+			}
             Vec4 v = externs.getVec4(TfxExtern::Generic, size_t(d.unk1) * 16);
             push(v);
             break;
         }
         case TfxBytecode::PushObjectChannelVector: {
-            const auto* d = std::get_if<PushObjectChannelVectorData>(&i.data);
-
+            const auto& d = std::get_if<PushObjectChannelVectorData>(&i.data);
             if (!channel_floats.empty()) {
                 //printf("PushObjectChannelVector: hash_be=0x%08X\n", d->hash_be);
                 const auto it = channel_floats.find(d->hash_be);
-                const float_t float_value = (it != channel_floats.end()) ? it->second : 1.0f;
-                push(Vec4::splat(float_value));
+                const Vec4 float_value = (it != channel_floats.end()) ? it->second : Vec4::splat(1.0f);
+                
+                push(float_value);
             }
             else {
                 // Fallback: push 1.0f if no channel floats provided
                 push(Vec4::splat(1.0f));
             }
+            if (trace) {
+                std::printf("    PushObjectChannelVector: hash_be=0x%08X\n", d->hash_be);
+			}
 
 
             break;
@@ -474,7 +485,10 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             /*std::printf("    PushTexDimensions(Rust): idx=%u fields=0x%02X base=%s -> %s\n",
                     d.index, d.fields, to_str(dims).c_str(), to_str(v).c_str());*/
 
-
+            if (trace) {
+                std::printf("    PushTexDimensions: idx=%u fields=0x%02X -> %s\n",
+                    d.index, d.fields, to_str(v).c_str());
+			}
             push(v);
             break;
         }
