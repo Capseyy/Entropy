@@ -95,13 +95,14 @@ struct Unk_80804695 {
 	std::array<uint64_t, 9> unk38;
 	std::vector<Unk_80809956> spawn_points;
 	std::array<uint32_t, 7> unk68;
-};;
+};
 
 struct Unk_80809905 {
 	uint32_t fnvHash;
 	uint32_t unk2C;
 	uint64_t world_id;
 };
+
 
 struct Unk_80809928 {
 	uint64_t world_id;
@@ -135,6 +136,22 @@ struct Unk_80804699 {
 	std::array<uint64_t, 10> unk38;
 	std::vector<Unk_80809928> spawn_rule_ids;
 };
+
+
+struct Unk_808098EF {
+	CommonActivityValues common_values;
+	std::array<uint64_t, 4> unk38;
+	std::vector<Unk_80809905> object_groups;
+	uint64_t unk68;
+	RawStringPointer64 script_name;
+};
+
+struct Unk_80808CF8 {
+	CommonActivityValues common_values;
+	std::array<uint64_t, 4> unk38;
+	std::vector<Unk_80809905> object_groups;
+};
+
 
 struct Unk_808098FA {
 	CommonActivityValues common_values;

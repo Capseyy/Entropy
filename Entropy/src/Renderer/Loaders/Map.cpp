@@ -66,7 +66,7 @@ void LoadZone::ProcessMap()
 }
 
 inline void LoadZone::load_datatable_into_scene(TagHash table, glm::quat quat_ovd, glm::vec4 pos_ovd, EntityType et) {
-	//printf("Starting parse for %08x \n", table.hash);
+
 	auto datatable = bin::parse<SMapDataTable>(table.data, table.size);
 
 	for (const auto& entry : datatable.data_tables) {
@@ -193,11 +193,11 @@ inline void LoadZone::load_datatable_into_scene(TagHash table, glm::quat quat_ov
 		}
 		if (pos_ovd != glm::vec4()) {
 			auto th = TagHash(entry.entity.tagHash32);
-			load_entity_into_scene(th, quat_ovd, pos_ovd, 0, et);
+			load_entity_into_scene(th, quat_ovd, pos_ovd, 0, et, entry.world_id);
 		}
 		else {
 			auto th = TagHash(entry.entity.tagHash32);
-			load_entity_into_scene(th, entry.rotation, entry.translation, 0, et);
+			load_entity_into_scene(th, entry.rotation, entry.translation, 0, et, entry.world_id);
 		}
 		
 
@@ -210,19 +210,16 @@ inline void LoadZone::load_datatable_into_scene(TagHash table, glm::quat quat_ov
 void LoadZone::load_activity_phase(TagHash table, bool loadCombatant) {
 	const auto activity_phase = bin::parse<Unk_80808EBE>(table.data, table.size);
 	std::vector<std::pair<Unk_808046B5,TagHash>> spawn_rule_maps_temp;
+	std::vector<TagHash> activity_resource_tags;
+	activity_resource_tags.reserve(activity_phase.activity_resource.size());
 	for (const auto& entry : activity_phase.activity_resource) {
-		const auto ActResTag = TagHash(entry);
+		auto ActResTag = TagHash(entry);
+		activity_resource_tags.push_back(ActResTag);
 		const auto activity_resource_parent = bin::parse<Unk_80808943>(ActResTag.data, ActResTag.size);
 		const auto activity_resource = bin::parse<SActivityResource>(activity_resource_parent.activity_resource_tag.data, activity_resource_parent.activity_resource_tag.size);
 		auto& activity_resource_tag = activity_resource_parent.activity_resource_tag;
 		switch (activity_resource.unk18.type)
 		{
-		case 0x808092d8: {
-			//printf("Found Entity Instance placement\n");
-			auto const resource = activity_resource.unk18.Parse<Unk_808092D8>(activity_resource_tag);
-			load_datatable_into_scene(resource.data_table,{},{},EntityType::Activity);
-			break;
-		}
 		case 0x808098fa: { //entity names
 			auto const resource = activity_resource.unk18.Parse<Unk_808098FA>(activity_resource_tag);
 			if (activity_resource.NameFile.hash != 0xFFFFFFFF) {
@@ -243,6 +240,68 @@ void LoadZone::load_activity_phase(TagHash table, bool loadCombatant) {
 					}
 				}
 			}
+			break;
+		}
+		case 0x808098ef: { //script name
+			auto const resource = activity_resource.unk18.Parse<Unk_808098EF>(activity_resource_tag);
+			if (activity_resource.NameFile.hash != 0xFFFFFFFF) {
+				std::unordered_map<uint32_t, std::string> file_names;
+				const auto name_tag = bin::parse<Unk_8080906b>(activity_resource.NameFile.data, activity_resource.NameFile.size);
+				for (const auto& str_entry : name_tag.string_table) {
+					if (str_entry.Unk0.type == 0x8080894d) {
+						const auto name_ptr = str_entry.Unk0.Parse<Unk_8080894D>(activity_resource.NameFile);
+						const auto name = name_ptr.Unk0.name;
+						uint32_t fnv = fnv1_32(name);
+						file_names.emplace(fnv, name);
+					}
+				}
+				for (const auto& wid_pair : resource.object_groups) {
+					auto it = file_names.find(wid_pair.fnvHash);
+					if (it != file_names.end()) {
+						loaded_entity_names.try_emplace(wid_pair.world_id, it->second);
+					}
+				}
+			}
+
+			break;
+		}
+		case 0x80808CF8: { //object group names
+			auto const resource = activity_resource.unk18.Parse<Unk_80808CF8>(activity_resource_tag);
+			if (activity_resource.NameFile.hash != 0xFFFFFFFF) {
+				std::unordered_map<uint32_t, std::string> file_names;
+				const auto name_tag = bin::parse<Unk_8080906b>(activity_resource.NameFile.data, activity_resource.NameFile.size);
+				for (const auto& str_entry : name_tag.string_table) {
+					if (str_entry.Unk0.type == 0x8080894d) {
+						const auto name_ptr = str_entry.Unk0.Parse<Unk_8080894D>(activity_resource.NameFile);
+						const auto name = name_ptr.Unk0.name;
+						uint32_t fnv = fnv1_32(name);
+						file_names.emplace(fnv, name);
+					}
+				}
+				for (const auto& wid_pair : resource.object_groups) {
+					auto it = file_names.find(wid_pair.fnvHash);
+					if (it != file_names.end()) {
+						loaded_entity_names.try_emplace(wid_pair.world_id, it->second);
+					}
+				}
+			}
+
+			break;
+		}
+		default:
+			break;
+		}
+	}
+	for (const auto& ActResTag : activity_resource_tags) {
+		const auto activity_resource_parent = bin::parse<Unk_80808943>(ActResTag.data, ActResTag.size);
+		const auto activity_resource = bin::parse<SActivityResource>(activity_resource_parent.activity_resource_tag.data, activity_resource_parent.activity_resource_tag.size);
+		auto& activity_resource_tag = activity_resource_parent.activity_resource_tag;
+		switch (activity_resource.unk18.type)
+		{
+		case 0x808092d8: {
+			//printf("Found Entity Instance placement\n");
+			auto const resource = activity_resource.unk18.Parse<Unk_808092D8>(activity_resource_tag);
+			load_datatable_into_scene(resource.data_table,{},{},EntityType::Activity);
 			break;
 		}
 		case 0x80804699: { //spawn_rules

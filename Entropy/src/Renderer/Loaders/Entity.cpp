@@ -46,7 +46,7 @@ uint32_t LoadZone::RegisterBufferBlob(const void* bytes, size_t size, uint32_t i
     return id;
 }
 
-void LoadZone::load_entity_into_scene(TagHash& tag, glm::quat quat, glm::vec4 pos, int recursion_depth, EntityType et)
+void LoadZone::load_entity_into_scene(TagHash& tag, glm::quat quat, glm::vec4 pos, int recursion_depth, EntityType et, uint64_t world_id)
 {
     uint32_t maxDepth = 2;
     if (et == EntityType::Combatant) {
@@ -64,16 +64,26 @@ void LoadZone::load_entity_into_scene(TagHash& tag, glm::quat quat, glm::vec4 po
 
     if (auto it = entity_render_cache.find(key); it != entity_render_cache.end()) {
         for (auto& proto : it->second) {
-            auto chIt = proto.channels.find(0xA7A7FE43);  // key to search for
+            auto chIt = proto.channels.find(0xA7A7FE43);
             if (chIt != proto.channels.end()) {
                 Vec4 a;
 				a.x = pos.x;
 				a.y = pos.y;
 				a.z = pos.z;
 				a.w = 1.0f;
-                chIt->second = a;               // new value
+                chIt->second = a;
             }
         }
+
+        for (auto& proto : it->second) {
+            if (proto.rtype != EntityType::ChildEntity && proto.rtype != EntityType::CombatantChild) {
+                auto ent_name = loaded_entity_names.find(world_id);
+                if (ent_name != loaded_entity_names.end()) {
+                    proto.name = ent_name->second;
+                }
+            }
+        }
+        
         spawn_from_cached_prototypes(it->second, quat, pos);
         printf("Used cached entity prototypes for %08x with depth %d\n", tag.hash, remainingDepth);
         return;
@@ -109,16 +119,25 @@ void LoadZone::load_entity_into_scene(TagHash& tag, glm::quat quat, glm::vec4 po
 
     auto [insIt, _] = entity_render_cache.emplace(key, std::move(protos));
     for (auto& proto : insIt->second) {
-        auto chIt = proto.channels.find(0xA7A7FE43);  // key to search for
+        auto chIt = proto.channels.find(0xA7A7FE43);  
         if (chIt != proto.channels.end()) {
             Vec4 a;
             a.x = pos.x;
             a.y = pos.y;
             a.z = pos.z;
             a.w = 1.0f;
-            chIt->second = a;               // new value
+            chIt->second = a;            
         }
     }
+    for (auto& proto : insIt->second) {
+        if (proto.rtype != EntityType::ChildEntity && proto.rtype != EntityType::CombatantChild) {
+            auto ent_name = loaded_entity_names.find(world_id);
+            if (ent_name != loaded_entity_names.end()) {
+                proto.name = ent_name->second;
+            }
+		}
+	}
+    
     spawn_from_cached_prototypes(insIt->second, quat, pos);
 }
 
@@ -194,12 +213,13 @@ void LoadZone::spawn_from_cached_prototypes(
 
     for (const auto& p : protos)
     {
-        RenderEntity re = p; // copy prototype (contains meshData, meshs, channels, mats...)
+        RenderEntity re = p; 
 
         re.pos = pos;
         re.rot = quat;
+		re.base_placement_pos = pos;
 
-        // Recompute bounds/cbuffer for this instance (your current rules)
+       
         const auto& model = re.meshData;
 
         re.occlusion_bounds = Aabb::FromCenterExtents(

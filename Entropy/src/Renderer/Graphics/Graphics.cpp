@@ -7,6 +7,7 @@
 #include "UI/global_channel_ui.h"
 #include "UI/ChannelEditor.h"
 #include <unordered_set>
+#include <cfloat>
 #include "Renderer/Graphics/UI/ActivityBrowser.h"
 #include "TigerEngine/Map/TigerBuffer.h"
 #include "TigerEngine/Technique/Tfx/global_channel_usage.h"
@@ -28,6 +29,7 @@ void Graphics::InitAnnotation() {
 
 struct ScopedGpuEvent {
 	ID3DUserDefinedAnnotation* a{};
+
 	ScopedGpuEvent(ID3DUserDefinedAnnotation* anno, const wchar_t* name) : a(anno) {
 		if (a) a->BeginEvent(name);
 	}
@@ -40,6 +42,52 @@ struct ScopedGpuEvent {
 	}
 	~ScopedGpuEvent() { if (a) a->EndEvent(); }
 };
+namespace {
+    static inline const char* EntityTypeName(EntityType t) {
+        switch (t) {
+        case EntityType::Standard: return "Standard";
+        case EntityType::Activity: return "Activity";
+        case EntityType::ParticleSystem: return "ParticleSystem";
+        case EntityType::Combatant: return "Combatant";
+        case EntityType::SkyEntity: return "SkyEntity";
+        case EntityType::ChildEntity: return "ChildEntity";
+        case EntityType::CombatantChild: return "CombatantChild";
+        default: return "Unknown";
+        }
+    }
+
+    // Projects a world position into screen space (pixels). Returns false if behind camera / off-screen.
+	static inline bool WorldToScreen(const View& view, const glm::vec3& world, float screenW, float screenH, ImVec2& out) {
+		using namespace DirectX;
+
+		// Your matrices are written with XMStoreFloat4x4, so load them directly.
+		const XMMATRIX W2P = XMLoadFloat4x4(&view.world_to_projective);
+
+		const XMVECTOR p = XMVectorSet(world.x, world.y, world.z, 1.0f);
+		const XMVECTOR clip = XMVector4Transform(p, W2P);
+
+		const float w = XMVectorGetW(clip);
+		if (w <= 1e-5f) return false;
+
+		const float invW = 1.0f / w;
+		const float ndcX = XMVectorGetX(clip) * invW;
+		const float ndcY = XMVectorGetY(clip) * invW;
+
+		// reject off-screen
+		if (ndcX < -1.0f || ndcX > 1.0f || ndcY < -1.0f || ndcY > 1.0f) return false;
+
+		out.x = (ndcX * 0.5f + 0.5f) * screenW;
+		out.y = (1.0f - (ndcY * 0.5f + 0.5f)) * screenH;
+		return true;
+	
+    }
+}
+
+
+
+
+
+
 
 template<typename T>
 static bool TryActivateReady(std::shared_future<std::shared_ptr<T>>& fut,
@@ -1285,7 +1333,8 @@ void Graphics::DrawTerrain(const RenderTerrain& rt, const View& view)
 
 void Graphics::DrawEntity(const RenderEntity& rs,
 	const View& view,
-	TfxRenderStage stage)
+	TfxRenderStage stage,
+	uint32_t drawIndex)
 {
 	bool farObject = true;
 	const glm::vec3 objPos = glm::vec3(rs.pos);
@@ -1588,6 +1637,44 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 				resolved.indexStart,
 				0,
 				baseInstance);
+			if (selectedEntitySettingsOpen &&
+				selectedEntityIndex >= 0 &&
+				(uint32_t)selectedEntityIndex == drawIndex &&
+				rasterizerStateWireframe &&
+				depthStencilReadOnly &&
+				bsAdditive)
+			
+			{
+				Microsoft::WRL::ComPtr<ID3D11RasterizerState> prevRS;
+				Microsoft::WRL::ComPtr<ID3D11DepthStencilState> prevDS;
+				Microsoft::WRL::ComPtr<ID3D11BlendState> prevBS;
+				UINT prevStencil = 0;
+				float prevBlend[4] = { 0,0,0,0 };
+				UINT prevSampleMask = 0;
+
+				pContext->RSGetState(prevRS.GetAddressOf());
+				pContext->OMGetDepthStencilState(prevDS.GetAddressOf(), &prevStencil);
+				pContext->OMGetBlendState(prevBS.GetAddressOf(), prevBlend, &prevSampleMask);
+
+				float one[4] = { 1,1,1,1 };
+				pContext->RSSetState(rasterizerStateWireframe.Get());
+				pContext->OMSetDepthStencilState(depthStencilReadOnly.Get(), 0);
+				pContext->OMSetBlendState(bsAdditive.Get(), one, 0xFFFFFFFF);
+
+				pContext->DrawIndexedInstanced(
+					resolved.indexCount,
+					1,
+					resolved.indexStart,
+					0,
+					baseInstance);
+
+				pContext->RSSetState(prevRS.Get());
+				pContext->OMSetDepthStencilState(prevDS.Get(), prevStencil);
+				pContext->OMSetBlendState(prevBS.Get(), prevBlend, prevSampleMask);
+			}
+
+
+
 		}
 	}
 }
@@ -1881,14 +1968,12 @@ void Graphics::EnsureEntityBufferRegistered(const SDynamicMesh& mesh,
 
 		auto payload = BuildBufferPayloadFromTag(tag, parseAs);
 
-		// Ensure requested usage is permitted (e.g., IB/VB/SRV).
 		payload.desc.BindFlags |= addFlags;
 
 		registry->RegisterBuffer(id, std::move(payload));
 		return;
 	}
 
-	// Already present: merge bind flags so subsequent creation of SRV/VB/IB is legal.
 	auto payload = registry->GetBuffer(id);
 	const UINT merged = payload.desc.BindFlags | addFlags;
 	if (merged != payload.desc.BindFlags) {
@@ -2022,13 +2107,36 @@ void Graphics::RenderFrame()
 		pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 		
+		// Keep selection stable even when many entities share the same id/hash.
+		if (selectedEntityIndex >= 0) {
+			if (selectedEntityIndex >= (int32_t)entitiesToDraw.size() ||
+				entitiesToDraw[(size_t)selectedEntityIndex].id != selectedEntityId ||
+				entitiesToDraw[(size_t)selectedEntityIndex].rtype != selectedEntityType)
+			{
+				float bestD2 = FLT_MAX;
+				int32_t bestIdx = -1;
+				for (size_t j = 0; j < entitiesToDraw.size(); ++j) {
+					const auto& e = entitiesToDraw[j];
+					if (e.id != selectedEntityId || e.rtype != selectedEntityType) continue;
+					const float dx = e.pos.x - selectedEntityPos.x;
+					const float dy = e.pos.y - selectedEntityPos.y;
+					const float dz = e.pos.z - selectedEntityPos.z;
+					const float d2 = dx*dx + dy*dy + dz*dz;
+					if (d2 < bestD2) { bestD2 = d2; bestIdx = (int32_t)j; }
+				}
+				selectedEntityIndex = bestIdx;
+			}
+		}
+
 		for (auto& rs : staticsToDraw) DrawStaticMesh(rs, viewState, TfxRenderStage::GenerateGbuffer);
 		for (auto& rt : this->terrainToDraw) {
 			DrawTerrain(rt, viewState);
 		}
 	}
-		for (auto& re : entitiesToDraw)
-			DrawEntity(re, viewState, TfxRenderStage::GenerateGbuffer);
+		for (size_t entIdx = 0; entIdx < entitiesToDraw.size(); ++entIdx) {
+			auto& re = entitiesToDraw[entIdx];
+			DrawEntity(re, viewState, TfxRenderStage::GenerateGbuffer, (uint32_t)entIdx);
+		}
 		SubmitPackets(pContext.Get(), packets_,TfxRenderStage::GenerateGbuffer);
 		pContext->Unmap(m_instanceSB.Get(), 0);
 		m_instWritePtr = nullptr;
@@ -2194,9 +2302,10 @@ void Graphics::RenderFrame()
 		}
 
 		SubmitPackets(pContext.Get(), packets_, TfxRenderStage::Transparents);
-		for (auto& re : entitiesToDraw){
+		for (size_t entIdx = 0; entIdx < entitiesToDraw.size(); ++entIdx) {
+			auto& re = entitiesToDraw[entIdx];
 			pContext->RSSetState(rasterizerStateGBuffer.Get());
-			DrawEntity(re, viewState, TfxRenderStage::Transparents);
+			DrawEntity(re, viewState, TfxRenderStage::Transparents, (uint32_t)entIdx);
 		}
 
 
@@ -2269,7 +2378,6 @@ void Graphics::RenderFrame()
 
 	auto CameraPos = camera.GetPositionFloat3(); std::string CameraPrint = std::format("X: {:.2f} Y: {:.2f} Z: {:.2f}", CameraPos.x, CameraPos.y, CameraPos.z); auto CameraRot = camera.GetRotationFloat3(); std::string CameraPrintRot = std::format("Pitch: {:.2f} Roll: {:.2f} Yaw: {:.2f}", CameraRot.x, CameraRot.y, CameraRot.z);
 
-	// SpriteBatch preview draws
 	spriteBatch->Begin();
 	if (drawrt1)           spriteBatch->Draw(gbufA.rt1_read.srv.Get(), DirectX::XMFLOAT2(0, 0));
 	if (drawrt0)           spriteBatch->Draw(gbufA.rt0.srv.Get(), DirectX::XMFLOAT2(0, 0));
@@ -2288,6 +2396,72 @@ void Graphics::RenderFrame()
 	ImGui_ImplDX11_NewFrame();
 	ImGui_ImplWin32_NewFrame();
 	ImGui::NewFrame();
+
+{
+	ImGuiIO& io = ImGui::GetIO();
+	ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
+	ImGui::SetNextWindowSize(io.DisplaySize, ImGuiCond_Always);
+	ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground |
+		ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+		ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoFocusOnAppearing;
+	ImGui::Begin("Entity Labels", nullptr, flags);
+
+	for (size_t entIdx = 0; entIdx < entitiesToDraw.size(); ++entIdx)
+	{
+		const auto& e = entitiesToDraw[entIdx];
+
+		if (e.rtype == EntityType::SkyEntity)
+			continue;
+
+		if (!IsEntityTypeVisible(e.rtype))
+			continue;
+
+		ImVec2 screen;
+		if (!WorldToScreen(viewState, glm::vec3(e.pos.x, e.pos.y, e.pos.z),
+			io.DisplaySize.x, io.DisplaySize.y, screen))
+			continue;
+
+		screen.x += 12.0f;
+		screen.y -= 12.0f;
+		auto itName = s_nameCache.find(entIdx);
+		if (itName == s_nameCache.end()) {
+			std::string name;
+			if (name.empty()) {
+				char tmp[32]; std::snprintf(tmp, sizeof(tmp), " %s 0x%08X",e.name.c_str(), e.id);
+				name = tmp;
+			}
+			itName = s_nameCache.emplace(entIdx, std::move(name)).first;
+		}
+
+		char label[256];
+		std::snprintf(label, sizeof(label), "%s  (%s)", itName->second.c_str(), EntityTypeName(e.rtype));
+		ImGui::PushID((int)entIdx);
+
+		const ImVec2 textSize = ImGui::CalcTextSize(label);
+
+		ImGui::SetCursorScreenPos(screen);
+		ImGui::InvisibleButton("##ent_label", textSize);
+
+		const bool hovered = ImGui::IsItemHovered();
+		const bool clicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
+
+		if (clicked) {
+			selectedEntityIndex = (int32_t)entIdx;          
+			selectedEntityId = e.id;                       
+			selectedEntityType = e.rtype;
+			selectedEntityPos = { e.pos.x, e.pos.y, e.pos.z };
+			selectedEntitySettingsOpen = true;
+		}
+
+		const ImU32 col = hovered ? IM_COL32(255, 255, 0, 255) : IM_COL32(255, 255, 255, 220);
+
+		ImGui::GetForegroundDrawList()->AddText(screen, col, label);
+
+		ImGui::PopID();
+	}
+
+	ImGui::End();
+}
 	DrawTfxBytecodeInspectorUI();
 	ImGui::Begin("Debug Menu");
 	static float value = 50.0f;
@@ -2400,6 +2574,96 @@ void Graphics::RenderFrame()
 		}
 	}
 	ShowEntityChannelEditorUI(entitiesToDraw, camera.GetPositionFloat3());
+
+
+	if (selectedEntitySettingsOpen && selectedEntityIndex >= 0)
+	{
+		const RenderEntity* sel = nullptr;
+		
+		if (selectedEntityIndex >= 0 && selectedEntityIndex < (int32_t)entitiesToDraw.size()) {
+			const auto& cand = entitiesToDraw[(size_t)selectedEntityIndex];
+			if (cand.id == selectedEntityId && cand.rtype == selectedEntityType) sel = &cand;
+		}
+		
+		if (!sel) {
+			float bestD2 = FLT_MAX;
+			int32_t bestIdx = -1;
+			for (size_t i = 0; i < entitiesToDraw.size(); ++i) {
+				const auto& e = entitiesToDraw[i];
+				if (e.id != selectedEntityId || e.rtype != selectedEntityType) continue;
+				const float dx = e.pos.x - selectedEntityPos.x;
+				const float dy = e.pos.y - selectedEntityPos.y;
+				const float dz = e.pos.z - selectedEntityPos.z;
+				const float d2 = dx*dx + dy*dy + dz*dz;
+				if (d2 < bestD2) { bestD2 = d2; bestIdx = (int32_t)i; }
+			}
+			if (bestIdx >= 0) {
+				selectedEntityIndex = bestIdx;
+				sel = &entitiesToDraw[(size_t)bestIdx];
+			}
+		}
+
+	ImGui::Begin("Entity Settings", &selectedEntitySettingsOpen);
+	if (!sel) {
+		ImGui::TextDisabled("Selected entity (0x%08X) not found in current draw list.", selectedEntityId);
+	}
+	else {
+		ImGui::Text("Name: %s", sel->name.c_str());
+		printf("Selected entity name: %s\n", sel->name.c_str());
+		ImGui::SameLine();
+		ImGui::Text("Type: %s", EntityTypeName(sel->rtype));
+		ImGui::Separator();
+		ImGui::Text("Pos: (%.3f, %.3f, %.3f)  Scale: %.3f", sel->pos.x, sel->pos.y, sel->pos.z, sel->pos.w);
+		if (selectedEntityIndex >= 0 && selectedEntityIndex < (int32_t)entitiesToDraw.size())
+		{
+			auto& e = entitiesToDraw[(size_t)selectedEntityIndex];
+			if (e.id == selectedEntityId && e.rtype == selectedEntityType)
+			{
+				float pos[3] = { e.pos.x, e.pos.y, e.pos.z };
+				float scale = e.pos.w;
+
+				ImGui::SeparatorText("Transform");
+
+				if (ImGui::DragFloat3("Position (XYZ)", pos, 0.05f))
+				{
+					e.pos.x = pos[0];
+					e.pos.y = pos[1];
+					e.pos.z = pos[2];
+					selectedEntityPos = { e.pos.x, e.pos.y, e.pos.z };
+					e.cb1_single = BuildCB1FromEntity(e);
+				}
+				if (ImGui::DragFloat("Scale", &scale, 0.01f, 0.0f, 10000.0f))
+				{
+					e.pos.w = scale;
+					e.cb1_single = BuildCB1FromEntity(e);
+				}
+				if (ImGui::Button("Reset")) {
+					e.pos = e.base_placement_pos;
+					printf("Reset entity position to (%.3f, %.3f, %.3f)\n", e.pos.x, e.pos.y, e.pos.z);
+					e.cb1_single = BuildCB1FromEntity(e);
+				}
+
+
+			}
+		}
+		ImGui::Text("Channels: %zu", sel->channels.size());
+
+			ImGui::SeparatorText("Channel Overrides");
+
+			if (selectedEntityIndex >= 0 && selectedEntityIndex < (int32_t)entitiesToDraw.size()) {
+				auto& e = entitiesToDraw[(size_t)selectedEntityIndex];
+				for (auto& kv : e.channels) {
+					float v[4] = { kv.second.x, kv.second.y, kv.second.z, kv.second.w };
+					char clabel[64];
+					std::snprintf(clabel, sizeof(clabel), "0x%08X", kv.first);
+					if (ImGui::DragFloat4(clabel, v, 0.01f)) {
+						kv.second = Vec4(v[0], v[1], v[2], v[3]);
+					}
+				}
+			}
+	}
+	ImGui::End();
+}
 	ImGui::End();
 
 	ImGui::Begin("Activity Selector");
@@ -2454,7 +2718,7 @@ void Graphics::RenderFrame()
 					phase.display_name.c_str(),
 					phase.phase_tag);
 				
-
+				this->s_nameCache.clear();
 				this->staticsToDraw.clear();
 				this->lightsToDraw.clear();
 				this->entitiesToDraw.clear();
@@ -2474,6 +2738,7 @@ void Graphics::RenderFrame()
 			};
 
 		cbs.on_map_chosen = [&](const ActivityDef& act, const MapDef& map, bool loadCombatant) {
+			this->s_nameCache.clear();
 			this->staticsToDraw.clear();
 			this->lightsToDraw.clear();
 			this->entitiesToDraw.clear();
@@ -2491,6 +2756,7 @@ void Graphics::RenderFrame()
 			};
 
 		cbs.on_load_all_activity_phases = [&](const ActivityDef& act, const MapDef& map, bool loadCombatant) {
+			this->s_nameCache.clear();
 			this->staticsToDraw.clear();
 			this->lightsToDraw.clear();
 			this->entitiesToDraw.clear();
@@ -2663,6 +2929,28 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		hr = pDevice->CreateRasterizerState(&rsDescNoCull, rasterizerStateNoCull.GetAddressOf());
 		COM_ERROR_IF_FAILED(hr, "Failed to create rasterizer (nocull).");
 
+
+
+{
+	CD3D11_RASTERIZER_DESC wfDesc(rsDesc);
+	wfDesc.FillMode = D3D11_FILL_WIREFRAME;
+	wfDesc.CullMode = D3D11_CULL_NONE;
+	wfDesc.FrontCounterClockwise = TRUE;
+	HRESULT hrwf = pDevice->CreateRasterizerState(&wfDesc, rasterizerStateWireframe.GetAddressOf());
+	COM_ERROR_IF_FAILED(hrwf, "Failed to create wireframe rasterizer.");
+}
+
+
+{
+	CD3D11_DEPTH_STENCIL_DESC dsRO(D3D11_DEFAULT);
+	dsRO.DepthEnable = TRUE;
+	dsRO.StencilEnable = FALSE;
+	dsRO.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
+	dsRO.DepthFunc = D3D11_COMPARISON_GREATER_EQUAL;
+	HRESULT hrro = pDevice->CreateDepthStencilState(&dsRO, depthStencilReadOnly.GetAddressOf());
+	COM_ERROR_IF_FAILED(hrro, "Failed to create depthStencilReadOnly.");
+}
+
 		std::filesystem::path font_path = "entropy.spritefont";
 		spriteBatch = std::make_unique<DirectX::SpriteBatch>(this->pContext.Get());
 		spriteFont = std::make_unique<DirectX::SpriteFont>(
@@ -2683,7 +2971,7 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		for (int i = 0; i < 8; ++i)
 		{
 			D3D11_RENDER_TARGET_BLEND_DESC& rt = bd_op.RenderTarget[i];
-			rt.BlendEnable = FALSE;                     // Blend disabled
+			rt.BlendEnable = FALSE;                    
 			rt.SrcBlend = D3D11_BLEND_ONE;
 			rt.DestBlend = D3D11_BLEND_ZERO;
 			rt.BlendOp = D3D11_BLEND_OP_ADD;
@@ -2698,19 +2986,19 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		COM_ERROR_IF_FAILED(hr, "Failed to create device sampler state.");
 		D3D11_BLEND_DESC bd = {};
 		bd.AlphaToCoverageEnable = FALSE;
-		bd.IndependentBlendEnable = TRUE; // <- as Alkahest does
+		bd.IndependentBlendEnable = TRUE; 
 
 		for (int i = 0; i < 8; ++i)
 		{
 			D3D11_RENDER_TARGET_BLEND_DESC rt = {};
-			rt.BlendEnable = FALSE; // opaque (no blending)
+			rt.BlendEnable = FALSE; 
 			rt.SrcBlend = D3D11_BLEND_ONE;
 			rt.DestBlend = D3D11_BLEND_ZERO;
 			rt.BlendOp = D3D11_BLEND_OP_ADD;
 			rt.SrcBlendAlpha = D3D11_BLEND_ONE;
 			rt.DestBlendAlpha = D3D11_BLEND_ZERO;
 			rt.BlendOpAlpha = D3D11_BLEND_OP_ADD;
-			rt.RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL; // IMPORTANT!
+			rt.RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL; 
 			bd.RenderTarget[i] = rt;
 		}
 		hr = pDevice->CreateBlendState(&bd, bsGBufferOpaqueIndependent.GetAddressOf());
@@ -2799,14 +3087,14 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 			CD3D11_RASTERIZER_DESC rz(D3D11_DEFAULT);
 			rz.FillMode = D3D11_FILL_SOLID;
 			rz.CullMode = D3D11_CULL_BACK;
-			rz.FrontCounterClockwise = TRUE;      // ? Front CCW
-			rz.DepthBias = 5;                     // Depth Bias
-			rz.DepthBiasClamp = 1.0e10f;          // Depth Bias Clamp
-			rz.SlopeScaledDepthBias = 2.0f;       // Slope-Scaled Bias
-			rz.DepthClipEnable = TRUE;            // ? Depth Clip
-			rz.ScissorEnable = FALSE;             // ? Scissor
-			rz.MultisampleEnable = FALSE;         // ? Multisample
-			rz.AntialiasedLineEnable = FALSE;     // ? Line AA
+			rz.FrontCounterClockwise = TRUE;      
+			rz.DepthBias = 5;                     
+			rz.DepthBiasClamp = 1.0e10f;          
+			rz.SlopeScaledDepthBias = 2.0f;       
+			rz.DepthClipEnable = TRUE;            
+			rz.ScissorEnable = FALSE;            
+			rz.MultisampleEnable = FALSE;         
+			rz.AntialiasedLineEnable = FALSE;    
 
 			HRESULT hr = pDevice->CreateRasterizerState(&rz, rasterizerStateBiased.GetAddressOf());
 			COM_ERROR_IF_FAILED(hr, "Failed to create biased rasterizer state.");
@@ -2988,8 +3276,9 @@ bool Graphics::InitializeScene()
 	//this->staticAO1 = loadzone->AOMap1;
 	//loadzone->load_datatable_into_scene(TagHash(0x80AD26AB));
 	//loadzone->load_datatable_into_scene(TagHash(0x80FDC30D));
-	auto e_to_load = TagHash(0x80CE4ACB);
-	loadzone->load_entity_into_scene(e_to_load, glm::quat(0, 0, 0, 0) , glm::vec4(100,100,100,1), 0);
+	auto e_to_load = TagHash(0x8111d10e);
+	Aabb a;
+	loadzone->load_entity_model_into_scene(e_to_load, glm::quat(0, 0, 0, 0) , glm::vec4(0,0,0,0), {},{},a,EntityType::SkyEntity);
 	//loadzone->load_datatable_into_scene(TagHash(0x80D40A7F));
 	if (loadzone) {
 		this->staticsToDraw = loadzone->statics;

@@ -41,7 +41,6 @@
 #include "Renderer/Loaders/ecs/Entity.h"
 #include "TigerEngine/Entity/entity.h"
 
-
 enum class StaticBufKind { Index, Vertex, UV, Color };
 
 enum class TfxRenderStage : uint8_t {
@@ -180,7 +179,7 @@ private:
 	void InitializeInputLayouts();
 	void InitAnnotation();
 	void EnsureBufferRegistered(TagHash Tag, StaticBufKind which, UINT flags);
-	void DrawEntity(const RenderEntity& rs, const View& view, TfxRenderStage = TfxRenderStage::GenerateGbuffer);
+	void DrawEntity(const RenderEntity& rs, const View& view, TfxRenderStage stage = TfxRenderStage::GenerateGbuffer, uint32_t drawIndex = 0);
 	void DrawTerrain(const RenderTerrain& rt, const View& view);
 	void RunPostprocessChain();
 	Microsoft::WRL::ComPtr<ID3D11Buffer> g_terrain_cb;
@@ -256,7 +255,6 @@ private:
 
 	Model model;
 
-
 	bool ResolveEntityPartOnce(
 		const SDynamicMesh& dm,
 		const DynamicMeshPart& part,
@@ -321,7 +319,18 @@ private:
 	Microsoft::WRL::ComPtr<ID3D11PixelShader>  dbgCopyPS;
 	Microsoft::WRL::ComPtr<ID3D11PixelShader>  psSolid;
 
-	Microsoft::WRL::ComPtr<ID3D11BlendState> bsAdditive; // optional, for later draws
+	Microsoft::WRL::ComPtr<ID3D11BlendState> bsAdditive; 
+
+	std::unordered_map<uint32_t, std::string> s_nameCache;
+
+	Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerStateWireframe;
+	Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthStencilReadOnly; 
+	
+	int32_t selectedEntityIndex = -1;
+	uint32_t selectedEntityId = 0;
+	EntityType selectedEntityType = EntityType::Standard;
+	DirectX::XMFLOAT3 selectedEntityPos = {0,0,0};
+	bool selectedEntitySettingsOpen = false;
 
 	std::vector<TigerActivity> activities;
 
