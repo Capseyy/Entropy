@@ -1422,12 +1422,15 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 			if (part.LodCatagory > 3) {
 				continue;
 			}
+			uint32_t	techId;
+			if (part.varient_shader_index != 0xFFFF) {
+				techId = rs.external_mats[rs.external_material_mapping[part.varient_shader_index].technique_start+rs.varient_index];
+				
+			}
+			else {
+				techId = part.technique.hash;
+			}
 			
-			uint32_t	techId =
-				(part.varient_shader_index == 0xFFFF)
-				? part.technique.hash
-				: rs.external_mats[
-					rs.external_material_mapping[part.varient_shader_index].technique_start];
 
 			if (rs.rtype == EntityType::ParticleSystem && rs.partical_technique) {
 				uint32_t ptechId = *rs.partical_technique;
@@ -1871,17 +1874,14 @@ for (auto& ent : entitiesToDraw)
                 if (part.LodCatagory > 3)
                     continue;
 				const uint64_t key = ((uint64_t)ent.id << 32) | uint32_t(i);
-				auto& resolved = dynamicPartCache_[key];
-				if (resolved.ready) {
-					continue;
-				}
+				
                 uint32_t techId;
                 if (part.varient_shader_index == 0xFFFF) {
                     techId = part.technique.hash;
                 }
                 else {
                     techId = ent.external_mats[
-                        ent.external_material_mapping[part.varient_shader_index].technique_start];
+                        ent.external_material_mapping[part.varient_shader_index].technique_start+ent.varient_index];
                 }
 
                 auto it = TechCache_.find(techId);
@@ -1889,7 +1889,10 @@ for (auto& ent : entitiesToDraw)
                     TagHash th(techId);
                     it = TechCache_.emplace(techId, assets->EnqueueTechnique(th)).first;
                 }
-
+				auto& resolved = dynamicPartCache_[key];
+				if (resolved.ready) {
+					continue;
+				}
                
                 if (IsReady(it->second) && g_activations_this_frame < g_activation_budget_per_frame)
                 {
@@ -2316,9 +2319,6 @@ void Graphics::RenderFrame()
 		ScopedGpuEvent e(anno_.Get(), L"postprocess");
 		RunPostprocessChain();
 	}
-
-	
-	
 	
 	{
 		ScopedGpuEvent e(anno_.Get(), L"present_to_backbuffer");
@@ -2569,6 +2569,7 @@ void Graphics::RenderFrame()
 			externs.Upload(pContext.Get(), TfxExtern::Generic);
 		}
 	}
+	ImGui::End();
 	ShowEntityChannelEditorUI(entitiesToDraw, camera.GetPositionFloat3());
 
 
@@ -2599,68 +2600,98 @@ void Graphics::RenderFrame()
 			}
 		}
 
-	ImGui::Begin("Entity Settings", &selectedEntitySettingsOpen);
-	if (!sel) {
-		ImGui::TextDisabled("Selected entity (0x%08X) not found in current draw list.", selectedEntityId);
-	}
-	else {
+		ImGui::Begin("Entity Settings", &selectedEntitySettingsOpen);
+
+		if (!sel) {
+			ImGui::TextDisabled("Selected entity (0x%08X) not found in current draw list.", selectedEntityId);
+			ImGui::End();
+			return;
+		}
+
 		ImGui::Text("Name: %s", sel->name.c_str());
-		printf("Selected entity name: %s\n", sel->name.c_str());
 		ImGui::SameLine();
 		ImGui::Text("Type: %s", EntityTypeName(sel->rtype));
 		ImGui::Separator();
-		ImGui::Text("Pos: (%.3f, %.3f, %.3f)  Scale: %.3f", sel->pos.x, sel->pos.y, sel->pos.z, sel->pos.w);
-		if (selectedEntityIndex >= 0 && selectedEntityIndex < (int32_t)entitiesToDraw.size())
-		{
-			auto& e = entitiesToDraw[(size_t)selectedEntityIndex];
-			if (e.id == selectedEntityId && e.rtype == selectedEntityType)
-			{
-				float pos[3] = { e.pos.x, e.pos.y, e.pos.z };
-				float scale = e.pos.w;
+		ImGui::Text("Pos: (%.3f, %.3f, %.3f)  Scale: %.3f",
+			sel->pos.x, sel->pos.y, sel->pos.z, sel->pos.w);
 
-				ImGui::SeparatorText("Transform");
+		// Validate index once
+		bool validIndex =
+			(selectedEntityIndex >= 0) &&
+			(selectedEntityIndex < (int)entitiesToDraw.size());
 
-				if (ImGui::DragFloat3("Position (XYZ)", pos, 0.05f))
-				{
-					e.pos.x = pos[0];
-					e.pos.y = pos[1];
-					e.pos.z = pos[2];
-					selectedEntityPos = { e.pos.x, e.pos.y, e.pos.z };
-					e.cb1_single = BuildCB1FromEntity(e);
-				}
-				if (ImGui::DragFloat("Scale", &scale, 0.01f, 0.0f, 10000.0f))
-				{
-					e.pos.w = scale;
-					e.cb1_single = BuildCB1FromEntity(e);
-				}
-				if (ImGui::Button("Reset")) {
-					e.pos = e.base_placement_pos;
-					printf("Reset entity position to (%.3f, %.3f, %.3f)\n", e.pos.x, e.pos.y, e.pos.z);
-					e.cb1_single = BuildCB1FromEntity(e);
-				}
+		if (!validIndex) {
+			ImGui::TextDisabled("SelectedEntityIndex is out of range.");
+			ImGui::End();
+			return;
+		}
 
+		auto& e = entitiesToDraw[(size_t)selectedEntityIndex];
 
+		// Optional: ensure it matches what you think is selected
+		if (!(e.id == selectedEntityId && e.rtype == selectedEntityType)) {
+			ImGui::TextDisabled("Selected entity does not match draw-list entry.");
+			ImGui::End();
+			return;
+		}
+
+		ImGui::SeparatorText("Transform");
+
+		float pos[3] = { e.pos.x, e.pos.y, e.pos.z };
+		float scale = e.pos.w;
+
+		if (ImGui::DragFloat3("Position (XYZ)", pos, 0.05f)) {
+			e.pos.x = pos[0];
+			e.pos.y = pos[1];
+			e.pos.z = pos[2];
+			selectedEntityPos = { e.pos.x, e.pos.y, e.pos.z };
+			e.cb1_single = BuildCB1FromEntity(e);
+		}
+
+		if (ImGui::DragFloat("Scale", &scale, 0.01f, 0.0f, 10000.0f)) {
+			e.pos.w = scale;
+			e.cb1_single = BuildCB1FromEntity(e);
+		}
+
+		if (ImGui::Button("Reset")) {
+			e.pos = e.base_placement_pos;
+			e.cb1_single = BuildCB1FromEntity(e);
+		}
+
+		ImGui::Text("Channels: %zu", sel->channels.size());
+		ImGui::SeparatorText("Channel Overrides");
+
+		for (auto& kv : e.channels) {
+			float v4[4] = { kv.second.x, kv.second.y, kv.second.z, kv.second.w };
+			char clabel[64];
+			std::snprintf(clabel, sizeof(clabel), "0x%08X", kv.first);
+
+			if (ImGui::DragFloat4(clabel, v4, 0.01f)) {
+				kv.second = Vec4(v4[0], v4[1], v4[2], v4[3]);
 			}
 		}
-		ImGui::Text("Channels: %zu", sel->channels.size());
 
-			ImGui::SeparatorText("Channel Overrides");
+		ImGui::SeparatorText("Material Index");
 
-			if (selectedEntityIndex >= 0 && selectedEntityIndex < (int32_t)entitiesToDraw.size()) {
-				auto& e = entitiesToDraw[(size_t)selectedEntityIndex];
-				for (auto& kv : e.channels) {
-					float v[4] = { kv.second.x, kv.second.y, kv.second.z, kv.second.w };
-					char clabel[64];
-					std::snprintf(clabel, sizeof(clabel), "0x%08X", kv.first);
-					if (ImGui::DragFloat4(clabel, v, 0.01f)) {
-						kv.second = Vec4(v[0], v[1], v[2], v[3]);
-					}
-				}
+		int maxIndex = 0;
+
+		for (const auto& entry : e.external_material_mapping) {
+			if(entry.technique_count-1 > maxIndex) {
+				maxIndex = entry.technique_count;
 			}
+		}
+			
+		int idx = (int)e.varient_index;
+		if (idx < 0) idx = 0;
+		if (idx > maxIndex) idx = maxIndex;
+
+		if (ImGui::DragInt("VarientShaderIndex", &idx, 0.1f, 0, maxIndex)) {
+			e.varient_index = (uint16_t)idx;
+		}
+
+		ImGui::End();
+			
 	}
-	ImGui::End();
-}
-	ImGui::End();
 
 	ImGui::Begin("Activity Selector");
 	if (ImGui::CollapsingHeader("Activities & Maps"))
@@ -3263,9 +3294,9 @@ bool Graphics::InitializeScene()
 	this->activities = GlobalData::globalActivities();
 	loadzone = std::make_unique<LoadZone>(*this);
 
-	auto e_to_load = TagHash(0x80CB582E);
+	auto e_to_load = TagHash(0x810A3E87);
 	Aabb a;
-	loadzone->load_entity_into_scene(e_to_load, glm::quat(), glm::vec4(1.0f,1.0f,1.0f,1.0f));
+	loadzone->load_entity_into_scene(e_to_load, glm::quat(),glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
 	
 	if (loadzone) {
 		this->staticsToDraw = loadzone->statics;

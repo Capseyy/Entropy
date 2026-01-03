@@ -325,7 +325,7 @@ inline FrameExtern MakeScopeFrameDefaults()
     f.render_time = 0.0f;
     f.delta_game_time = 0.0f;
     f.exposure_time = 1.0f / 60.0f;          
-    f.exposure_scale = 1.0f;                  
+    f.exposure_scale = 0.5f;                  
     f.exposure_illum_relative = 1.4616859f;        
 
     

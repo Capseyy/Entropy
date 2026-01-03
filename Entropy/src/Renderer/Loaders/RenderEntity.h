@@ -76,4 +76,5 @@ struct RenderEntity {
     std::optional<uint32_t> partical_technique;
 	glm::vec4 base_placement_pos;
 	std::string name;
+	uint8_t varient_index = 0;
 };

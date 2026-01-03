@@ -64,9 +64,18 @@ struct Unk_808072C5
 	uint32_t unk08;
 };
 
+struct Unk_80809AF7
+{
+	uint64_t unk0;
+	uint64_t unk08;
+	ResourcePointer unk10;
+};
+
 struct Unk_80806D8F  
 {
-    SkipTo<0x244> Unk0;            
+	SkipTo<0x38> Unk0;
+	std::vector<Unk_80809AF7> Unk38;
+    SkipTo<0x244> Unk48;            
     TagHash MeshFile;                      
 	SkipTo<0x330> Unk248;           
 	TagHash texplates;
