@@ -23,8 +23,8 @@ struct TigerInputLayout {
     std::vector<TigerInputLayoutElement> elements;
 };
 
-// Declaration only – definition lives in a single .cpp
+
 extern const std::array<TigerInputLayout, 77> INPUT_LAYOUTS;
 
-// Factory – implemented once in a .cpp
+
 HRESULT CreateInputLayoutFromTigerLayout(ID3D11Device* device, const TigerInputLayout& layout, Microsoft::WRL::ComPtr<ID3D11InputLayout>& outLayout);

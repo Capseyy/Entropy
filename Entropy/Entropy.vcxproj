@@ -287,6 +287,7 @@
     <ClInclude Include="src\Renderer\Graphics\Render\RenderPacket.h" />
     <ClInclude Include="src\Renderer\Graphics\UI\ActivityBrowser.h" />
     <ClInclude Include="src\Renderer\Graphics\UI\ChannelEditor.h" />
+    <ClInclude Include="src\Renderer\Graphics\UI\DeferredExternUI.h" />
     <ClInclude Include="src\Renderer\Graphics\UI\TfxUI.h" />
     <ClInclude Include="src\Renderer\Loaders\ecs\Entity.h" />
     <ClInclude Include="src\Renderer\Loaders\NewTexture.h" />

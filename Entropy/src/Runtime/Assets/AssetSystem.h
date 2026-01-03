@@ -9,7 +9,7 @@
 #include "Runtime/Threading/MainThreadQueue.h"
 #include "AssetCache.h"
 #include "AssetHandle.h"
-#include "Technique.h"           // defines types in namespace EntropyAssets
+#include "Technique.h"           
 #include "StaticMesh.h"
 #include "RuntimeAssetRegistry.h"
 #include "TigerEngine/tag.h"
@@ -23,16 +23,16 @@
 struct BufferSRVMeta {
     enum class Kind { Structured, Raw, Typed } kind = Kind::Structured;
 
-    // Structured
-    UINT structureByteStride = 0;   // sizeof(T)
-    UINT numElements = 0;   // element count
+    
+    UINT structureByteStride = 0;   
+    UINT numElements = 0;   
 
-    // Raw (ByteAddressBuffer): byte size must be multiple of 4. Num elements = bytes/4 for the SRV.
-    bool allowUAV = false;          // optional (if you also want a UAV later)
+    
+    bool allowUAV = false;          
 
-    // Typed (Buffer<float4> etc.)
-    DXGI_FORMAT typedFormat = DXGI_FORMAT_UNKNOWN; // e.g. DXGI_FORMAT_R32G32B32A32_FLOAT
-    UINT bytesPerElement = 0;                   // must match typedFormat (e.g. 16 for RGBA32F)
+    
+    DXGI_FORMAT typedFormat = DXGI_FORMAT_UNKNOWN; 
+    UINT bytesPerElement = 0;                   
 };
 
 
@@ -45,10 +45,10 @@ public:
         MainThreadQueue& mainThread,
         RuntimeAssetRegistry* registry);
 
-    // Buffers
+    
     AssetHandle<ID3D11Buffer> EnqueueBuffer(uint32_t id);
 
-    // Shaders
+    
     AssetHandle<EntropyAssets::VertexShader>   EnqueueVertexShader(uint32_t id,uint32_t tech_id);
     AssetHandle<EntropyAssets::PixelShader>    EnqueuePixelShader(uint32_t id, uint32_t tech_id);
     AssetHandle<EntropyAssets::ComputeShader>  EnqueueComputeShader(uint32_t id);
@@ -56,7 +56,7 @@ public:
     AssetHandle<EntropyAssets::HullShader>     EnqueueHullShader(uint32_t id);
     AssetHandle<EntropyAssets::DomainShader>   EnqueueDomainShader(uint32_t id);
 
-    // Textures / Samplers / CBuffers
+    
     AssetHandle<EntropyAssets::Texture2DRes> EnqueueTexture(uint32_t id);
     AssetHandle<EntropyAssets::Texture3DRes> Enqueue3DTexture(uint32_t id);
     AssetHandle<EntropyAssets::SamplerRes>   EnqueueSampler(uint32_t id);
@@ -65,26 +65,26 @@ public:
     AssetHandle<EntropyAssets::BufferSRVRes>
         EnqueueBufferSRV(uint32_t id, const BufferSRVMeta& meta);
 
-    // Technique bundle
+    
     std::shared_future<std::shared_ptr<EntropyAssets::Technique>>
         EnqueueTechnique(TagHash techniqueId);
 
     using InputLayoutProvider =
-        std::function<void(uint32_t /*shaderId*/,
-            std::vector<D3D11_INPUT_ELEMENT_DESC>& /*descs*/,
-            std::vector<std::string>& /*semanticStorage*/)>;
+        std::function<void(uint32_t ,
+            std::vector<D3D11_INPUT_ELEMENT_DESC>& ,
+            std::vector<std::string>& )>;
 
     void SetInputLayoutProvider(InputLayoutProvider fn) { layoutProvider_ = std::move(fn); }
 
 private:
-    // ---------------- members ----------------
-    ID3D11Device* device_ = nullptr;            // not owned
+    
+    ID3D11Device* device_ = nullptr;            
     ID3D11DeviceContext* context_ = nullptr;
     ThreadPool& pool_;
     MainThreadQueue& mainThread_;
-    RuntimeAssetRegistry* R_ = nullptr;         // not owned
+    RuntimeAssetRegistry* R_ = nullptr;         
 
-    // Caches (dedupe by ID)
+    
     AssetCache<ID3D11Buffer>                  bufferCache_;
     AssetCache<EntropyAssets::VertexShader>   vsCache_;
     AssetCache<EntropyAssets::PixelShader>    psCache_;
@@ -98,7 +98,7 @@ private:
     AssetCache<EntropyAssets::CBufferRes>     cbCache_;
     AssetCache<EntropyAssets::BufferSRVRes> bufSrvCache_;
 
-    // ---------------- helpers ----------------
+    
     std::shared_ptr<ID3D11Buffer> createBuffer_(const BufferPayload& p);
     std::shared_ptr<EntropyAssets::CBufferRes> createCBufferFromRaw_(const void* bytes, UINT sizeBytes);
 
@@ -121,5 +121,5 @@ private:
     std::shared_ptr<EntropyAssets::Texture3DRes> createTexture3D_(const Texture3DPayload& p);
   
 
-    InputLayoutProvider  layoutProvider_; // optional hook
+    InputLayoutProvider  layoutProvider_; 
 };

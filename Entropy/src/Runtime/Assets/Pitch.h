@@ -10,7 +10,7 @@
 #undef max
 
 
-// ---- normalize typeless/sRGB to typed linear for pitch math ----
+
 inline DXGI_FORMAT NormalizeForPitch(DXGI_FORMAT f) {
     switch (f) {
     case DXGI_FORMAT_R8G8B8A8_TYPELESS:

@@ -64,7 +64,7 @@ public:
 	TagHash opaque_meshes{};
 	uint32_t Unk0C{};
 	std::vector<uint32_t> Techniques{};
-	std::vector<SStaticSpecial> special_meshes; //todo special_meshes
+	std::vector<SStaticSpecial> special_meshes; 
 	uint32_t Unk30{};
 	uint64_t Unk34{};
 	std::array<float_t,3> Unk3C;

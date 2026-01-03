@@ -1,20 +1,20 @@
-// FrameGlobalLightingExternUI.h
+
 #pragma once
 #include "TigerEngine/Technique/Tfx/extern.h"
 #include "Renderer/Graphics/ImGui/imgui.h"
 
 
-// ==================== Frame ====================
+
 namespace FrameOff
 {
-    // --- scalars ---
+    
     constexpr size_t kGameTime = 0x00;
     constexpr size_t kRenderTime = 0x04;
     constexpr size_t kUnk0C = 0x0C;
-    constexpr size_t kUnk10 = 0x10; // default 0.50
+    constexpr size_t kUnk10 = 0x10; 
     constexpr size_t kDeltaGameTime = 0x14;
     constexpr size_t kExposureTime = 0x18;
-    constexpr size_t kExposureScale = 0x1C; // default 1.0
+    constexpr size_t kExposureScale = 0x1C; 
 
     constexpr size_t kUnk20 = 0x20;
     constexpr size_t kUnk24 = 0x24;
@@ -24,7 +24,7 @@ namespace FrameOff
     constexpr size_t kUnk40 = 0x40;
     constexpr size_t kUnk70 = 0x70;
 
-    // --- SRV pointers (TextureView) ---
+    
     constexpr size_t kUnk78 = 0x78;
     constexpr size_t kUnk80 = 0x80;
     constexpr size_t kUnk88 = 0x88;
@@ -37,29 +37,29 @@ namespace FrameOff
     constexpr size_t kSpecularTintLookup = 0xB8;
     constexpr size_t kIridescenceLookup = 0xC0;
 
-    // --- Vec4 ---
+    
     constexpr size_t kUnkD0 = 0xD0;
     constexpr size_t kUnk150 = 0x150;
     constexpr size_t kUnk160 = 0x160;
     constexpr size_t kUnk170 = 0x170;
     constexpr size_t kUnk180 = 0x180;
 
-    // --- scalars ---
+    
     constexpr size_t kUnk190 = 0x190;
     constexpr size_t kUnk194 = 0x194;
 
-    // --- Vec4 defaults ---
-    constexpr size_t kUnk1A0 = 0x1A0; // default zero
-    constexpr size_t kUnk1B0 = 0x1B0; // default one
-    constexpr size_t kUnk1C0 = 0x1C0; // default (1,1,0,1)
+    
+    constexpr size_t kUnk1A0 = 0x1A0; 
+    constexpr size_t kUnk1B0 = 0x1B0; 
+    constexpr size_t kUnk1C0 = 0x1C0; 
 
-    // --- trailing SRVs ---
+    
     constexpr size_t kUnk1E0 = 0x1E0;
     constexpr size_t kUnk1E8 = 0x1E8;
     constexpr size_t kUnk1F0 = 0x1F0;
 
-    // whole struct size
-    constexpr size_t kSize = sizeof(FrameExtern); // should be 0x1F8
+    
+    constexpr size_t kSize = sizeof(FrameExtern); 
 }
 
 inline void EnsureFrameCapacity(ExternStorage& ex)
@@ -77,7 +77,7 @@ inline void EnsureFrameCapacity(ExternStorage& ex)
         scope.cpu.resize(want, 0u);
         scope.dirty = true;
 
-        // Seed defaults only if that region was newly added
+        
         auto seed_f = [&](size_t off, float v) {
             if (oldSize <= off) ex.MemcpyScope(TfxExtern::Frame, off, &v, sizeof(v));
             };
@@ -117,7 +117,7 @@ inline bool ShowFrameExternEditor(ExternStorage& ex)
     if (ImGui::Button("Reset Frame Defaults")) { FrameSetDefaults(ex); changed = true; }
     ImGui::Separator();
 
-    // ---- Scalars ----
+    
     if (ImGui::CollapsingHeader("Frame Scalars", ImGuiTreeNodeFlags_DefaultOpen))
     {
         auto rowF = [&](const char* label, size_t off, float step = 0.01f, float minv = -FLT_MAX, float maxv = FLT_MAX) {
@@ -143,7 +143,7 @@ inline bool ShowFrameExternEditor(ExternStorage& ex)
         rowF("unk194", FrameOff::kUnk194);
     }
 
-    // ---- SRVs ----
+    
     if (ImGui::CollapsingHeader("Frame TextureViews (SRVs)", ImGuiTreeNodeFlags_DefaultOpen))
     {
         auto rowSRV = [&](const char* label, size_t off) {
@@ -174,7 +174,7 @@ inline bool ShowFrameExternEditor(ExternStorage& ex)
         rowSRV("unk1f0", FrameOff::kUnk1F0);
     }
 
-    // ---- Vec4s ----
+    
     if (ImGui::CollapsingHeader("Frame Vec4", ImGuiTreeNodeFlags_DefaultOpen))
     {
         auto rowV4 = [&](const char* label, size_t off, float step = 0.01f) {
@@ -200,43 +200,41 @@ inline bool ShowFrameExternEditor(ExternStorage& ex)
     return changed;
 }
 
-// ==================== GlobalLighting ====================
-// ==================== GlobalLighting ====================
 namespace GLightOff {
-    // mirrors extern_struct! GlobalLightingExtern
-    constexpr size_t kSRV08 = 0x08; // ID3D11ShaderResourceView*
-    constexpr size_t kV10 = 0x10; // Vec4
-    constexpr size_t kSpecularDir = 0x30; // Vec4 (unk30)
-    constexpr size_t kDiffuseDir = 0x50; // Vec4 (unk50)
-    constexpr size_t kV70 = 0x70; // Vec4
-    constexpr size_t kV80 = 0x80; // Vec4
-    constexpr size_t kF90 = 0x90; // float
-    constexpr size_t kF94 = 0x94; // float (default -0.5)
-    constexpr size_t kF98 = 0x98; // float
-    constexpr size_t kF9C = 0x9C; // float
-    constexpr size_t kFA0 = 0xA0; // float (unka0)
-    constexpr size_t kVB0 = 0xB0; // Vec4
-    constexpr size_t kVC0 = 0xC0; // Vec4
-    constexpr size_t kVD0 = 0xD0; // Vec4
+    
+    constexpr size_t kSRV08 = 0x08; 
+    constexpr size_t kV10 = 0x10; 
+    constexpr size_t kSpecularDir = 0x30; 
+    constexpr size_t kDiffuseDir = 0x50; 
+    constexpr size_t kV70 = 0x70; 
+    constexpr size_t kV80 = 0x80; 
+    constexpr size_t kF90 = 0x90; 
+    constexpr size_t kF94 = 0x94; 
+    constexpr size_t kF98 = 0x98; 
+    constexpr size_t kF9C = 0x9C; 
+    constexpr size_t kFA0 = 0xA0; 
+    constexpr size_t kVB0 = 0xB0; 
+    constexpr size_t kVC0 = 0xC0; 
+    constexpr size_t kVD0 = 0xD0; 
 }
 
 inline void EnsureGlobalLightingCapacity(ExternStorage& ex) {
-    // If scope is missing/empty, seed full defaults from the POD struct.
+    
     auto it = ex.scopes.find(TfxExtern::GlobalLighting);
     if (it == ex.scopes.end() || it->second.cpu.empty()) {
-        GlobalLightingExtern def{};              // uses your C++ defaults
-        ex.set(TfxExtern::GlobalLighting, def);  // copies sizeof(GlobalLightingExtern)
+        GlobalLightingExtern def{};              
+        ex.set(TfxExtern::GlobalLighting, def);  
         return;
     }
 
     auto& scope = it->second;
-    const size_t want = sizeof(GlobalLightingExtern); // 0xE0
+    const size_t want = sizeof(GlobalLightingExtern); 
     if (scope.cpu.size() < want) {
         const size_t oldSize = scope.cpu.size();
         scope.cpu.resize(want, 0u);
         scope.dirty = true;
 
-        // Seed defaults only for newly-added tail regions (preserve existing front)
+        
         auto seed_v4 = [&](size_t off, const Vec4& v) {
             if (oldSize <= off) ex.MemcpyScope(TfxExtern::GlobalLighting, off, &v, sizeof(v));
             };
@@ -261,10 +259,10 @@ inline void EnsureGlobalLightingCapacity(ExternStorage& ex) {
 }
 
 inline void GlobalLightingSetDefaults(ExternStorage& ex) {
-    GlobalLightingExtern def{};                 // all defaults from struct:
-    // - SRV = nullptr
-    // - Vec4s = Vec4::one() or (1,-1,1,0)
-    // - floats = 1.0f / -0.5f as you set
+    GlobalLightingExtern def{};                 
+    
+    
+    
     ex.set(TfxExtern::GlobalLighting, def);
 }
 
@@ -284,13 +282,13 @@ inline bool ShowGlobalLightingExternEditor(ExternStorage& ex) {
     bool changed = false;
 
     if (ImGui::BeginTable("gl_tbl", 2, ImGuiTableFlags_SizingStretchSame)) {
-        // Header / controls
+        
         ImGui::TableNextRow(); ImGui::TableSetColumnIndex(0);
         ImGui::TextUnformatted("Controls");
         ImGui::TableSetColumnIndex(1);
         if (ImGui::Button("Reset Defaults")) { GlobalLightingSetDefaults(ex); changed = true; }
 
-        // Small helpers
+        
         auto rowV4 = [&](const char* label, size_t off, float step = 0.01f) {
             ImGui::TableNextRow(); ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(label);
             ImGui::TableSetColumnIndex(1);
@@ -322,7 +320,7 @@ inline bool ShowGlobalLightingExternEditor(ExternStorage& ex) {
             }
             };
 
-        // Fields
+        
         rowSRV("unk08 (SRV)", GLightOff::kSRV08);
 
         rowV4("unk10", GLightOff::kV10);
@@ -332,7 +330,7 @@ inline bool ShowGlobalLightingExternEditor(ExternStorage& ex) {
         rowV4("unk80", GLightOff::kV80);
 
         rowF("unk90", GLightOff::kF90);
-        rowF("unk94", GLightOff::kF94);   // default -0.5
+        rowF("unk94", GLightOff::kF94);   
         rowF("unk98", GLightOff::kF98);
         rowF("unk9c", GLightOff::kF9C);
         rowF("unka0", GLightOff::kFA0);

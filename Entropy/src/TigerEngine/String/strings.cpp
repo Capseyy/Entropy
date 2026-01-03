@@ -59,7 +59,7 @@ std::unordered_map<uint32_t, std::string> ProcessStringContainer(int Hash) {
         printf("Failed to retrieve tag data for hash: %08X\n", Hash);
         return {};
 	}
-    //printf("Starting String Parse for hash: %08X\n", Hash);
+    
 	auto buffer = tag.data;
     SStringContainer sc = bin::parse<SStringContainer>(tag.data, tag.size);
     SStringBank sb = bin::parse<SStringBank>(sc.Language.data, sc.Language.size);

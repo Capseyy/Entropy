@@ -101,7 +101,7 @@ void Graphics::CreateLightVolumeResources()
 
     auto Align16 = [](UINT x) { return (x + 15u) & ~15u; };
 
-    // Vertex buffer
+    
     {
         D3D11_BUFFER_DESC vbd{};
         vbd.ByteWidth = (UINT)sizeof(verts);
@@ -115,7 +115,7 @@ void Graphics::CreateLightVolumeResources()
         if (FAILED(hr)) { throw std::runtime_error("CreateBuffer(lightCubeVB) failed"); }
     }
 
-    // Index buffer
+    
     {
         D3D11_BUFFER_DESC ibd{};
         ibd.ByteWidth = (UINT)sizeof(idx);
@@ -129,7 +129,7 @@ void Graphics::CreateLightVolumeResources()
         if (FAILED(hr)) { throw std::runtime_error("CreateBuffer(lightCubeIB) failed"); }
     }
 
-    // Constant buffer (must be 16-byte aligned)
+    
     {
         D3D11_BUFFER_DESC cbd{};
         cbd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;

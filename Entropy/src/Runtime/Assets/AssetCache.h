@@ -5,8 +5,8 @@
 #include <mutex>
 
 
-// Per-type deduplication cache keyed by your 32-bit ID.
-// Ensures only one loader runs for a given id; others share the same future.
+
+
 
 
 template<typename T>

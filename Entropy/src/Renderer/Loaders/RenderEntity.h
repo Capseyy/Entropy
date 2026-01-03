@@ -56,7 +56,7 @@ struct BufferGroupDynamic {
     UINT colorStride = 0;
     UINT skinningStride = 0;
     UINT        indexCount = 0;
-    DXGI_FORMAT indexFormat = DXGI_FORMAT_R32_UINT; // or R16 if your data is 16-bit
+    DXGI_FORMAT indexFormat = DXGI_FORMAT_R32_UINT; 
     uint16_t input_layout_index;
 
 };

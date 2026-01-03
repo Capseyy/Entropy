@@ -3,28 +3,28 @@
 #include "TigerEngine/Technique/Tfx/extern.h"
 #include "Renderer/Graphics/ImGui/imgui.h"
 
-// --- byte offsets (from your Rust extern_struct) ---
+
 namespace AtmosphereOff {
-    constexpr size_t kTimeOfDayN = 0x70;   // float
-    constexpr size_t kLookupRes = 0x90;   // Vec4
-    constexpr size_t kDepthAngleRes = 0xD0;   // Vec4
-    constexpr size_t kFarLookupSRV = 0xE0;   // TextureView / SRV*
-    constexpr size_t kNearLookupSRV = 0xF0;   // TextureView / SRV*
-    constexpr size_t kUnk110 = 0x110;  // Vec4
-    constexpr size_t kFogColor = 0x140;  // Vec4
-    constexpr size_t kFogIntensity = 0x160;  // float
-    constexpr size_t kUnk170 = 0x170;  // float
-    constexpr size_t kUnk198 = 0x198;  // float
-    constexpr size_t kRot1B4 = 0x1B4;  // float
-    constexpr size_t kIntensity1B8 = 0x1B8;  // float
-    constexpr size_t kCutoff1BC = 0x1BC;  // float
-    constexpr size_t kUnk210 = 0x210;  // Vec4
-    // If you need more fields later, add them here.
+    constexpr size_t kTimeOfDayN = 0x70;   
+    constexpr size_t kLookupRes = 0x90;   
+    constexpr size_t kDepthAngleRes = 0xD0;   
+    constexpr size_t kFarLookupSRV = 0xE0;   
+    constexpr size_t kNearLookupSRV = 0xF0;   
+    constexpr size_t kUnk110 = 0x110;  
+    constexpr size_t kFogColor = 0x140;  
+    constexpr size_t kFogIntensity = 0x160;  
+    constexpr size_t kUnk170 = 0x170;  
+    constexpr size_t kUnk198 = 0x198;  
+    constexpr size_t kRot1B4 = 0x1B4;  
+    constexpr size_t kIntensity1B8 = 0x1B8;  
+    constexpr size_t kCutoff1BC = 0x1BC;  
+    constexpr size_t kUnk210 = 0x210;  
+    
 }
 
 inline void EnsureAtmosphereCapacity(ExternStorage& ex)
 {
-    // Make sure we have enough bytes for the largest field we touch
+    
     auto& scope = ex.scopes[TfxExtern::Atmosphere];
     const size_t need = 0x214 + sizeof(Vec4);
     if (scope.cpu.size() < need) {
@@ -37,27 +37,27 @@ inline void AtmosphereSetDefaults(ExternStorage& ex)
 {
     EnsureAtmosphereCapacity(ex);
 
-    // time_of_day_normalized = 0.5
+    
     { float v = 0.5f; ex.MemcpyScope(TfxExtern::Atmosphere, AtmosphereOff::kTimeOfDayN, &v, sizeof(v)); }
 
-    // atmosphere_lookup_resolution: leave zero (runtime fills)
-    // depth_angle_density_lookup_resolution = (512,512,1/512,1/512)
+    
+    
     {
         Vec4 v(512.f, 512.f, 1.f / 512.f, 1.f / 512.f);
         ex.MemcpyScope(TfxExtern::Atmosphere, AtmosphereOff::kDepthAngleRes, &v, sizeof(v));
     }
 
-    // unk110 = Vec4::Z * -1.5
+    
     {
         Vec4 v(0.f, 0.f, -1.5f, 0.f);
         ex.MemcpyScope(TfxExtern::Atmosphere, AtmosphereOff::kUnk110, &v, sizeof(v));
     }
 
-    // fog_color: (0,0,0,0)  fog_intensity: 0.0
+    
     { Vec4 c = Vec4::zero(); ex.MemcpyScope(TfxExtern::Atmosphere, AtmosphereOff::kFogColor, &c, sizeof(c)); }
     { float f = 0.0f; ex.MemcpyScope(TfxExtern::Atmosphere, AtmosphereOff::kFogIntensity, &f, sizeof(f)); }
 
-    // small defaults from your notes
+    
     { float f = 0.0001f; ex.MemcpyScope(TfxExtern::Atmosphere, AtmosphereOff::kUnk170, &f, sizeof(f)); }
     { float f = 0.0001f; ex.MemcpyScope(TfxExtern::Atmosphere, AtmosphereOff::kUnk198, &f, sizeof(f)); }
     { float f = 0.0f;    ex.MemcpyScope(TfxExtern::Atmosphere, AtmosphereOff::kRot1B4, &f, sizeof(f)); }
@@ -84,7 +84,7 @@ inline bool ShowAtmosphereExternEditor(ExternStorage& ex)
         ImGui::TableSetColumnIndex(1);
         if (ImGui::Button("Reset Defaults")) { AtmosphereSetDefaults(ex); changed = true; }
 
-        // --- Time of day ---
+        
         {
             ImGui::TableNextRow(); ImGui::TableSetColumnIndex(0); ImGui::Text("Time of day (0..1)");
             ImGui::TableSetColumnIndex(1);
@@ -92,7 +92,7 @@ inline bool ShowAtmosphereExternEditor(ExternStorage& ex)
             if (ImGui::SliderFloat("##tod", &f, 0.f, 1.f)) wrF(AtmosphereOff::kTimeOfDayN, f);
         }
 
-        // --- Lookup resolutions ---
+        
         {
             ImGui::TableNextRow(); ImGui::TableSetColumnIndex(0); ImGui::Text("Atmos lookup res (xy, 1/x, 1/y)");
             ImGui::TableSetColumnIndex(1);
@@ -107,7 +107,7 @@ inline bool ShowAtmosphereExternEditor(ExternStorage& ex)
             if (ImGui::DragFloat4("##dad_res", a, 1.f)) { v = Vec4(a[0], a[1], a[2], a[3]); wrV4(AtmosphereOff::kDepthAngleRes, v); }
         }
 
-        // --- Fog ---
+        
         {
             ImGui::TableNextRow(); ImGui::TableSetColumnIndex(0); ImGui::Text("Fog color");
             ImGui::TableSetColumnIndex(1);
@@ -123,7 +123,7 @@ inline bool ShowAtmosphereExternEditor(ExternStorage& ex)
             if (ImGui::DragFloat("##fog_intensity", &fi, 0.01f, 0.f, 10.f)) wrF(AtmosphereOff::kFogIntensity, fi);
         }
 
-        // --- Orientation / misc ---
+        
         {
             ImGui::TableNextRow(); ImGui::TableSetColumnIndex(0); ImGui::Text("Unk110 (default Z * -1.5)");
             ImGui::TableSetColumnIndex(1);
@@ -142,7 +142,7 @@ inline bool ShowAtmosphereExternEditor(ExternStorage& ex)
             if (ImGui::DragFloat("##cut1bc", &cut, 0.01f, 0.f, 1.f)) wrF(AtmosphereOff::kCutoff1BC, cut);
         }
 
-        // --- SRV pointers (display + clear) ---
+        
         {
             auto showSrv = [&](const char* label, size_t off) {
                 ImGui::TableNextRow(); ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(label);

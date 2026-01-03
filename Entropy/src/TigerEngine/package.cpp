@@ -55,7 +55,7 @@ typedef int64_t(*OodleLZ64_DecompressDef)(unsigned char* Buffer, int64_t BufferS
 
 void print_hex(const unsigned char* data, size_t length) {
     for (size_t i = 0; i < length; ++i) {
-        printf("%02X", data[i]); // print each byte as two-digit hex
+        printf("%02X", data[i]); 
     }
     printf("\n");
 }
@@ -82,17 +82,17 @@ std::vector<std::pair<uint32_t, const Package*>> GetAllTagsOfType(uint16_t type,
 
     std::vector<std::pair<uint32_t, const Package*>> out;
 
-    // IMPORTANT: get a reference to the actual object in the map
+    
     for (const auto& kv : GlobalData::getMap()) {
-        const Package& pkg = kv.second;            // reference (NO copy)
+        const Package& pkg = kv.second;            
         size_t entryID = 0;
 
-        for (const auto& entry : pkg.Entries) {    // const is fine
+        for (const auto& entry : pkg.Entries) {    
             if (entry.file_type == type && entry.file_subtype == subtype) {
                 const uint32_t num = 0x80800000u
                     + (static_cast<uint32_t>(pkg.Header.pkgID) << 13)
                     + static_cast<uint32_t>(entryID);
-                out.emplace_back(num, &pkg);       // pointer to map-resident object
+                out.emplace_back(num, &pkg);       
             }
             ++entryID;
         }
@@ -103,12 +103,12 @@ std::vector<std::pair<uint32_t, const Package*>> GetAllTagsOfType(uint16_t type,
 void GetAllNamedTags() {
     printf("Collect all named tags\n");
 
-    // IMPORTANT: get a reference to the actual object in the map
+    
     for (const auto& kv : GlobalData::getMap()) {
-        const Package& pkg = kv.second;            // reference (NO copy)
+        const Package& pkg = kv.second;            
         size_t entryID = 0;
 
-        for (const auto& entry : pkg.namedTags) {    // const is fine
+        for (const auto& entry : pkg.namedTags) {    
             namedTagEntry named;
             named.name = entry.raw_name;
             named.reference = entry.reference;
@@ -121,7 +121,7 @@ void GetAllNamedTags() {
 bool Package::initOodle()
 {
     std::call_once(g_oodle_once, [] {
-        // Build: <packages root>/bin/x64/oo2core_9_win64.dll
+        
         std::filesystem::path root = std::filesystem::path(gPackagePath).parent_path();
         std::filesystem::path dll = root / "bin" / "x64" / "oo2core_9_win64.dll";
 
@@ -155,10 +155,10 @@ void Block::print() const {
         std::cout << std::hex << std::setw(2) << std::setfill('0')
         << static_cast<int>(gcmTag[i]);
 
-    std::cout << std::dec << std::endl;  // Reset to decimal
+    std::cout << std::dec << std::endl;  
 }
 
-bool Package::decryptBlock(const Block block, unsigned char* ioBuffer /*in-place*/, unsigned char*& decryptBuffer /*ignored*/)
+bool Package::decryptBlock(const Block block, unsigned char* ioBuffer , unsigned char*& decryptBuffer )
 {
     decryptBuffer = ioBuffer;
 
@@ -209,17 +209,17 @@ ExtractResult Package::ExtractEntry(const int EntryNumber)
     ExtractResult ret;
     ret.success = false;
 
-    // ---- allocate destination ----
+    
     unsigned char* fileBuffer = new unsigned char[entry.file_size];
     ret.data = fileBuffer;
 
-    // ---- block range ----
+    
     const int firstBlock = entry.starting_block;
     const int blocksNeeded =
         static_cast<int>((entry.starting_block_offset + entry.file_size + BLOCK_SIZE - 1) / BLOCK_SIZE);
     const int lastBlock = firstBlock + blocksNeeded - 1;
 
-    // ---- detect features ----
+    
     bool needsOodle = false, needsOtherPkg = false;
     for (int b = firstBlock; b <= lastBlock; ++b) {
         needsOodle |= (Blocks[b].bitFlag & 0x1);
@@ -257,7 +257,7 @@ ExtractResult Package::ExtractEntry(const int EntryNumber)
         return nullptr;
         };
 
-    // ---- scratch buffers ----
+    
     std::vector<unsigned char> workBuf;
     std::vector<unsigned char> decompBuf(BLOCK_SIZE);
     size_t dstOff = 0;
@@ -306,7 +306,7 @@ ExtractResult Package::ExtractEntry(const int EntryNumber)
             return true;
         };
 
-    // ---- first block ----
+    
     {
         const Block& blk = Blocks[firstBlock];
         const MappedPkg* mp = mp_for(blk.patchID);
@@ -324,12 +324,12 @@ ExtractResult Package::ExtractEntry(const int EntryNumber)
         }
     }
 
-    // ---- middle blocks ----
+    
     int b = firstBlock + 1;
     while (b <= lastBlock - 1) {
         const Block& blk = Blocks[b];
         if ((blk.bitFlag & 0x3) == 0) {
-            // coalesce run of plain contiguous blocks
+            
             const uint32_t pid = blk.patchID;
             const MappedPkg* mp = mp_for(pid);
             uint64_t expected = blk.offset;
@@ -342,7 +342,7 @@ ExtractResult Package::ExtractEntry(const int EntryNumber)
                     cur.patchID != pid ||
                     cur.offset != expected)
                     break;
-                runBytes += (size_t)cur.size;       // advance by cur.size
+                runBytes += (size_t)cur.size;       
                 expected += (uint64_t)cur.size;
                 ++b;
             }
@@ -355,10 +355,10 @@ ExtractResult Package::ExtractEntry(const int EntryNumber)
             const MappedPkg* mp = mp_for(blk.patchID);
 
             const bool decryptOnly = (blk.bitFlag & 0x2) && !(blk.bitFlag & 0x1);
-            const bool fullBlock = (BLOCK_SIZE == BLOCK_SIZE) && /* middle block */ true;
+            const bool fullBlock = (BLOCK_SIZE == BLOCK_SIZE) &&  true;
 
             if (decryptOnly && fullBlock) {
-                // copy ciphertext straight into destination slice, then decrypt in place
+                
                 unsigned char* dst = fileBuffer + dstOff;
                 std::memcpy(dst, mp->ptr(blk.offset), blk.size);
                 unsigned char* ignored = dst;
@@ -374,7 +374,7 @@ ExtractResult Package::ExtractEntry(const int EntryNumber)
         }
     }
 
-    // ---- last block (if >1 block total) ----
+    
     if (firstBlock != lastBlock) {
         const Block& blk = Blocks[lastBlock];
         const MappedPkg* mp = mp_for(blk.patchID);
@@ -478,12 +478,12 @@ std::unordered_map<int, Redacted_Key_Pair> Read_Redacted_Keys()
     }
 	int KeyCount = 0;
     std::string line;
-    while (std::getline(file, line)) {  // split by '\n'
+    while (std::getline(file, line)) {  
         std::stringstream ss(line);
         std::string part;
 
         std::vector<std::string> tokens;
-        while (std::getline(ss, part, ':')) {  // split by ':'
+        while (std::getline(ss, part, ':')) {  
             tokens.push_back(part);
         }
        if (tokens.size() == 3) {
@@ -570,7 +570,7 @@ void SearchBungieFiles(uint32_t value)
     end = std::chrono::high_resolution_clock::now();
     elapsed = end - start;
 
-    // gather results
+    
     std::vector<uint32_t> matchingTags;
     for (std::size_t i = 0; i < hashes.size(); ++i) {
         if (found[i]) {

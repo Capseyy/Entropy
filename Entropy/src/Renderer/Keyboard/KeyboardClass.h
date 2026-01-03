@@ -6,7 +6,7 @@ class KeyboardClass
 {
 public:
 	KeyboardClass();
-	//~KeyboardClass();
+	
 	bool KeyIsPressed(const unsigned char keycode) const;
 	bool KeyBufferIsEmpty() const;
 	bool CharBufferIsEmpty() const;

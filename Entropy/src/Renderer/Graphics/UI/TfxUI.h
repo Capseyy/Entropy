@@ -77,14 +77,14 @@ void DrawTfxBytecodeInspectorUI()
     static char g_tfxOutBuf[64 * 1024] = {};
 
     static std::vector<uint8_t> bytes;
-    static std::vector<Vec4> constants; // empty for now
+    static std::vector<Vec4> constants; 
 
     ImGui::Begin("TFX Bytecode Inspector", &open);
 
     if (ImGui::Button("Paste Clipboard")) {
         const char* clip = ImGui::GetClipboardText();
         if (clip) {
-            // Copy with truncation safety
+            
             std::snprintf(g_tfxHexBuf, IM_ARRAYSIZE(g_tfxHexBuf), "%s", clip);
         }
     }

@@ -1,4 +1,4 @@
-// StaticMap.cpp
+
 #include "StaticMap.h"
 #include "Renderer/Graphics/Graphics.h"
 #include "StaticRenderer.h"
@@ -30,7 +30,7 @@ bool StaticMap::Initialize(uint32_t mapRootHash)
         const int end = start + grp.instance_count;
         const size_t count = static_cast<size_t>(grp.instance_count);
 
-        // Pre-size and write by index to avoid repeated push_back growth
+        
         renderpart.world.resize(count);
         renderpart.bounds.resize(count);
 
@@ -50,14 +50,14 @@ bool StaticMap::Initialize(uint32_t mapRootHash)
 
         renderpart.AOID = static_instancer.unk98;
 
-        // Single append; move to avoid copies
+        
         statics_.emplace_back(std::move(renderpart));
     }
 
     return true;
 }
 
-// Prefer returning a const reference to avoid copying the whole vector
+
 const std::vector<RenderStatic>& StaticMap::GetRenderList() const
 {
     return statics_;

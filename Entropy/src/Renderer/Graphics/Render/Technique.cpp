@@ -28,9 +28,9 @@ namespace TfxScope{
 
 struct DecodedSelection {
     std::optional<uint8_t> blend;
-    std::optional<uint8_t> depthStencilCombo; // index into DEPTH_STENCIL_COMBOS
-    std::optional<uint8_t> rasterizer;        // 0..8
-    std::optional<uint8_t> depthBias;         // 0..8
+    std::optional<uint8_t> depthStencilCombo; 
+    std::optional<uint8_t> rasterizer;        
+    std::optional<uint8_t> depthBias;         
 };
 
 static inline DecodedSelection DecodeStateSelection(uint32_t sel) {
@@ -39,10 +39,10 @@ static inline DecodedSelection DecodeStateSelection(uint32_t sel) {
         return (v & 0x80) ? std::optional<uint8_t>(v & 0x7F) : std::nullopt;
         };
     return {
-        /*blend*/            get(0),
-        /*depthStencilCombo*/get(8),
-        /*rasterizer*/       get(16),
-        /*depthBias*/        get(24)
+                    get(0),
+        get(8),
+               get(16),
+                get(24)
     };
 }
 
@@ -55,12 +55,12 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
     ShaderBindingState bindingState{};
     const auto sel = DecodeStateSelection(this->StateSelection);
 
-    // Blend ----------------------------------------------------------
+    
     if (sel.blend && *sel.blend < states.blend_states.size() &&
         states.blend_states[*sel.blend]) {
         const float blendFactor[4] = { 1.f, 1.f, 1.f, 1.f };
         const UINT sampleMask = 0xFFFFFFFFu;
-        //printf("Mapped blend\n");
+        
         pContext->OMSetBlendState(states.blend_states[*sel.blend].Get(), blendFactor, sampleMask);
     }
 
@@ -86,7 +86,7 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
 
     auto& cb0 = this->pixeldata.SamplerFallback;
 
-    // Evaluate constants and collect any explicit shader bindings emitted by the bytecode.
+    
     ShaderBindingState binds{};
     prog.Evaluate(externs, cb0, this->Textures, &binds, false);
  
@@ -126,7 +126,7 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
         std::vector<int> sstack;
         sstack.reserve(16);
 
-        auto ops = ParseAll(this->pixeldata.TFX_Bytecode, /*trace=*/false);
+        auto ops = ParseAll(this->pixeldata.TFX_Bytecode, false);
         for (const auto& op : ops) {
             switch (op.op) {
             case TfxBytecode::PushSampler: {
@@ -136,7 +136,7 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
             }
             case TfxBytecode::SetShaderSampler: {
                 auto d = std::get<SetShaderBindingData>(op.data);
-                // stage: 1 == Pixel (from your EoF table)
+                
                 if (!sstack.empty()) {
                     int idx = sstack.back();
                     sstack.pop_back();
@@ -186,14 +186,14 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
 
     
     
-    // Textures (SRVs)
+    
     for (UINT slot = 0; slot < ShaderBindingState::MaxSlots; ++slot) {
-        if (!binds.textures[1][slot]) continue; // stage 1 == PS
+        if (!binds.textures[1][slot]) continue; 
 
         ID3D11ShaderResourceView* srv = nullptr;
         if (binds.textures[1][slot]) {
             srv = binds.textures[1][slot]->Get();
-            // printf("Bound PS texture at slot %u\n", slot);
+            
         }
 
         pContext->PSSetShaderResources(slot, 1, &srv);
@@ -239,7 +239,7 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
 
 
 
-    // Bind scopes explicitly by bit, matching enum order (index == bit position)
+    
     if (TfxScope::has(used, TfxScope::FRAME)) { scopes[0].second.Bind(pContext); }
     if (TfxScope::has(used, TfxScope::VIEW)) { scopes[1].second.Bind(pContext); }
     if (TfxScope::has(used, TfxScope::RIGID_MODEL)) { scopes[2].second.Bind(pContext); }
@@ -300,7 +300,7 @@ bool EntropyAssets::Technique::Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11D
         states.blend_states[*sel.blend]) {
         const float blendFactor[4] = { 1.f, 1.f, 1.f, 1.f };
         const UINT sampleMask = 0xFFFFFFFFu;
-        //printf("Mapped blend\n");
+        
         pContext->OMSetBlendState(states.blend_states[*sel.blend].Get(), blendFactor, sampleMask);
     }
 
@@ -366,10 +366,10 @@ bool EntropyAssets::Technique::Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11D
     std::vector<PsSamplerBind> psBinds;
 
     {
-        // Minimal stack for sampler indices
+        
         std::vector<int> sstack; sstack.reserve(16);
 
-        auto ops = ParseAll(this->pixeldata.TFX_Bytecode, /*trace=*/false);
+        auto ops = ParseAll(this->pixeldata.TFX_Bytecode, false);
         for (const auto& op : ops) {
             switch (op.op) {
             case TfxBytecode::PushSampler: {
@@ -379,7 +379,7 @@ bool EntropyAssets::Technique::Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11D
             }
             case TfxBytecode::SetShaderSampler: {
                 auto d = std::get<SetShaderBindingData>(op.data);
-                // stage: 1 == Pixel (from your EoF table)
+                
                 if (!sstack.empty()) {
                     int idx = sstack.back(); sstack.pop_back();
                     if (d.stage == 1) {
@@ -393,7 +393,7 @@ bool EntropyAssets::Technique::Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11D
         }
     }
 
-    // Bind samplers exactly to the slots requested by the bytecode
+    
     for (const auto& b : psBinds) {
         if (b.sampler_index < this->Samplers.size() && this->Samplers[b.sampler_index]) {
             ID3D11SamplerState* s = this->Samplers[b.sampler_index]->sampler.Get();
@@ -401,11 +401,11 @@ bool EntropyAssets::Technique::Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11D
         }
     }
 
-    // (Optional) If there were no SetShaderSampler ops, fall back to your old linear binding:
+    
     if (psBinds.empty()) {
         for (size_t i = 0; i < this->Samplers.size(); ++i) {
             ID3D11SamplerState* s = this->Samplers[i]->sampler.Get();
-            pContext->PSSetSamplers(UINT(i), 1, &s); // no +1 offset anymore
+            pContext->PSSetSamplers(UINT(i), 1, &s); 
         }
     }
 
@@ -455,12 +455,12 @@ bool EntropyAssets::Technique::Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11D
     }
     
     for (UINT slot = 0; slot < ShaderBindingState::MaxSlots; ++slot) {
-        if (!binds.textures[1][slot]) continue; // stage 1 == PS
+        if (!binds.textures[1][slot]) continue; 
 
         ID3D11ShaderResourceView* srv = nullptr;
         if (binds.textures[1][slot]) {
             srv = binds.textures[1][slot]->Get();
-            // printf("Bound PS texture at slot %u\n", slot);
+            
         }
 
         pContext->PSSetShaderResources(slot, 1, &srv);
@@ -473,7 +473,7 @@ bool EntropyAssets::Technique::Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11D
         }
     }
 
-    // Bind scopes explicitly by bit, matching enum order (index == bit position)
+    
     if (TfxScope::has(used, TfxScope::FRAME)) { scopes[0].second.Bind(pContext); }
     if (TfxScope::has(used, TfxScope::VIEW)) { scopes[1].second.Bind(pContext); }
     if (TfxScope::has(used, TfxScope::RIGID_MODEL)) { scopes[2].second.Bind(pContext); }

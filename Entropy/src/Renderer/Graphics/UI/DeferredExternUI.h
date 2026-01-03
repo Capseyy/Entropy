@@ -1,20 +1,20 @@
-// DeferredExternUI.h
+
 #pragma once
 
 #include "TigerEngine/Technique/Tfx/extern.h"
 #include "Renderer/Graphics/ImGui/imgui.h"
 
-// ==================== Deferred ====================
-// Mirrors extern_struct! DeferredExtern (see TigerEngine/Technique/Tfx/extern.h)
+
+
 namespace DeferredOff
 {
-    // ---- constants ----
-    constexpr size_t kDepthConstants = 0x00; // Vec4
-    constexpr size_t kUnk10          = 0x10; // Vec4
-    constexpr size_t kUnk20          = 0x20; // Vec4
-    constexpr size_t kUnk30          = 0x30; // float
+    
+    constexpr size_t kDepthConstants = 0x00; 
+    constexpr size_t kUnk10          = 0x10; 
+    constexpr size_t kUnk20          = 0x20; 
+    constexpr size_t kUnk30          = 0x30; 
 
-    // ---- SRV pointers (TextureView) ----
+    
     constexpr size_t kDeferredDepth       = 0x38;
     constexpr size_t kGBufferAlbedo       = 0x48;
     constexpr size_t kGBufferNormal       = 0x50;
@@ -30,7 +30,7 @@ namespace DeferredOff
     constexpr size_t kUnk90              = 0x90;
     constexpr size_t kSkyHemisphereMips  = 0x98;
 
-    constexpr size_t kSize = sizeof(DeferredExtern); // should be 0xA0
+    constexpr size_t kSize = sizeof(DeferredExtern); 
 }
 
 inline void EnsureDeferredCapacity(ExternStorage& ex)
@@ -48,7 +48,7 @@ inline void EnsureDeferredCapacity(ExternStorage& ex)
         scope.cpu.resize(want, 0u);
         scope.dirty = true;
 
-        // Seed defaults only if that region was newly added.
+        
         auto seed_v4 = [&](size_t off, const Vec4& v) {
             if (oldSize <= off) ex.MemcpyScope(TfxExtern::Deferred, off, &v, sizeof(v));
         };
@@ -87,7 +87,7 @@ inline bool ShowDeferredExternEditor(ExternStorage& ex)
     if (ImGui::Button("Reset Deferred Defaults")) { DeferredSetDefaults(ex); changed = true; }
     ImGui::Separator();
 
-    // ---- Constants ----
+    
     if (ImGui::CollapsingHeader("Deferred Constants", ImGuiTreeNodeFlags_DefaultOpen))
     {
         auto rowV4 = [&](const char* label, size_t off, float step = 0.01f) {
@@ -109,7 +109,7 @@ inline bool ShowDeferredExternEditor(ExternStorage& ex)
         rowF("unk30", DeferredOff::kUnk30);
     }
 
-    // ---- SRVs ----
+    
     if (ImGui::CollapsingHeader("Deferred TextureViews (SRVs)", ImGuiTreeNodeFlags_DefaultOpen))
     {
         auto rowSRV = [&](const char* label, size_t off) {

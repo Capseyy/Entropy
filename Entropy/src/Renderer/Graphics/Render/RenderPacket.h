@@ -1,4 +1,4 @@
-// Graphics.h (or a small RenderPackets.h)
+
 #include <d3d11.h>
 #include <cstdint>
 #include "Runtime/Assets/AssetSystem.h"
@@ -20,12 +20,12 @@ static inline float from_bytes1(uint8_t b0, uint8_t b1, uint8_t b2, uint8_t b3) 
 }
 
 struct CB1Cpu {
-    DirectX::XMFLOAT3 mesh_offset;   // xyz
-    float             mesh_scale;    // w of cb1[0]
+    DirectX::XMFLOAT3 mesh_offset;   
+    float             mesh_scale;    
 
-    float             uv_scale;      // x of cb1[1]
-    float             uv_off_x;      // y of cb1[1]
-    float             uv_off_y;      // z of cb1[1]
+    float             uv_scale;      
+    float             uv_off_x;      
+    float             uv_off_y;      
     std::uint32_t     flags_or_maxColorBits;
 };
 
@@ -42,9 +42,9 @@ struct CB1InstanceRowGPU {
 };
 
 static constexpr UINT kCB1_CAP_BYTES = 64 * 1024;
-static constexpr UINT kCB1_HDR_BYTES = sizeof(CB1HeaderGPU);      // 32
-static constexpr UINT kCB1_ROW_BYTES = sizeof(CB1InstanceRowGPU); // 64
-static constexpr UINT kCB1_MAX_INST = (kCB1_CAP_BYTES - kCB1_HDR_BYTES) / kCB1_ROW_BYTES; // 1023
+static constexpr UINT kCB1_HDR_BYTES = sizeof(CB1HeaderGPU);      
+static constexpr UINT kCB1_ROW_BYTES = sizeof(CB1InstanceRowGPU); 
+static constexpr UINT kCB1_MAX_INST = (kCB1_CAP_BYTES - kCB1_HDR_BYTES) / kCB1_ROW_BYTES; 
 
 
 static void EnsureCB1_StaticReusable(ID3D11Device* device,
@@ -74,8 +74,8 @@ static void UpdateCB1_StaticReusable(
 
 
     constexpr UINT kCB1_CAP_BYTES = 64u * 1024u;
-    constexpr UINT kHDR_BYTES = 32u; // 2 * float4
-    constexpr UINT kROW_BYTES = 16u; // float4
+    constexpr UINT kHDR_BYTES = 32u; 
+    constexpr UINT kROW_BYTES = 16u; 
     constexpr UINT kINST_BYTES = 4u * kROW_BYTES;
     const     UINT kINST_CAP = (kCB1_CAP_BYTES - kHDR_BYTES) / kINST_BYTES;
 
@@ -87,21 +87,21 @@ static void UpdateCB1_StaticReusable(
 
     auto* rows = reinterpret_cast<XMFLOAT4*>(m.pData);
 
-    // ---- header (2 rows) ----
+    
     rows[0] = XMFLOAT4(hdr.mesh_offset.x, hdr.mesh_offset.y, hdr.mesh_offset.z, hdr.mesh_scale);
     rows[1] = XMFLOAT4(hdr.uv_scale, hdr.uv_off_x, hdr.uv_off_y, asfloat_u32(hdr.max_colour));
 
-    // ---- instances (4 rows each) ----
-    // little-endian byte pattern F7 FF FF 01 (what you used before)
+    
+    
     const float kMagic = asfloat_u32(0x01FFFFF7u);
 
     if (instCount && worlds) {
         for (UINT i = 0; i < instCount; ++i) {
             const UINT base = 2 + i * 4;
 
-            // Build world matrix from your ObjectVectors
-            const XMMATRIX M = MakeWorld(worlds[i]);   // row-major
-            const XMMATRIX Mt = XMMatrixTranspose(M);   // HLSL-friendly (column-major)
+            
+            const XMMATRIX M = MakeWorld(worlds[i]);   
+            const XMMATRIX Mt = XMMatrixTranspose(M);   
 
             XMStoreFloat4(&rows[base + 0], Mt.r[0]);
             XMStoreFloat4(&rows[base + 1], Mt.r[1]);
@@ -120,11 +120,11 @@ static inline uint32_t EncodeDepthKey(const XMFLOAT4X4& world_to_camera, const O
 {
   
     const float x = ov.translation.x, y = ov.translation.y, z = ov.translation.z, w = 1.0f;
-    const float* m = &world_to_camera.m[0][0]; // row-major
+    const float* m = &world_to_camera.m[0][0]; 
     const float vz = m[2] * x + m[6] * y + m[10] * z + m[14] * w;
    
     const float nz = std::min(std::max(vz, -1e6f), 1e6f);
-    const float k = (nz + 1e6f) * (1.0f / 2e6f); // 0..1
+    const float k = (nz + 1e6f) * (1.0f / 2e6f); 
     return (uint32_t)(k * 0xFFFFFFu);
 }
 
@@ -178,6 +178,6 @@ static inline CB1Cpu MakeCB1Cpu(const MeshParams& mp)
     out.uv_scale = mp.uv_scale;
     out.uv_off_x = mp.uv_off_x;
     out.uv_off_y = mp.uv_off_y;
-    out.flags_or_maxColorBits = mp.max_colour; // already packed bits
+    out.flags_or_maxColorBits = mp.max_colour; 
     return out;
 }

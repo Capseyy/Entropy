@@ -26,19 +26,19 @@ struct s_static_map_parent
 	TagHash static_data;
 };
 
-struct Unk_80806CC9 {//statics
+struct Unk_80806CC9 {
 	uint64_t unk0; 
 	uint64_t unk8;
 	TagHash static_parent;
 };
 
-struct Unk_80806A63 {//lights
+struct Unk_80806A63 {
 	uint64_t unk0;
 	uint64_t unk8;
 	TagHash light_collection;
 };
 
-struct Unk_80806C5E {//lights
+struct Unk_80806C5E {
 	uint64_t unk0;
 	uint64_t unk8;
 	TagHash expensive_light;
@@ -46,13 +46,13 @@ struct Unk_80806C5E {//lights
 	uint32_t unk1c;
 };
 
-struct Unk_80806A40 {//AO
+struct Unk_80806A40 {
 	uint64_t unk0;
 	uint64_t unk8;
 	TagHash ambient_occlusion;
 };
 
-struct Unk_80806AA3 {//AO
+struct Unk_80806AA3 {
 	uint64_t unk0;
 	uint64_t unk8;
 	TagHash sky_ents;
@@ -115,7 +115,7 @@ struct SLight {
 	Vec4 unk30;
 	uint32_t  unk40[4];
 	Vec4 unk50;
-	glm::mat4 light_space_transform; // 16 floats
+	glm::mat4 light_space_transform; 
 	uint32_t  unka0;
 	uint32_t  unka4;
 	uint32_t  unka8;
@@ -159,7 +159,7 @@ struct SShadowingLight {
 	Vec4      unk30;
 	std::array<uint32_t,4>  unk40;
 	Vec4      unk50;
-	glm::mat4 light_space_transform; // 16 floats
+	glm::mat4 light_space_transform; 
 
 	uint32_t  unka0;
 	uint32_t  unka4;
@@ -182,8 +182,8 @@ struct SShadowingLight {
 	TagHash   technique_compute_lightprobe;
 	TagHash   technique_compute_lightprobe_shadowing;
 
-	TagHash   unke8; // Unk80806da1
-	TagHash   unkec; // Unk80806da1
+	TagHash   unke8; 
+	TagHash   unkec; 
 
 	float     unkf0[5];
 	uint8_t   unk104[12];
@@ -191,11 +191,11 @@ struct SShadowingLight {
 
 struct MapStaticAO {
 public:
-	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> ao_buffer;                       // big packed AO vertex blob
-	std::unordered_map<uint64_t, uint32_t> offsets;  // id -> offset (units: vertices or bytes)
-	UINT AO_stride = 0; // bytes per vertex
+	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> ao_buffer;                       
+	std::unordered_map<uint64_t, uint32_t> offsets;  
+	UINT AO_stride = 0; 
 
-	// convenience
+	
 	inline bool TryGetOffset(uint64_t id, uint32_t& out) const {
 		auto it = offsets.find(id);
 		if (it == offsets.end()) return false;
@@ -205,16 +205,16 @@ public:
 };
 
 struct AoSlice {
-	uint32_t first;   // elements (bytes for R8_UNORM)
-	uint32_t count;   // elements
+	uint32_t first;   
+	uint32_t count;   
 };
 
 
 inline Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>
 MakeSrvSlice(ID3D11Device* dev,
 	ID3D11ShaderResourceView* baseSrv,
-	UINT firstElement,   // start index (elements, not bytes)
-	UINT numElements)    // length  (elements)
+	UINT firstElement,   
+	UINT numElements)    
 {
 	Microsoft::WRL::ComPtr<ID3D11Resource> res;
 	baseSrv->GetResource(&res);
@@ -222,7 +222,7 @@ MakeSrvSlice(ID3D11Device* dev,
 	D3D11_SHADER_RESOURCE_VIEW_DESC desc{};
 	baseSrv->GetDesc(&desc);
 
-	// keep same format (R8_UNORM per your capture), just change the range
+	
 	desc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
 	desc.Buffer.FirstElement = firstElement;
 	desc.Buffer.NumElements = numElements;

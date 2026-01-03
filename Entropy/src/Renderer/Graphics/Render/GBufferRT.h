@@ -1,4 +1,4 @@
-// GBufferRT.h
+
 #pragma once
 #include <wrl.h>
 #include <d3d11.h>
@@ -13,7 +13,7 @@
 using Microsoft::WRL::ComPtr;
 
 
-// Graphics.cpp (near your other helpers)
+
 static inline void PP_SetFS(ID3D11DeviceContext* ctx) {
     ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
     ctx->IASetInputLayout(nullptr);
@@ -54,7 +54,7 @@ static HRESULT CompileVSFromMemory(
     const char* entryPoint,
     const char* target,
     ID3D11VertexShader** outVS,
-    ID3DBlob** outBytecode)   // keep bytecode so you can make the input layout
+    ID3DBlob** outBytecode)   
 {
     UINT flags = 0;
 
@@ -63,9 +63,9 @@ static HRESULT CompileVSFromMemory(
     Microsoft::WRL::ComPtr<ID3DBlob> bytecode, errors;
     HRESULT hr = D3DCompile(
         source, strlen(source),
-        /*sourceName*/ "SkinnedHackVS.hlsl",
-        /*defines*/ nullptr,
-        /*include*/ nullptr,
+         "SkinnedHackVS.hlsl",
+         nullptr,
+         nullptr,
         entryPoint, target, flags, 0,
         bytecode.GetAddressOf(), errors.GetAddressOf());
 
@@ -88,21 +88,21 @@ static HRESULT CompileVSFromMemory(
 }
 
 
-// GBufferRT.h  (replace the struct RenderTarget with this upgraded version)
+
 struct RenderTarget {
     ComPtr<ID3D11Texture2D>          tex;
     ComPtr<ID3D11RenderTargetView>   rtv;
     ComPtr<ID3D11ShaderResourceView> srv;
 
-    DXGI_FORMAT baseFormat = DXGI_FORMAT_UNKNOWN; // texture format (often TYPELESS)
-    DXGI_FORMAT rtvFormat = DXGI_FORMAT_UNKNOWN; // RTV view format
-    DXGI_FORMAT srvFormat = DXGI_FORMAT_UNKNOWN; // SRV view format
+    DXGI_FORMAT baseFormat = DXGI_FORMAT_UNKNOWN; 
+    DXGI_FORMAT rtvFormat = DXGI_FORMAT_UNKNOWN; 
+    DXGI_FORMAT srvFormat = DXGI_FORMAT_UNKNOWN; 
     std::string name;
 
     static RenderTarget Create(ID3D11Device* dev, UINT w, UINT h,
         DXGI_FORMAT fmt, const char* debugName)
     {
-        // simple path: same format for tex/RTV/SRV
+        
         return CreateWithViews(dev, w, h, fmt, fmt, fmt, debugName);
     }
 
@@ -155,13 +155,13 @@ struct RenderTarget {
     }
 };
 struct DepthState {
-    ComPtr<ID3D11Texture2D>          tex;           // R32_TYPELESS
-    ComPtr<ID3D11DepthStencilView>   dsv;           // D32_FLOAT
-    ComPtr<ID3D11ShaderResourceView> srv;           // R32_FLOAT
-    ComPtr<ID3D11DepthStencilState>  dsWrite;       // GREATER_EQUAL, writes ON
-    ComPtr<ID3D11DepthStencilState>  dsReadOnly;    // GREATER_EQUAL, writes OFF
+    ComPtr<ID3D11Texture2D>          tex;           
+    ComPtr<ID3D11DepthStencilView>   dsv;           
+    ComPtr<ID3D11ShaderResourceView> srv;           
+    ComPtr<ID3D11DepthStencilState>  dsWrite;       
+    ComPtr<ID3D11DepthStencilState>  dsReadOnly;    
 
-    // GPU-readable copy (typeless R32 -> SRV R32_FLOAT)
+    
     ComPtr<ID3D11Texture2D>          texCopy;
     ComPtr<ID3D11ShaderResourceView> texCopySRV;
 
@@ -170,7 +170,7 @@ struct DepthState {
 
         if (w == 0 || h == 0) { w = 4; h = 4; }
 
-        // R32_TYPELESS so we can DSV(D32_FLOAT) + SRV(R32_FLOAT)
+        
         D3D11_TEXTURE2D_DESC td{};
         td.Width = w; td.Height = h;
         td.MipLevels = 1; td.ArraySize = 1;
@@ -182,7 +182,7 @@ struct DepthState {
         HRESULT hr = dev->CreateTexture2D(&td, nullptr, ds.tex.GetAddressOf());
         if (FAILED(hr)) throw std::runtime_error("Depth tex CreateTexture2D failed");
 
-        // DSV view
+        
         D3D11_DEPTH_STENCIL_VIEW_DESC dsvd{};
         dsvd.Format = DXGI_FORMAT_D32_FLOAT;
         dsvd.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
@@ -190,7 +190,7 @@ struct DepthState {
         hr = dev->CreateDepthStencilView(ds.tex.Get(), &dsvd, ds.dsv.GetAddressOf());
         if (FAILED(hr)) throw std::runtime_error("CreateDepthStencilView failed");
 
-        // SRV view
+        
         D3D11_SHADER_RESOURCE_VIEW_DESC sd{};
         sd.Format = DXGI_FORMAT_R32_FLOAT;
         sd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
@@ -199,7 +199,7 @@ struct DepthState {
         hr = dev->CreateShaderResourceView(ds.tex.Get(), &sd, ds.srv.GetAddressOf());
         if (FAILED(hr)) throw std::runtime_error("Depth SRV create failed");
 
-        // Depth states (reversed-Z)
+        
         CD3D11_DEPTH_STENCIL_DESC zsWrite(D3D11_DEFAULT);
         zsWrite.DepthEnable = TRUE;
         zsWrite.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
@@ -210,7 +210,7 @@ struct DepthState {
         zsRO.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
         dev->CreateDepthStencilState(&zsRO, ds.dsReadOnly.GetAddressOf());
 
-        // Copy texture + SRV (for sampling in lighting)
+        
         td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
         hr = dev->CreateTexture2D(&td, nullptr, ds.texCopy.GetAddressOf());
         if (FAILED(hr)) throw std::runtime_error("Depth copy tex CreateTexture2D failed");
@@ -235,34 +235,34 @@ struct DepthState {
     }
 };
 
-// GBufferRT.h (cont.)
+
 struct GBufferRT {
-    RenderTarget rt0;                  // B8G8R8A8_UNORM_SRGB  (albedo)
-    RenderTarget rt1;                  // R10G10B10A2_UNORM    (normal.xy, roughness A, etc.)
-    RenderTarget rt1_read;             // clone (for Load/Sample hazards)
-    RenderTarget rt2;                  // B8G8R8A8_UNORM       (material params)
-    RenderTarget rt3;                  // B8G8R8A8_UNORM       (optional)
+    RenderTarget rt0;                  
+    RenderTarget rt1;                  
+    RenderTarget rt1_read;             
+    RenderTarget rt2;                  
+    RenderTarget rt3;                  
 
-    RenderTarget light_diffuse;        // R11G11B10_FLOAT
-    RenderTarget light_specular;       // R11G11B10_FLOAT
-    RenderTarget light_ibl_specular;   // R11G11B10_FLOAT
+    RenderTarget light_diffuse;        
+    RenderTarget light_specular;       
+    RenderTarget light_ibl_specular;   
 
-    RenderTarget shading_result;       // R11G11B10_FLOAT
-    RenderTarget shading_result_read;  // R11G11B10_FLOAT
+    RenderTarget shading_result;       
+    RenderTarget shading_result_read;  
 
-    RenderTarget ssao_intermediate;    // R8_UNORM
-    RenderTarget atmos_ss_far_lookup;  // R16G16B16A16_FLOAT (quarter res)
-    RenderTarget atmos_ss_near_lookup; // R16G16B16A16_FLOAT (quarter res)
-    RenderTarget depth_angle_density_lookup; // 512x512 R16G16B16A16_FLOAT
+    RenderTarget ssao_intermediate;    
+    RenderTarget atmos_ss_far_lookup;  
+    RenderTarget atmos_ss_near_lookup; 
+    RenderTarget depth_angle_density_lookup; 
 
     DepthState  depth;
 
-    RenderTarget post_ping;  // tex: R8G8B8A8_TYPELESS, RTV: UNORM, SRV: UNORM_SRGB
-    RenderTarget post_pong;  // same as above
+    RenderTarget post_ping;  
+    RenderTarget post_pong;  
     std::atomic_bool post_is_ping{ true };
 
 
-    // --- Helpers at end of struct ---
+    
     inline void GetPostRT(RenderTarget*& src, RenderTarget*& dst, bool swapAfterUse)
     {
         const bool ping = post_is_ping.load(std::memory_order_relaxed);
@@ -298,12 +298,12 @@ struct GBufferRT {
 
         depth = DepthState::Create(dev, w, h, "gbuffer_depth");
 
-        // --- In Create() after existing RT creations ---
+        
         post_ping = RenderTarget::CreateWithViews(
             dev, w, h,
             DXGI_FORMAT_R8G8B8A8_TYPELESS,
-            DXGI_FORMAT_R8G8B8A8_UNORM,         // RTV (linear UNORM)
-            DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,    // SRV (sRGB sample)
+            DXGI_FORMAT_R8G8B8A8_UNORM,         
+            DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,    
             "postprocess_ping");
 
         post_pong = RenderTarget::CreateWithViews(
@@ -318,7 +318,7 @@ struct GBufferRT {
         Create(dev, w, h);
     }
 
-    // binds RT0/RT1/RT2 + depth, sets viewport (full)
+    
     void BindGBufferForWriting(ID3D11DeviceContext* ctx) {
         ID3D11RenderTargetView* rts[3] = { rt0.rtv.Get(), rt1.rtv.Get(), rt2.rtv.Get() };
         ctx->OMSetRenderTargets(3, rts, depth.dsv.Get());
@@ -340,7 +340,7 @@ inline void DumpRt1RoughnessStats(
     ID3D11Device* dev,
     ID3D11DeviceContext* ctx,
     ID3D11ShaderResourceView* rt1_srv,
-    float lowThresh = 0.06f)   // tweak: 0.04–0.10
+    float lowThresh = 0.06f)   
 {
     if (!rt1_srv) { OutputDebugStringA("Rt1 SRV is null\n"); return; }
 
@@ -354,7 +354,7 @@ inline void DumpRt1RoughnessStats(
     D3D11_TEXTURE2D_DESC desc{};
     src->GetDesc(&desc);
 
-    // Make a CPU-readable staging texture with identical mips/format
+    
     D3D11_TEXTURE2D_DESC sd = desc;
     sd.BindFlags = 0;
     sd.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
@@ -372,7 +372,7 @@ inline void DumpRt1RoughnessStats(
 
     for (int mip = 0; mip < mipCount; ++mip)
     {
-        // Copy mip ‘mip’ to staging
+        
         ctx->CopySubresourceRegion(staging.Get(), mip, 0, 0, 0, src.Get(), mip, nullptr);
 
         D3D11_MAPPED_SUBRESOURCE map{};
@@ -380,11 +380,11 @@ inline void DumpRt1RoughnessStats(
             sprintf_s(line, "Map failed (mip %d)\n", mip); OutputDebugStringA(line); continue;
         }
 
-        // Dimensions of this mip
+        
         const UINT w = std::max(1u, desc.Width >> mip);
         const UINT h = std::max(1u, desc.Height >> mip);
 
-        // Only supports 32-bit 4-channel (e.g., R8G8B8A8_UNORM); adjust if you use other formats
+        
         const UINT bpp = 4;
         const UINT pitch = map.RowPitch;
 
@@ -397,8 +397,8 @@ inline void DumpRt1RoughnessStats(
             const uint8_t* row = static_cast<const uint8_t*>(map.pData) + y * pitch;
             for (UINT x = 0; x < w; ++x)
             {
-                const uint8_t a8 = row[x * bpp + 3];       // alpha
-                const float a = a8 / 255.0f;               // roughness
+                const uint8_t a8 = row[x * bpp + 3];       
+                const float a = a8 / 255.0f;               
                 minA = std::min(minA, a);
                 maxA = std::max(maxA, a);
                 sum += a;

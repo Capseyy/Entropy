@@ -123,9 +123,9 @@ inline void DrawActivityBrowser(ActivityProvider provider, const ActivityBrowser
 
             ImGui::TextDisabled("Maps in: %s", act.display_name.c_str());
 
-            // ---------- Phase selection menu ----------
+            
             if (!act.phases.empty()) {
-                // Clamp selection
+                
                 if (selectedPhase < 0 || selectedPhase >= (int)act.phases.size())
                     selectedPhase = 0;
 
@@ -148,7 +148,7 @@ inline void DrawActivityBrowser(ActivityProvider provider, const ActivityBrowser
                 ImGui::TextDisabled("No phases available for this activity.");
             }
 
-            // ---------- Map filter + table ----------
+            
             mapFilter.Draw("Filter maps");
             ImGui::Separator();
 
@@ -191,7 +191,7 @@ inline void DrawActivityBrowser(ActivityProvider provider, const ActivityBrowser
 
             ImGui::Separator();
 
-            // NEW: Toggle + Button row
+            
             ImGui::Checkbox("Load Combatant", &loadCombatant);
             ImGui::SameLine();
 

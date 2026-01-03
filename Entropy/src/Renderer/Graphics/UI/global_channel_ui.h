@@ -1,4 +1,4 @@
-// global_channels_ui.h
+
 #pragma once
 #include "TigerEngine/Technique/Tfx/extern.h"
 #include "TigerEngine/Technique/Tfx/global_channels.h"
@@ -74,23 +74,23 @@ inline bool ShowGlobalChannelsEditor(std::array<GlobalChannel, 256>& chans,
     if (ImGui::Button("Publish Now"))
     {
         PublishGlobalChannelsToExterns(externs, chans);
-        externs.Ensure(nullptr, TfxExtern::Generic); // safe no-op if already created with EnsureAll
-        externs.scopes[TfxExtern::Generic].dirty = true; // mark dirty
+        externs.Ensure(nullptr, TfxExtern::Generic); 
+        externs.scopes[TfxExtern::Generic].dirty = true; 
         anyChanged = true;
     }
 
-    // Lowercase filter once
+    
     std::string f = filter;
     std::transform(f.begin(), f.end(), f.begin(), [](unsigned char c) { return std::tolower(c); });
 
-    // --- Table ---
+    
     ImGuiTableFlags flags = ImGuiTableFlags_SizingStretchProp |
         ImGuiTableFlags_RowBg |
         ImGuiTableFlags_Resizable |
         ImGuiTableFlags_ScrollY |
         ImGuiTableFlags_BordersOuterH;
 
-    const float tableHeight = ImGui::GetTextLineHeightWithSpacing() * 18.0f; // ~18 rows visible
+    const float tableHeight = ImGui::GetTextLineHeightWithSpacing() * 18.0f; 
     if (ImGui::BeginTable("gc_table", 4, flags, ImVec2(0, tableHeight)))
     {
         ImGui::TableSetupColumn("Idx", ImGuiTableColumnFlags_WidthFixed, 48.0f);
@@ -109,7 +109,7 @@ inline bool ShowGlobalChannelsEditor(std::array<GlobalChannel, 256>& chans,
             std::stable_sort(orderIdx.begin(), orderIdx.end(), [](int a, int b) {
                 const uint32_t ua = tfx::g_global_channel_uses[a];
                 const uint32_t ub = tfx::g_global_channel_uses[b];
-                if (ua != ub) return ua > ub; // desc
+                if (ua != ub) return ua > ub; 
                 return a < b;
             });
         }
@@ -149,13 +149,13 @@ inline bool ShowGlobalChannelsEditor(std::array<GlobalChannel, 256>& chans,
             const char* typeStr =
                 (g.type == ChannelType::Float) ? "Float" :
                 (g.type == ChannelType::FloatRanged) ? "FloatRanged" : "Color";
-            if (named) ImGui::Text("%s  \xE2\x80\x94  %s", g.name, typeStr); // "name — type"
+            if (named) ImGui::Text("%s  \xE2\x80\x94  %s", g.name, typeStr); 
             else       ImGui::Text("<unnamed>  \xE2\x80\x94  %s", typeStr);
 
-            // col 3: widget
+            
             ImGui::TableSetColumnIndex(3);
             ImGui::PushID(i);
-            GlobalChannel tmp = g; // edit copy; write back only if changed
+            GlobalChannel tmp = g; 
             if (EditChannelWidget(i, tmp))
             {
                 chans[i] = tmp;

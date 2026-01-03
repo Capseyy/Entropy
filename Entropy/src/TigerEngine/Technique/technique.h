@@ -38,13 +38,13 @@ public:
 	std::vector<STextureTag> Textures;
 	uint64_t Unk18;
 	std::vector<uint8_t> TFX_Bytecode;
-	std::vector<Vec4> TFX_Constants; //TODO
-	std::vector<Unk_3f018080> Samplers; //TODO#
-	std::vector<Vec4> SamplerFallback; //TODO
-	std::array<uint32_t, 4> Unk48; //TODO
+	std::vector<Vec4> TFX_Constants; 
+	std::vector<Unk_3f018080> Samplers; 
+	std::vector<Vec4> SamplerFallback; 
+	std::array<uint32_t, 4> Unk48; 
 	int32_t constant_buffer_slot;
 	TagHash contstant_buffer;
-	std::array<uint32_t, 6> Unk78; //TODO
+	std::array<uint32_t, 6> Unk78; 
 };
 
 struct ConstantBufferHeader {

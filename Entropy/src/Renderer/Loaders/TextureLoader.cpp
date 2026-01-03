@@ -1,5 +1,5 @@
 #include "TextureLoader.h"
-#include <wincodec.h>                 // WIC
+#include <wincodec.h>                 
 #pragma comment(lib, "windowscodecs.lib")
 #include "TigerEngine/Technique/texture.h"
 

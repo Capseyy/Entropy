@@ -1,4 +1,4 @@
-// RenderStates.h
+
 #pragma once
 #include <array>
 #include <vector>
@@ -15,26 +15,26 @@
 
 using Microsoft::WRL::ComPtr;
 
-// ------------------------------------------------------------------------
+
 
 static constexpr std::array<std::pair<uint8_t, uint8_t>, 89> DEPTH_STENCIL_COMBOS = { {
-    {0, 0},    // 0
+    {0, 0},    
     {1, 1},
-    {2, 1},    // 2
+    {2, 1},    
     {8, 1},
-    {2, 2},    // 4
+    {2, 2},    
     {1, 3},
-    {1, 4},    // 6
+    {1, 4},    
     {2, 5},
-    {2, 6},    // 8
+    {2, 6},    
     {2, 9},
-    {2, 10},   // 10
+    {2, 10},   
     {2, 0x0B},
-    {2, 0x0C}, // 12
+    {2, 0x0C}, 
     {4, 1},
-    {6, 1},    // 14
+    {6, 1},    
     {3, 1},
-    {7, 1},    // 16
+    {7, 1},    
     {3, 0x10},
     {9, 0x10},
     {3, 0x11},
@@ -106,7 +106,7 @@ static constexpr std::array<std::pair<uint8_t, uint8_t>, 89> DEPTH_STENCIL_COMBO
     {5, 0x2A},
     {10, 0x16},
     {1, 0x16},
-    {14, 1},   // CUSTOM ALKAHEST DEPTH STATE
+    {14, 1},   
 } };
 
 static_assert(DEPTH_STENCIL_COMBOS.size() == 89, "Combo count mismatch");
@@ -114,8 +114,8 @@ static_assert(DEPTH_STENCIL_COMBOS.size() == 89, "Combo count mismatch");
 struct RenderStates
 {
     std::array<ComPtr<ID3D11BlendState>, 90> blend_states;
-    //d::array<ComPtr<ID3D11InputLayout>, 77> input_layouts;
-    std::vector<ComPtr<ID3D11RasterizerState>> rasterizer_states; // [depthBias][rasterizer]
+    
+    std::vector<ComPtr<ID3D11RasterizerState>> rasterizer_states; 
     std::array<ComPtr<ID3D11DepthStencilState>, 89> depth_stencil_states;
 
     static HRESULT Create(ID3D11Device* device, RenderStates& out);

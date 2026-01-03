@@ -4,13 +4,34 @@
 #include <variant>
 #include <stdexcept>
 #include <cstdio>
-#include <unordered_map>           // <-- added
+#include <unordered_map>           
 #include "tfx_runtime.h"
 #include "extern.h"
 
 
+inline void PrintMat4(const char* name, const Mat4& m, size_t offset)
+{
+    printf("%s  size %08X\n", name, offset);
 
-// ====================== OPCODES (EoF exact) ======================
+    
+    printf("[ % .6f % .6f % .6f % .6f ]\n",
+        m.x_axis.x, m.y_axis.x, m.z_axis.x, m.w_axis.x);
+
+    
+    printf("[ % .6f % .6f % .6f % .6f ]\n",
+        m.x_axis.y, m.y_axis.y, m.z_axis.y, m.w_axis.y);
+
+    
+    printf("[ % .6f % .6f % .6f % .6f ]\n",
+        m.x_axis.z, m.y_axis.z, m.z_axis.z, m.w_axis.z);
+
+    
+    printf("[ % .6f % .6f % .6f % .6f ]\n",
+        m.x_axis.w, m.y_axis.w, m.z_axis.w, m.w_axis.w);
+}
+
+
+
 enum class TfxBytecode : uint8_t {
     Add = 0x01,
     Subtract = 0x02,
@@ -180,7 +201,7 @@ using TfxPayload = std::variant<std::monostate,
 
 struct TfxData { TfxBytecode op{ TfxBytecode::Unknown }; TfxPayload data{}; };
 
-// ====================== READER UTILS ======================
+
 struct ByteReader {
     const std::vector<uint8_t>& buf; size_t pos{ 0 };
     size_t remaining() const { return (pos <= buf.size()) ? (buf.size() - pos) : 0; }
@@ -189,7 +210,7 @@ struct ByteReader {
     uint32_t u32be() { return (uint32_t(u8()) << 24) | (uint32_t(u8()) << 16) | (uint32_t(u8()) << 8) | uint32_t(u8()); }
 };
 
-// ====================== NAMES ======================
+
 inline const char* OpName(TfxBytecode op) {
     switch (op) {
     case TfxBytecode::Add: return "Add";
@@ -278,7 +299,7 @@ inline const char* OpName(TfxBytecode op) {
     }
 }
 
-// ====================== PAYLOAD SIZE (for bounds check) ======================
+
 inline size_t PayloadSizeFor(TfxBytecode op) {
     using B = TfxBytecode;
     switch (op) {
@@ -321,7 +342,7 @@ inline size_t PayloadSizeFor(TfxBytecode op) {
     }
 }
 
-// ====================== PARSE ONE ======================
+
 inline TfxData ReadTfxBytecodeOp(ByteReader& r) {
     TfxData out;
     out.op = static_cast<TfxBytecode>(r.u8());
@@ -365,12 +386,12 @@ inline TfxData ReadTfxBytecodeOp(ByteReader& r) {
     case TfxBytecode::PushTexTileParams:
     case TfxBytecode::PushTexTileCount:        out.data = PushTexParamData{ r.u8(), r.u8() }; break;
 
-    default: /* no extra payload */ break;
+    default:  break;
     }
     return out;
 }
 
-// ====================== TRACE PRINTER ======================
+
 inline void PrintOpTrace(size_t ip, uint8_t raw, const TfxData& d) {
     std::printf("ip=%04zu 0x%02X %-22s", ip, unsigned(raw), OpName(d.op));
 
@@ -475,19 +496,19 @@ inline void PrintOpTrace(size_t ip, uint8_t raw, const TfxData& d) {
         break;
     }
     default:
-        // no payload or not decoded
+        
         break;
     }
     std::printf("\n");
 }
 
-// ====================== PARSE ALL (with tracing) ======================
+
 inline std::vector<TfxData> ParseAll(const std::vector<uint8_t>& bytecode, bool trace = false) {
     std::vector<TfxData> ops; ops.reserve(bytecode.size());
     ByteReader br{ bytecode, 0 };
 
     while (!br.eof()) {
-        // Defensive size check before consuming
+        
         uint8_t raw = br.buf[br.pos];
         TfxBytecode op = static_cast<TfxBytecode>(raw);
         size_t need = 1 + PayloadSizeFor(op);
@@ -501,7 +522,7 @@ inline std::vector<TfxData> ParseAll(const std::vector<uint8_t>& bytecode, bool 
         size_t ip = br.pos;
         TfxData d = ReadTfxBytecodeOp(br);
         if (trace) {
-            PrintOpTrace(ip, raw, d);      // <-- detailed per-op print
+            PrintOpTrace(ip, raw, d);      
         }
         ops.emplace_back(std::move(d));
     }

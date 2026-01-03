@@ -1,16 +1,16 @@
 #pragma once
 
-// ===== public deps =====
+
 #include "TigerEngine/tag.h"
 #include "Runtime/Assets/RuntimeAssetRegistry.h"
-#include "Runtime/Assets/Pitch.h" // if you keep extra pitch helpers there; otherwise not required
+#include "Runtime/Assets/Pitch.h" 
 
-// ===== sdk =====
+
 #include <d3d11.h>
 #include <dxgiformat.h>
 #include <wrl.h>
 
-// ===== std =====
+
 #include <vector>
 #include <cstdint>
 #include <algorithm>
@@ -75,7 +75,7 @@ namespace entropy_tex
         }
     }
 
-    // Compute pitch for one 2D slice (works also for array/3D slice)
+    
     inline bool ComputePitch2D(DXGI_FORMAT fmt, UINT w, UINT h, UINT& rowPitch, UINT& slicePitch)
     {
         UINT blockBytes = 0, bpp = 0;
@@ -92,10 +92,10 @@ namespace entropy_tex
             return true;
         }
         rowPitch = slicePitch = 0;
-        return false; // planar formats not handled here
+        return false; 
     }
 
-    // typeless ? typed for SRV; preserves *_SRGB if already typed
+    
     inline DXGI_FORMAT TypelessToTypedSRV(DXGI_FORMAT f)
     {
         switch (f) {
@@ -110,20 +110,20 @@ namespace entropy_tex
         default:                            return f;
         }
     }
-} // namespace entropy_tex
+} 
 
 using Microsoft::WRL::ComPtr;
 
-// =====================================================================================
-// BuildTexture3DPayloadFromTag  (returns all stored mips for 3D)
-// =====================================================================================
+
+
+
 static std::optional<Texture3DPayload>
 BuildTexture3DPayloadFromTag(TagHash textureTag)
 {
     const auto hdr = bin::parse<STextureHeader>(textureTag.data, textureTag.size, bin::Endian::Little);
     if (!hdr.width || !hdr.height || hdr.depth <= 1) return std::nullopt;
 
-    // Source bytes: prefer large_buffer, else reference
+    
     const uint8_t* src = nullptr; size_t srcSize = 0;
     if (hdr.large_buffer.data && hdr.large_buffer.size) {
         src = static_cast<const uint8_t*>(hdr.large_buffer.data);
@@ -144,12 +144,12 @@ BuildTexture3DPayloadFromTag(TagHash textureTag)
     tp.desc.Width = hdr.width;
     tp.desc.Height = hdr.height;
     tp.desc.Depth = hdr.depth;
-    tp.desc.MipLevels = std::max<UINT>(1, hdr.mipCount); // header’s advertised mips
+    tp.desc.MipLevels = std::max<UINT>(1, hdr.mipCount); 
     tp.desc.Format = fileFmt;
     tp.desc.Usage = D3D11_USAGE_DEFAULT;
     tp.desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
 
-    // Determine how many mips are truly present
+    
     UINT w = hdr.width, h = hdr.height, d = hdr.depth;
     size_t consumed = 0; UINT stored = 0;
     for (UINT mip = 0; mip < tp.desc.MipLevels; ++mip) {
@@ -167,10 +167,10 @@ BuildTexture3DPayloadFromTag(TagHash textureTag)
 
     tp.desc.MipLevels = stored;
 
-    // Copy only the bytes we reference
+    
     tp.data.assign(src, src + consumed);
 
-    // Build subresources
+    
     tp.subresources.clear();
     tp.subresources.reserve(stored);
     const uint8_t* base = tp.data.data();
@@ -183,7 +183,7 @@ BuildTexture3DPayloadFromTag(TagHash textureTag)
         D3D11_SUBRESOURCE_DATA s{};
         s.pSysMem = base + offset;
         s.SysMemPitch = rp;
-        s.SysMemSlicePitch = sp; // one z-slice
+        s.SysMemSlicePitch = sp; 
         tp.subresources.push_back(s);
 
         offset += size_t(sp) * size_t(d);
@@ -205,7 +205,7 @@ BuildTextureCubePayloadFromTag(TagHash textureTag)
     const DXGI_FORMAT fileFmt = static_cast<DXGI_FORMAT>(header.dxgiFormat);
     const DXGI_FORMAT texFmt = TypelessToTypedSRV(fileFmt);
 
-    // Pull bytes: same rule as BuildTexturePayloadFromTag
+    
     std::vector<uint8_t> bytes;
     if (header.large_buffer.data && header.large_buffer.size)
     {
@@ -253,7 +253,7 @@ BuildTextureCubePayloadFromTag(TagHash textureTag)
     if (!storedMips)
         return std::nullopt;
 
-    // --- Build payload ---
+    
     Texture2DPayload tp{};
     tp.data = std::move(bytes);
 
@@ -270,7 +270,7 @@ BuildTextureCubePayloadFromTag(TagHash textureTag)
     d.CPUAccessFlags = 0;
     d.MiscFlags = D3D11_RESOURCE_MISC_TEXTURECUBE;
 
-    // --- Subresources: [mip][face] ---
+    
     tp.subresources.reserve(storedMips * 6);
 
     const uint8_t* base = tp.data.data();
@@ -305,7 +305,7 @@ BuildTextureCubePayloadFromTag(TagHash textureTag)
 }
 
 
-// =====================================================================================
+
 static std::optional<Texture2DPayload>
 BuildTexturePayloadFromTag(TagHash textureTag)
 {
@@ -383,9 +383,9 @@ BuildTexturePayloadFromTag(TagHash textureTag)
     return tp;
 }
 
-// =====================================================================================
-// Optional WIC helpers (kept declarations only; implement elsewhere if you use them)
-// =====================================================================================
+
+
+
 HRESULT EnsureWIC();
 
 HRESULT LoadTextureFromFileWIC(
@@ -412,7 +412,7 @@ static HRESULT LoadEmbeddedTextureSRV(ID3D11Device* dev, UINT resId, bool srgb,
     *outSRV = nullptr;
     HMODULE hMod = GetModuleHandleW(nullptr);
 
-    // Try RCDATA, then PNG
+    
     const wchar_t* kinds[] = { RT_RCDATA, L"PNG" };
     HRSRC hRes = nullptr;
     for (auto k : kinds) {

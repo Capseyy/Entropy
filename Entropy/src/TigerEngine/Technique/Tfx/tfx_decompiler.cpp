@@ -5,7 +5,7 @@
 static void push(std::vector<std::string>& st, std::string s) { st.push_back(std::move(s)); }
 static std::string pop(std::vector<std::string>& st) { auto s = std::move(st.back()); st.pop_back(); return s; }
 
-// ---- extern name + formatter helpers (for pretty output) --------------------
+
 static inline const char* ExtName(TfxExtern e) {
     switch (e) {
     case TfxExtern::Frame:          return "frame";
@@ -87,7 +87,7 @@ DecompilationResult TfxBytecodeDecompiler::decompile(
 {
     DecompilationResult out;
 
-    // ----- expression stack: STRINGS, not Vec4 -----
+    
     std::vector<std::string> st; st.reserve(64);
 
     auto pushS = [&](std::string v) {
@@ -100,14 +100,14 @@ DecompilationResult TfxBytecodeDecompiler::decompile(
         return v;
         };
 
-    // float4 printer for constants
+    
     auto f4 = [](const Vec4& v) {
         char buf[128];
         std::snprintf(buf, sizeof(buf), "float4(%g, %g, %g, %g)", v.x, v.y, v.z, v.w);
         return std::string(buf);
         };
 
-    // decode 2-bit-per-component swizzle (b7..b6 -> x, b5..b4 -> y, b3..b2 -> z, b1..b0 -> w)
+    
     auto swizzle4 = [](const std::string& a, uint8_t fields) {
         static const char comp[4] = { 'x','y','z','w' };
         char mask[6];
@@ -124,7 +124,7 @@ DecompilationResult TfxBytecodeDecompiler::decompile(
     {
         switch (i.op)
         {
-            // ---------- math ----------
+            
         case TfxBytecode::Add:
         case TfxBytecode::Add2: {
             auto b = popS(), a = popS();
@@ -169,7 +169,7 @@ DecompilationResult TfxBytecodeDecompiler::decompile(
             break;
         }
 
-                                   // ---------- constants ----------
+                                   
         case TfxBytecode::PushConstantVec4: {
             const auto d = std::get<PushConstantVec4Data>(i.data);
             const Vec4 v = (d.constant_index < constants.size()) ? constants[d.constant_index] : Vec4{ 0,0,0,0 };
@@ -193,15 +193,15 @@ DecompilationResult TfxBytecodeDecompiler::decompile(
             break;
         }
 
-                                               // ---------- externs (optional; keep commented if you don’t have a path helper) ----------
-                                               //case TfxBytecode::PushExternInputFloat: {
-                                               //     const auto d = std::get<PushExternInputFloatData>(i.data);
-                                               //     const size_t off = size_t(d.offset) * 4;
-                                               //     pushS("extern<float>(" + ExternStorage::get_field_path(d.ext, off) + ")");
-                                               //     break;
-                                               // }
+                                               
+                                               
+                                               
+                                               
+                                               
+                                               
+                                               
 
-                                               // ---------- resources ----------
+                                               
         case TfxBytecode::PushSampler: {
             const auto d = std::get<PushSamplerData>(i.data);
             pushS("get_sampler(" + std::to_string(d.index) + ")");
@@ -210,7 +210,7 @@ DecompilationResult TfxBytecodeDecompiler::decompile(
         case TfxBytecode::SetShaderSampler: {
             const auto d = std::get<SetShaderBindingData>(i.data);
             auto v = popS();
-            // if your DecompilationResult stores stage, add d.stage too
+            
             out.samplers.emplace_back(d.slot, v);
             break;
         }
@@ -227,7 +227,7 @@ DecompilationResult TfxBytecodeDecompiler::decompile(
             break;
         }
 
-                                      // ---------- cb and temps ----------
+                                      
         case TfxBytecode::PushFromOutput: {
             const auto d = std::get<PushFromOutputData>(i.data);
             pushS("cb0[" + std::to_string(d.element) + "]");
@@ -241,13 +241,13 @@ DecompilationResult TfxBytecodeDecompiler::decompile(
         }
         case TfxBytecode::PopOutputMat4: {
             const auto d = std::get<PopOutputMat4Data>(i.data);
-            // Stack is LIFO — rows were pushed r0,r1,r2,r3, so we must pop r3..r0.
+            
             auto r3 = popS();
             auto r2 = popS();
             auto r1 = popS();
             auto r0 = popS();
 
-            // Emit four cb assignments in the correct order
+            
             out.cb_expressions.emplace_back(d.element + 0, r0);
             out.cb_expressions.emplace_back(d.element + 1, r1);
             out.cb_expressions.emplace_back(d.element + 2, r2);
@@ -255,7 +255,7 @@ DecompilationResult TfxBytecodeDecompiler::decompile(
             break;
         }
 
-                                       // ---------- swizzles ----------
+                                       
         case TfxBytecode::PermuteAllX: {
             auto a = popS();
             pushS("float4((" + a + ").x, (" + a + ").x, (" + a + ").x, (" + a + ").x)");
@@ -269,45 +269,45 @@ DecompilationResult TfxBytecodeDecompiler::decompile(
         }
 
         case TfxBytecode::PushExternInputTextureView: {
-            // nice to see where textures come from in the pretty output:
+            
             const auto d = std::get<PushExternInputTexData>(i.data);
-            const size_t off = size_t(d.offset) * 8;   // texture/u64 handles are 8 bytes in the spec
+            const size_t off = size_t(d.offset) * 8;   
             pushS(extern_expr("Texture", d.ext, off));
             break;
         }
         case TfxBytecode::PushExternInputMat4: {
             const auto d = std::get<PushExternInputMat4Data>(i.data);
-            const size_t off = size_t(d.offset) * 16;  // offset is in vec4s for mat4 too
-            // If your pipeline later pops 4 rows into cb, this string is still useful context.
+            const size_t off = size_t(d.offset) * 16;  
+            
             pushS(extern_expr("float4x4", d.ext, off));
             break;
         }
         case TfxBytecode::PushExternInputFloat: {
             const auto d = std::get<PushExternInputFloatData>(i.data);
-            const size_t off = size_t(d.offset) * 4;   // floats are 4 bytes
+            const size_t off = size_t(d.offset) * 4;   
             pushS(extern_expr("float", d.ext, off));
             break;
         }
         case TfxBytecode::PushExternInputVec4: {
             const auto d = std::get<PushExternInputVec4Data>(i.data);
-            const size_t off = size_t(d.offset) * 16;  // vec4s are 16 bytes
+            const size_t off = size_t(d.offset) * 16;  
             pushS(extern_expr("float4", d.ext, off));
             break;
         }
         case TfxBytecode::Spline8Const: {
             const auto d = std::get<SplineConstData>(i.data);
 
-            // Pop x (the only stack input)
+            
             auto x = popS();
 
-            // Helper to fetch constants as strings (float4(...) pretty printed)
+            
             auto C = [&](size_t rel) -> std::string {
                 const size_t k = size_t(d.constant_start) + rel;
                 const Vec4 v = (k < constants.size()) ? constants[k] : Vec4{ 0,0,0,0 };
                 return f4(v);
                 };
 
-            // Map to the Rust parameter names for readability
+            
             std::string c3 = C(0);
             std::string c2 = C(1);
             std::string c1 = C(2);
@@ -319,50 +319,50 @@ DecompilationResult TfxBytecodeDecompiler::decompile(
             std::string c_thresholds = C(8);
             std::string d_thresholds = C(9);
 
-            // c_high = c3*x + c2; c_low = c1*x + c0;
+            
             std::string c_high = "(" + c3 + " * " + x + " + " + c2 + ")";
             std::string c_low = "(" + c1 + " * " + x + " + " + c0 + ")";
 
-            // d_high = d3*x + d2; d_low = d1*x + d0;
+            
             std::string d_high = "(" + d3 + " * " + x + " + " + d2 + ")";
             std::string d_low = "(" + d1 + " * " + x + " + " + d0 + ")";
 
-            // x2 = x*x
+            
             std::string x2 = "(" + x + " * " + x + ")";
 
-            // evaluated splines
+            
             std::string c_eval = "(" + c_high + " * " + x2 + " + " + c_low + ")";
             std::string d_eval = "(" + d_high + " * " + x2 + " + " + d_low + ")";
 
-            // masks
+            
             std::string c_mask = "step((" + c_thresholds + "), (" + x + "))";
             std::string d_mask = "step((" + d_thresholds + "), (" + x + "))";
 
-            // channel masks (fake xor trick, keep exactly like your Rust)
+            
             std::string c_chan = "float4((_fake_bitwise_ops_fake_xor((" + c_mask + "), (" + c_mask + ").yzww)).xyz, (" + c_mask + ").w)";
             std::string d_chan = "float4((_fake_bitwise_ops_fake_xor((" + d_mask + "), (" + d_mask + ").yzww)).xyz, (" + d_mask + ").w)";
 
-            // masked contributions
+            
             std::string c_in4 = "((" + c_eval + ") * (" + c_chan + "))";
             std::string d_in4 = "((" + d_eval + ") * (" + d_chan + "))";
 
-            // sum components
+            
             auto sum4 = [](const std::string& v) {
                 return "((" + v + ").x + (" + v + ").y + (" + v + ").z + (" + v + ").w)";
                 };
             std::string c_sum = sum4(c_in4);
             std::string d_sum = sum4(d_in4);
 
-            // select spline (if d_mask.x > 0.0 -> d_sum else c_sum)
+            
             std::string spline = "(((" + d_mask + ").x > 0.0) ? (" + d_sum + ") : (" + c_sum + "))";
 
-            // splat to float4
+            
             std::string outv = "float4(" + spline + ", " + spline + ", " + spline + ", " + spline + ")";
             pushS(outv);
             break;
         }
         default:
-            // Fallback textual marker so output is still useful
+            
             pushS("/*op:" + std::to_string(int(i.op)) + "*/");
             break;
         }

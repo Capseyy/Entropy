@@ -19,7 +19,7 @@ public:
         return p;
     }
 
-    // Evaluate into cb0 (vector<float4>). Optionally capture texture/sampler/uav bindings.
+    
     void Evaluate(
         const ExternStorage& externs,
         std::vector<Vec4>& cb,

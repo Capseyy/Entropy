@@ -46,7 +46,7 @@ uint32_t LoadZone::RegisterBufferBlob(const void* bytes, size_t size, uint32_t i
     return id;
 }
 
-void LoadZone::load_entity_into_scene(TagHash& tag, glm::quat quat, glm::vec4 pos, int recursion_depth, EntityType et, uint64_t world_id)
+void LoadZone::load_entity_into_scene(TagHash& tag, glm::quat quat, glm::vec4 pos, int recursion_depth, EntityType et, uint64_t world_id, std::string name)
 {
     uint32_t maxDepth = 2;
     if (et == EntityType::Combatant) {
@@ -74,16 +74,24 @@ void LoadZone::load_entity_into_scene(TagHash& tag, glm::quat quat, glm::vec4 po
                 chIt->second = a;
             }
         }
-
+        
         for (auto& proto : it->second) {
             if (proto.rtype != EntityType::ChildEntity && proto.rtype != EntityType::CombatantChild) {
-                auto ent_name = loaded_entity_names.find(world_id);
-                if (ent_name != loaded_entity_names.end()) {
-                    proto.name = ent_name->second;
+                if (world_id != 0) {
+                    auto ent_name = loaded_entity_names.find(world_id);
+                    if (ent_name != loaded_entity_names.end()) {
+                        proto.name = ent_name->second;
+                    }
+                }
+                if (et == EntityType::Combatant && name != "") {
+                    proto.name += " - " + name;
                 }
             }
+            
         }
         
+        
+
         spawn_from_cached_prototypes(it->second, quat, pos);
         printf("Used cached entity prototypes for %08x with depth %d\n", tag.hash, remainingDepth);
         return;
@@ -131,11 +139,17 @@ void LoadZone::load_entity_into_scene(TagHash& tag, glm::quat quat, glm::vec4 po
     }
     for (auto& proto : insIt->second) {
         if (proto.rtype != EntityType::ChildEntity && proto.rtype != EntityType::CombatantChild) {
-            auto ent_name = loaded_entity_names.find(world_id);
-            if (ent_name != loaded_entity_names.end()) {
-                proto.name = ent_name->second;
+            if (world_id != 0) {
+                auto ent_name = loaded_entity_names.find(world_id);
+                if (ent_name != loaded_entity_names.end()) {
+                    proto.name = ent_name->second;
+                }
             }
-		}
+            if (et == EntityType::Combatant && name != "") {
+                proto.name += " - " + name;
+            }
+        }
+        
 	}
     
     spawn_from_cached_prototypes(insIt->second, quat, pos);
@@ -147,7 +161,8 @@ void LoadZone::load_entity_model_into_scene(TagHash sem,
     std::vector<Unk_808072C5> tech_maps,
     std::vector<uint32_t> ext_techs, std::optional<Aabb> occlustion_bounds,
     EntityType et,
-    std::optional<uint32_t> particle_tech)
+    std::optional<uint32_t> particle_tech,
+    std::string combat_name)
 {
     const SEntityModel model = bin::parse<SEntityModel>(sem.data, sem.size);
 
@@ -254,7 +269,7 @@ RenderEntity LoadZone::build_render_entity_prototype(
 
     RenderEntity re{};
     re.external_mats = ext_techs;
-    re.occlusion_bounds = occlusion_bounds; // will be overridden per instance if you always want model-based bounds
+    re.occlusion_bounds = occlusion_bounds; 
     re.external_material_mapping = tech_maps;
     re.meshData = model;
     re.id = sem.hash;

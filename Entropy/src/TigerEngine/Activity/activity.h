@@ -116,7 +116,7 @@ struct Unk_80804696 {
 	StringHash entity_name;
 	std::array<uint32_t, 11> unk20;
 	ResourcePointer unk68;
-	std::array<uint32_t, 4> unk70; //TODO: must be something
+	std::array<uint32_t, 4> unk70; 
 
 };
 
@@ -175,7 +175,7 @@ struct Unk_8080906b {
 	std::vector<Unk_80809d02> string_table;
 };
 
-struct SActivityResource { //
+struct SActivityResource { 
 	uint64_t FileSize;
 	ResourcePointer unk8;
 	ResourcePointer unk10;
@@ -189,7 +189,7 @@ struct Unk_80808E89 {
 	uint64_t unk8;
 	ResourcePointer unk10;
 	TagHash resource_table;
-	//TODO : rest unknown
+	
 };
 
 struct Unk_80809700 {
@@ -218,7 +218,7 @@ struct Unk_80808924 {
 	uint32_t unk4;
 	StringHash bubble_string;
 	uint32_t unk0c;
-	ResourcePointer unk10; //TODO
+	ResourcePointer unk10; 
 	std::vector<Unk_80808948> activity_resources;
 	std::vector<Unk_8080891D> bubble_parents;
 	std::array<uint32_t, 4> unk38;

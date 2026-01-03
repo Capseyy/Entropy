@@ -81,11 +81,11 @@ static inline uint32_t PartySeedFor(uint32_t entId, uint32_t chanHash)
     return Hash32(s);
 }
 
-// ---- scalar "party" value (old behavior), used internally per component ----
+
 static inline float PartyScalarFor(uint32_t entId, uint32_t chanHash, uint32_t componentSalt, float phase)
 {
     const uint32_t base0 = PartySeedFor(entId, chanHash);
-    const uint32_t base = Hash32(base0 ^ componentSalt); // make x/y/z/w different
+    const uint32_t base = Hash32(base0 ^ componentSalt); 
 
     const float twoPi = 6.28318530717958647692f;
 
@@ -93,18 +93,18 @@ static inline float PartyScalarFor(uint32_t entId, uint32_t chanHash, uint32_t c
     const float ph2 = U01FromU32(Hash32(base ^ 0xB2u)) * twoPi;
     const float ph3 = U01FromU32(Hash32(base ^ 0xC3u)) * twoPi;
 
-    const float sp1 = 0.25f + 2.50f * U01FromU32(Hash32(base ^ 0xD4u)); // [0.25, 2.75]
-    const float sp2 = 0.05f + 1.25f * U01FromU32(Hash32(base ^ 0xE5u)); // [0.05, 1.30]
-    const float sp3 = 0.02f + 0.60f * U01FromU32(Hash32(base ^ 0xF6u)); // [0.02, 0.62]
+    const float sp1 = 0.25f + 2.50f * U01FromU32(Hash32(base ^ 0xD4u)); 
+    const float sp2 = 0.05f + 1.25f * U01FromU32(Hash32(base ^ 0xE5u)); 
+    const float sp3 = 0.02f + 0.60f * U01FromU32(Hash32(base ^ 0xF6u)); 
 
-    const float a1 = 0.35f + 0.65f * U01FromU32(Hash32(base ^ 0x11u)); // [0.35, 1.0]
-    const float a2 = 0.00f + 0.60f * U01FromU32(Hash32(base ^ 0x22u)); // [0.0, 0.6]
-    const float a3 = 0.00f + 0.40f * U01FromU32(Hash32(base ^ 0x33u)); // [0.0, 0.4]
+    const float a1 = 0.35f + 0.65f * U01FromU32(Hash32(base ^ 0x11u)); 
+    const float a2 = 0.00f + 0.60f * U01FromU32(Hash32(base ^ 0x22u)); 
+    const float a3 = 0.00f + 0.40f * U01FromU32(Hash32(base ^ 0x33u)); 
 
-    const float bias = 0.20f * SNormFromU32(Hash32(base ^ 0x44u));       // [-0.2, 0.2]
+    const float bias = 0.20f * SNormFromU32(Hash32(base ^ 0x44u));       
     const float wobPh = U01FromU32(Hash32(base ^ 0x55u)) * twoPi;
-    const float wobSp = 0.01f + 0.08f * U01FromU32(Hash32(base ^ 0x66u)); // very slow
-    const float wobAmp = 0.05f + 0.20f * U01FromU32(Hash32(base ^ 0x77u)); // small
+    const float wobSp = 0.01f + 0.08f * U01FromU32(Hash32(base ^ 0x66u)); 
+    const float wobAmp = 0.05f + 0.20f * U01FromU32(Hash32(base ^ 0x77u)); 
 
     const float wobble = wobAmp * std::sinf(phase * wobSp + wobPh);
 
@@ -124,10 +124,10 @@ static inline float PartyScalarFor(uint32_t entId, uint32_t chanHash, uint32_t c
     return v * g_partyAmplitude;
 }
 
-// ---- Vec4 party value ----
+
 static inline Vec4 PartyValueFor(uint32_t entId, uint32_t chanHash, float phase)
 {
-    // unique salt per component
+    
     float x = PartyScalarFor(entId, chanHash, 0x100u, phase);
     float y = PartyScalarFor(entId, chanHash, 0x200u, phase);
     float z = PartyScalarFor(entId, chanHash, 0x300u, phase);
@@ -155,7 +155,7 @@ inline void ShowEntityChannelEditorUI(std::vector<RenderEntity>& entities, XMFLO
 {
     if (!ImGui::Begin("Entity Channel Editor")) { ImGui::End(); return; }
 
-    // Party mode runs every frame while enabled.
+    
     const float dt = ImGui::GetIO().DeltaTime;
     if (g_partyModeEnabled) {
         ApplyPartyModeToAllEntities(entities, dt);
@@ -203,7 +203,7 @@ inline void ShowEntityChannelEditorUI(std::vector<RenderEntity>& entities, XMFLO
 
     ImGui::BeginChild("right", ImVec2(0, 0), true);
 
-    // Global controls
+    
     if (ImGui::Button("Zero ALL channels (all entities)")) {
         SetAllEntityChannelsToZero(entities);
     }
@@ -243,7 +243,7 @@ inline void ShowEntityChannelEditorUI(std::vector<RenderEntity>& entities, XMFLO
     ImGui::Text("Entity id: %08X", (uint32_t)ent.id);
     ImGui::Separator();
 
-    // Add channel
+    
     ImGui::TextDisabled("Add channel (hex hash):");
     ImGui::SetNextItemWidth(120);
     ImGui::InputText("##newch", g_newChannelHex, sizeof(g_newChannelHex));
@@ -261,7 +261,7 @@ inline void ShowEntityChannelEditorUI(std::vector<RenderEntity>& entities, XMFLO
 
     ImGui::Separator();
 
-    // Keys sorted
+    
     std::vector<uint32_t> keys; keys.reserve(chan.size());
     for (auto& kv : chan) keys.push_back(kv.first);
     std::sort(keys.begin(), keys.end());

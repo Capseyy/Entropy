@@ -128,7 +128,7 @@ void Camera::SetLookAtPos(XMFLOAT3 lookAtPos)
 	float xy = sqrtf(d.x * d.x + d.y * d.y);
 	if (d.z != 0.0f || xy != 0.0f) pitch = atan2f(d.z, xy);
 
-	float yawZ = atan2f(d.x, d.y);   // yaw around Z
+	float yawZ = atan2f(d.x, d.y);   
 	this->SetRotation(pitch, 0.0f, yawZ);
 }
 
@@ -164,9 +164,9 @@ void Camera::UpdateViewMatrix()
 	const float yaw = this->rot.z;
 
 	XMVECTOR forward = XMVectorSet(
-		sinf(yaw) * cosf(pitch),   // x
-		cosf(yaw) * cosf(pitch),   // y
-		sinf(pitch),               // z
+		sinf(yaw) * cosf(pitch),   
+		cosf(yaw) * cosf(pitch),   
+		sinf(pitch),               
 		0.0f
 	);
 	forward = XMVector3Normalize(forward);

@@ -7,7 +7,7 @@
 #include "wrl/client.h"
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
-#include <glm/gtc/matrix_transform.hpp>  // translate
+#include <glm/gtc/matrix_transform.hpp>  
 #include "Renderer/Tools/ErrorLogger.h"
 
 using namespace DirectX;
@@ -29,20 +29,20 @@ void UpdateCB1(
 
 struct alignas(16) CB1Payload_override
 {
-	DirectX::XMFLOAT4X4 mesh_to_world;          // row_major, 64 bytes @ 0
-	DirectX::XMFLOAT4   position_scale;         // @ 64
-	DirectX::XMFLOAT4   position_offset;        // @ 80
-	DirectX::XMFLOAT4   texcoord0_scale_offset; // @ 96
-	DirectX::XMFLOAT4   dynamic_sh_ao_values;   // @ 112
+	DirectX::XMFLOAT4X4 mesh_to_world;          
+	DirectX::XMFLOAT4   position_scale;         
+	DirectX::XMFLOAT4   position_offset;        
+	DirectX::XMFLOAT4   texcoord0_scale_offset; 
+	DirectX::XMFLOAT4   dynamic_sh_ao_values;   
 };
 
 
 struct CB1Payload {
-	// cb1[0]
-	DirectX::XMFLOAT4 meshOffset_meshScale;   // xyz, w
-	// cb1[1]
-	DirectX::XMFLOAT4 uvScale_uvOffset;       // x, y, z, w(as float)
-	// cb1[2..] rows for instances
+	
+	DirectX::XMFLOAT4 meshOffset_meshScale;   
+	
+	DirectX::XMFLOAT4 uvScale_uvOffset;       
+	
     std::vector<DirectX::XMFLOAT4> instances[4];
 };
 
@@ -54,20 +54,20 @@ CB1Payload_override UpdateCB1_Single(
     float            instance_scale,
     float             texScale,
     float             texOffX, float texOffY,
-    const glm::quat& rot,      // GLM stores (w,x,y,z) but .x/.y/.z/.w are available
+    const glm::quat& rot,      
     const glm::vec3& pos);
 
 inline DirectX::XMMATRIX MakeWorld(const ObjectVectors& s) {
     using namespace DirectX;
     const XMMATRIX S = XMMatrixScaling(s.scale, s.scale, s.scale);
 
-    // If your quat is (w,x,y,z) -> reorder to (x,y,z,w)
+    
     const XMVECTOR q = XMVectorSet(s.rotation.w, s.rotation.x, s.rotation.y, s.rotation.z);
     const XMMATRIX R = XMMatrixRotationQuaternion(q);
 
     const XMMATRIX T = XMMatrixTranslation(s.translation.x, s.translation.y, s.translation.z);
 
-    // Row-major world (DirectXMath is row-major)
+    
     return S * R * T;
 }
 
@@ -88,19 +88,19 @@ static void CreateCB1_FreshDynamic(
 {
     using namespace DirectX;
 
-    // 64KB constant buffer cap -> max instances = (65536 - 32) / 64 = 1023
+    
     const size_t instCap = (65536u - 32u) / 64u;
     const size_t instCount = std::min(worlds.size(), instCap);
 
-    // EXACT row count: 2 header + 4 per instance
+    
     const size_t rowCount = 2 + instCount * 4;
-    std::vector<XMFLOAT4> rows(rowCount);   // <-- sized, no push_back/emplace_back later
+    std::vector<XMFLOAT4> rows(rowCount);   
 
-    // Header
+    
     rows[0] = XMFLOAT4(meshOffset.x, meshOffset.y, meshOffset.z, meshScale);
     rows[1] = XMFLOAT4(uvScaleX, uvOffX, uvOffY, asfloat_u32(maxColorOrClampBits));
 
-    // Instances: write by INDEX (no accidental extras)
+    
     XMFLOAT4 xm4;
     xm4.w = 1.0f;
     xm4.x = 1.0f;
@@ -113,7 +113,7 @@ static void CreateCB1_FreshDynamic(
         const size_t base = 2 + i * 4;
 
         XMMATRIX M = MakeWorld(worlds[i]);
-        XMMATRIX Mt = XMMatrixTranspose(M); // HLSL column-major readability
+        XMMATRIX Mt = XMMatrixTranspose(M); 
 
         float kMagic = from_bytes(0xF7, 0xFF, 0xFF, 0x01);
         Mt.r[3] = DirectX::XMVectorSet(1.0f, 1.0f, 1.0f, kMagic);
@@ -123,12 +123,12 @@ static void CreateCB1_FreshDynamic(
         XMStoreFloat4(&rows[base + 3], Mt.r[3]);
     }
 
-    const UINT byteSize = static_cast<UINT>(rows.size() * sizeof(XMFLOAT4)); // 16 * rowCount
+    const UINT byteSize = static_cast<UINT>(rows.size() * sizeof(XMFLOAT4)); 
 
     D3D11_BUFFER_DESC bd{};
     bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     bd.ByteWidth = byteSize;
-    bd.Usage = D3D11_USAGE_IMMUTABLE; // fresh each call
+    bd.Usage = D3D11_USAGE_IMMUTABLE; 
     bd.CPUAccessFlags = 0;
 
     D3D11_SUBRESOURCE_DATA init{};

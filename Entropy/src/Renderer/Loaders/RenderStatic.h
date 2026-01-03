@@ -1,9 +1,9 @@
-// RenderStatic.h
+
 #pragma once
 #include <memory>
 #include <DirectXMath.h>
 #include "Runtime/Assets/StaticMesh.h"
-#include "TigerEngine/Map/static.h"  // SStaticMeshData
+#include "TigerEngine/Map/static.h"  
 #include "Renderer/Graphics/Render/FrustumCulling.h"
 
 struct StaticMeshConstants {

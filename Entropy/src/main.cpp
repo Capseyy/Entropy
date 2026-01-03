@@ -114,7 +114,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int)
 	auto end = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed = end - start;
 	GenerateTigerActivities();
-	//SearchBungieFiles(0x2943FEA7);
+	
 	Engine engine;
 
 	RECT workArea{};

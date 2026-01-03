@@ -33,7 +33,7 @@ public:
 				if (q_.empty()) break;
 				job = std::move(q_.front()); q_.pop();
 			}
-			job();                       // do one creation on the *main thread*
+			job();                       
 			if (++done >= maxJobs) break;
 			if (clock::now() >= deadline) break;
 		}

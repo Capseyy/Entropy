@@ -10,8 +10,8 @@ ComPtr<ID3D11Buffer> TigerScope::GetVSCBuffer() {
 
 inline FrameAuxCB MakeFrameAuxFromRustDefaults() { return FrameAuxCB{}; }
 
-// Match Rust #[repr(C)] Vec4[37] layout exactly.
-// sizeof(Vec4) must be 16; sizeof(ScopeTransparentAdvancedCB) must be 592.
+
+
 struct ScopeTransparentAdvancedCB {
     Vec4 unk0, unk1, unk2, unk3, unk4, unk5, unk6, unk7, unk8, unk9,
         unk10, unk11, unk12, unk13, unk14, unk15, unk16, unk17, unk18, unk19,
@@ -133,7 +133,7 @@ static void UploadCB(ID3D11DeviceContext* ctx, ID3D11Buffer* buf, const std::vec
     D3D11_MAPPED_SUBRESOURCE m{};
     HRESULT hr = ctx->Map(buf, 0, D3D11_MAP_WRITE_DISCARD, 0, &m);
     if (FAILED(hr)) {
-        // log hr with DX debug layer; then bail
+        
         ErrorLogger::Log(hr, "Failed to write to cbuffer");
         return;
     }
@@ -154,7 +154,7 @@ void TigerScope::LoadScopeInfo(ComPtr<ID3D11Device> pDevice, ComPtr<ID3D11Device
     bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     TagHash p = TagHash(Scope.stage_pixel.contstant_buffer.reference);
     bd.ByteWidth = p.size;
-    bd.Usage = D3D11_USAGE_DYNAMIC;         // update from CPU
+    bd.Usage = D3D11_USAGE_DYNAMIC;         
     bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
     D3D11_SUBRESOURCE_DATA srd;
     srd.pSysMem = (const void*)p.data;
@@ -164,7 +164,7 @@ void TigerScope::LoadScopeInfo(ComPtr<ID3D11Device> pDevice, ComPtr<ID3D11Device
     bd_vs.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     TagHash v = TagHash(Scope.stage_vertex.contstant_buffer.reference);
     bd_vs.ByteWidth = v.size;
-    bd_vs.Usage = D3D11_USAGE_DYNAMIC;         // update from CPU
+    bd_vs.Usage = D3D11_USAGE_DYNAMIC;         
     bd_vs.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
     srd.pSysMem = (const void*)v.data;
     pDevice.Get()->CreateBuffer(&bd, nullptr, this->vscbuffer.GetAddressOf());
@@ -172,7 +172,7 @@ void TigerScope::LoadScopeInfo(ComPtr<ID3D11Device> pDevice, ComPtr<ID3D11Device
     bd_frame.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     TagHash v_frame = TagHash(Scope.stage_vertex.contstant_buffer.reference);
     bd_frame.ByteWidth = v_frame.size;
-    bd_frame.Usage = D3D11_USAGE_DYNAMIC;         // update from CPU
+    bd_frame.Usage = D3D11_USAGE_DYNAMIC;         
     bd_frame.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
     srd.pSysMem = (const void*)v_frame.data;
     pDevice.Get()->CreateBuffer(&bd, nullptr, this->frameAuxBuffer.GetAddressOf());
@@ -180,24 +180,24 @@ void TigerScope::LoadScopeInfo(ComPtr<ID3D11Device> pDevice, ComPtr<ID3D11Device
 
 void TigerScope::UpdateScopeBuffers(ComPtr<ID3D11DeviceContext> pContext, ExternStorage& externs)
 {
-    // Pixel stage
+    
     {
         if (this->Scope.stage_pixel.TFX_Bytecode.size() != 0) {
             TfxProgram prog = TfxProgram::FromBytecode(this->Scope.stage_pixel.TFX_Bytecode,
                 this->Scope.stage_pixel.TFX_Constants, 0);
-            auto& cb = this->Scope.stage_pixel.SamplerFallback; // std::vector<Vec4>
-            prog.Evaluate(externs, cb, {}, nullptr, false);        // fills cb with Vec4s
+            auto& cb = this->Scope.stage_pixel.SamplerFallback; 
+            prog.Evaluate(externs, cb, {}, nullptr, false);        
             UploadCB(pContext.Get(), pscbuffer.Get(), cb);
         }
         
     }
 
-    // Vertex stage
+    
     {
         if (this->Scope.stage_vertex.TFX_Bytecode.size() != 0) {
             TfxProgram prog_vs = TfxProgram::FromBytecode(this->Scope.stage_vertex.TFX_Bytecode,
                 this->Scope.stage_vertex.TFX_Constants, 0);
-            auto& cb_vs = this->Scope.stage_vertex.SamplerFallback; // std::vector<Vec4>
+            auto& cb_vs = this->Scope.stage_vertex.SamplerFallback; 
 
             prog_vs.Evaluate(externs, cb_vs, {}, nullptr, false);
 
@@ -206,17 +206,14 @@ void TigerScope::UpdateScopeBuffers(ComPtr<ID3D11DeviceContext> pContext, Extern
     }
     if (this->Scope.name.name == "frame") {
         std::vector<Vec4> buffer;
-        /*for (int i =0; i < 5; i++)
-        {
-            buffer.push_back(externs.getVec4(TfxExtern::Frame, i*0x10));
-        }*/
+        
         FrameAuxCB aux = MakeFrameAuxFromRustDefaults();
         aux.times.x = externs.getFloat(TfxExtern::Frame, 0);
         aux.times.y = externs.getFloat(TfxExtern::Frame, 0);
         aux.times.z = externs.getFloat(TfxExtern::Frame, 0x14);
         aux.times.w = 1.0f;
         UpdateFrameAuxCB(pContext.Get(), frameAuxBuffer.Get(), aux);
-        //UploadCB(pContext.Get(), this->frameBuffer.Get(), buffer);
+        
 
     }
     if (this->Scope.name.name == "transparent_advanced") {
@@ -233,8 +230,8 @@ void TigerScope::Bind(ComPtr<ID3D11DeviceContext> pContext)
     if (this->Scope.stage_pixel.contstant_buffer.hash != 0xffffffff)
         pContext->PSSetConstantBuffers(this->Scope.stage_pixel.constant_buffer_slot, 1, pscbuffer.GetAddressOf());
     if (this->Scope.name.name == "frame") {
-        //ID3D11Buffer* cb = externs.GetBuffer(TfxExtern::Frame);
+        
         pContext->PSSetConstantBuffers(this->Scope.stage_pixel.constant_buffer_slot, 1, frameAuxBuffer.GetAddressOf());
-        //pContext->PSSetConstantBuffers(this->Scope.stage_vertex.constant_buffer_slot, 1, frameAuxBuffer.GetAddressOf());
+        
     }
 }

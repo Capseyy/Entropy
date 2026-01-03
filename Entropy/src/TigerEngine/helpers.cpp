@@ -1,12 +1,12 @@
 #include "helpers.h"
 
 void print_hex_dump(const unsigned char* data, std::size_t size) {
-	size_t width = 16; // Number of bytes per line
+	size_t width = 16; 
 	for (std::size_t i = 0; i < size; i += width) {
-		// print offset
+		
 		std::cout << std::setw(8) << std::setfill('0') << std::hex << i << "  ";
 
-		// hex part
+		
 		for (std::size_t j = 0; j < width; ++j) {
 			if (i + j < size)
 				std::cout << std::setw(2) << static_cast<unsigned>(data[i + j]) << ' ';
@@ -14,7 +14,7 @@ void print_hex_dump(const unsigned char* data, std::size_t size) {
 				std::cout << "   ";
 		}
 
-		// ASCII part
+		
 		std::cout << " |";
 		for (std::size_t j = 0; j < width && i + j < size; ++j) {
 			unsigned char c = data[i + j];

@@ -6,7 +6,7 @@ bool Engine::Initialize(HINSTANCE hInstance, std::string window_title, std::stri
 		return false;
 	};
 
-	// Use the actual client-area size (e.g. after maximizing) rather than a fixed resolution.
+	
 	RECT rc{};
 	GetClientRect(render_window.GetHWND(), &rc);
 	const int clientWidth = rc.right - rc.left;

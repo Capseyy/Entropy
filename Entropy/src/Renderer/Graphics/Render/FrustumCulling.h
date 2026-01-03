@@ -1,5 +1,5 @@
 #pragma once
-#if !defined(__HLSL_VERSION)  // keep HLSL compilers out
+#if !defined(__HLSL_VERSION)  
 
 #include <DirectXMath.h>
 #include <algorithm>
@@ -11,7 +11,7 @@
 
 using namespace DirectX;
 
-// ---------------- Aabb ----------------
+
 struct Aabb {
     XMFLOAT3 minv{ 0,0,0 };
     XMFLOAT3 maxv{ 0,0,0 };
@@ -37,7 +37,7 @@ struct Aabb {
 
 namespace culldbg {
 
-    // printf-style
+    
     inline void print(const char* fmt, ...) {
         va_list ap; va_start(ap, fmt);
         vprintf(fmt, ap);
@@ -73,7 +73,7 @@ namespace culldbg {
         printVec3("e", e); print(", r=%.6f\n",
             std::sqrt(e.x * e.x + e.y * e.y + e.z * e.z));
     }
-    // ---------------- Plane ----------------
+    
     struct Plane {
         XMFLOAT3 n{ 0,0,0 };
         float    d{ 0 };
@@ -94,14 +94,14 @@ namespace culldbg {
         print("%s n=(% .6f,% .6f,% .6f) d=% .6f\n", name, p.n.x, p.n.y, p.n.z, p.d);
     }
 
-    // ---------------- Frustum ----------------
+    
     struct Frustum {
         Plane L, R, T, B, N; 
 
     
         static Frustum FromColumnMajor(const XMFLOAT4X4& M, bool near_is_c4_plus_c3)
         {
-            // columns
+            
             const XMFLOAT4 c1{ M._11, M._21, M._31, M._41 };
             const XMFLOAT4 c2{ M._12, M._22, M._32, M._42 };
             const XMFLOAT4 c3{ M._13, M._23, M._33, M._43 };

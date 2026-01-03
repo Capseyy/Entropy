@@ -25,7 +25,7 @@
 
 inline uint32_t fnv1_32(const uint8_t* data, std::size_t len) {
     const uint32_t FNV_OFFSET_BASIS = 0x811C9DC5u;
-    const uint32_t FNV_PRIME = 0x01000193u;  // 16777619
+    const uint32_t FNV_PRIME = 0x01000193u;  
 
     uint32_t hash = FNV_OFFSET_BASIS;
 
@@ -120,7 +120,7 @@ public:
     inline T Parse(TagHash& tag);   
 
     template <typename T>
-    inline T Parse(const TagHash& owner) const;   // const-correct
+    inline T Parse(const TagHash& owner) const;   
                 
 };
 
@@ -128,7 +128,7 @@ struct RelativePointer64 {
     int64_t offset;
 };
 
-// ---- Optional: turn on PFR if available ----
+
 #if !defined(BIN_USE_PFR_OFF)
 #include <boost/pfr.hpp>
 #define BIN_HAS_PFR 1
@@ -138,7 +138,7 @@ struct RelativePointer64 {
 
 namespace bin {
 
-    // ---------- Endianness ----------
+    
     enum class Endian { Little, Big };
 
     namespace detail {
@@ -177,12 +177,12 @@ namespace bin {
             std::is_arithmetic_v<T> && !std::is_same_v<T, bool>;
     }
 
-    // ---------- Reader ----------
+    
     struct Reader {
         std::span<const std::byte> data;
         size_t pos{ 0 };
         Endian src{ Endian::Little };
-        size_t base{ 0 };   // NEW: global offset of data[0] inside the Tag buffer
+        size_t base{ 0 };   
 
         size_t remaining() const { return data.size() - pos; }
         void need(size_t n) { if (remaining() < n) throw std::out_of_range("bin::Reader: read past end"); }
@@ -206,10 +206,10 @@ namespace bin {
         }
     };
 
-    // ---------- Forward decl ----------
+    
     template<class T> void read_into(Reader& r, T& x);
 
-    // ---------- Primitives ----------
+    
     inline void read_into(Reader& r, bool& b) {
         b = r.read_arith<uint8_t>() != 0;
     }
@@ -239,8 +239,8 @@ namespace bin {
 
     template<std::size_t N>
     inline void read_into(Reader& r, SkipTo<N>&) {
-        //r.need(N);
-        r.seek(N);   // advance by N bytes, no alloc, no copy
+        
+        r.seek(N);   
     }
    
     inline void read_into(Reader& r, Aabb& q) {
@@ -337,7 +337,7 @@ namespace bin {
     }
     template <class T, std::size_t N>
     inline void read_into(Reader& r, std::array<T, N>& arr) {
-        // Optional sanity guard when we can compute the total footprint
+        
         if constexpr (std::is_trivially_default_constructible_v<T> &&
             std::is_trivially_destructible_v<T>) {
             const std::size_t need = N * sizeof(T);
@@ -345,7 +345,7 @@ namespace bin {
                 throw std::out_of_range("stf::array: elements exceed remaining bytes");
         }
 
-        // Fast path: treat any 32-bit unsigned integral as scalar reads
+        
         constexpr bool is_u32_like =
             std::is_integral_v<std::remove_cv_t<T>> &&
             std::is_unsigned_v<std::remove_cv_t<T>> &&
@@ -356,9 +356,9 @@ namespace bin {
                 arr[i] = r.read_arith<T>();
             }
             else {
-                // General path: delegate to element reader (structs, other scalars)
+                
                 T elem{};
-                read_into(r, elem);      // rely on your existing overloads for T
+                read_into(r, elem);      
                 arr[i] = std::move(elem);
             }
         }
@@ -433,7 +433,7 @@ namespace bin {
     inline T parse(const unsigned char* blob,
         size_t size,
         Endian src = Endian::Little,
-        size_t base_offset = 0)   // NEW param
+        size_t base_offset = 0)   
     {
         Reader rr{
             std::span<const std::byte>{reinterpret_cast<const std::byte*>(blob), size},

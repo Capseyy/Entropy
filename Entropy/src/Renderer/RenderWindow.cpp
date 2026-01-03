@@ -23,7 +23,7 @@ bool RenderWindow::Initialize(WindowContainer* pWindowContainer, HINSTANCE hInst
 	wr.top = centerY;
 	wr.right = wr.left + this->width;
 	wr.bottom = wr.top + this->height;
-	// Use a standard overlapped window style so the app can be resized/maximized.
+	
 	AdjustWindowRect(&wr, WS_OVERLAPPEDWINDOW, FALSE);
 
 
@@ -44,7 +44,7 @@ bool RenderWindow::Initialize(WindowContainer* pWindowContainer, HINSTANCE hInst
 		return false;
 	}
 
-	// Default to maximized so the render area matches the current monitor/work-area.
+	
 	ShowWindow(handle, SW_SHOWMAXIMIZED);
 	SetForegroundWindow(handle);
 	SetFocus(handle);
@@ -55,7 +55,7 @@ bool RenderWindow::Initialize(WindowContainer* pWindowContainer, HINSTANCE hInst
 LRESULT CALLBACK HandleMsgDirect(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	switch (uMsg)
 	{
-		//other messages
+		
 
 	case WM_CLOSE:
 		DestroyWindow(hwnd);

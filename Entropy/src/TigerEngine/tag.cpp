@@ -16,7 +16,7 @@ int TagHash::getEntryID() {
 namespace bin {
 	void read_into(Reader& r, StringHash& q) {
 		q.hash = r.read_arith<uint32_t>();
-		const auto& stringMap = GlobalData::globalString(); // assume unordered_map<uint32_t, std::string>
+		const auto& stringMap = GlobalData::globalString();
 		auto it = stringMap.find(q.hash);
 		if (it == stringMap.end()) {
 
@@ -64,7 +64,7 @@ unsigned char* TagHash::getData() {
 		return nullptr;
 	}
 	Package* pkg = &it->second;
-	//printf("Extracting tag %08X\n", hash);
+	
 	const auto ReturnObject = pkg->ExtractEntry(entryId);
 	success = ReturnObject.success;
 	size = pkg->Entries[entryId].file_size;
@@ -83,18 +83,18 @@ unsigned char* TagHash::getDatawithPkg(Package* pkg) {
 	success = ret.success;
 	size = pkg->Entries[entryId].file_size;
 	reference = pkg->Entries[entryId].reference;
-	data = ret.data;        // NOTE: this buffer must be owned/freed somewhere!
+	data = ret.data;        
 	return data;
 }
 
-// const overload (just forwards via const_cast)
+
 unsigned char* TagHash::getDatawithPkg(const Package* pkg) {
 	return getDatawithPkg(const_cast<Package*>(pkg));
 }
 
 void TagHash::print_buffer() {
 	for (size_t i = 0; i < size; ++i) {
-		printf("%02X", data[i]); // print each byte as two-digit hex
+		printf("%02X", data[i]); 
 	}
 	printf("\n");
 }
@@ -147,7 +147,7 @@ unsigned char* WideHash::getData() {
 	}
 	TagHash toTagHash = it->second;
 	toTagHash.getData();
-	//printf("Resolving WideHash 0x%016" PRIx64 " to TagHash %08X\n", wideHashData.Hash64, toTagHash.hash);
+	
 	size = toTagHash.size;
 	reference = toTagHash.reference;
 	success = toTagHash.success;
@@ -160,9 +160,9 @@ unsigned char* WideHash::getData() {
 void TagHash::free()
 {
 	if (data != nullptr) {
-		// If getData() used malloc/realloc:
+		
 		std::free(data);
-		// If getData() used new[] instead, use: delete[] data;
+		
 
 		data = nullptr;
 		size = 0;

@@ -1,6 +1,6 @@
 #include "RuntimeAssetRegistry.h"
 
-// -------- Register --------
+
 void RuntimeAssetRegistry::RegisterBuffer(uint32_t id, BufferPayload payload) {
     std::lock_guard<std::mutex> lk(m_);
     buffers_[id] = std::move(payload);
@@ -36,11 +36,11 @@ bool RuntimeAssetRegistry::TryGetBuffer(uint32_t id, BufferPayload& out) const n
     std::scoped_lock lk(m_);
     auto it = buffers_.find(id);
     if (it == buffers_.end()) return false;
-    out = it->second;        // or out = it->second; (copy/move as you wish)
+    out = it->second;        
     return true;
 }
 
-// -------- Get --------
+
 BufferPayload RuntimeAssetRegistry::GetBuffer(uint32_t id) const {
     std::lock_guard<std::mutex> lk(m_);
     return must_find_(buffers_, id);
@@ -71,7 +71,7 @@ TechniqueDesc RuntimeAssetRegistry::GetTechnique(uint32_t techId) const {
     return must_find_(techniques_, techId);
 }
 
-// -------- Has? --------
+
 bool RuntimeAssetRegistry::HasBuffer(uint32_t id) const {
     std::lock_guard<std::mutex> lk(m_);
     return buffers_.count(id) > 0;

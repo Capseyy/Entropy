@@ -64,7 +64,7 @@ struct Unk_808072C5
 	uint32_t unk08;
 };
 
-struct Unk_80806D8F  // Entity Mesh Resource 
+struct Unk_80806D8F  
 {
     SkipTo<0x244> Unk0;            
     TagHash MeshFile;                      
@@ -140,7 +140,7 @@ struct STerrain
 	Vec4 transform;
 	SkipTo<0x50> skip;
 	std::vector<STerrainGroup> mesh_groups;
-	//std::array<uint32_t, 4> mesh_groups_skip;
+	
 	TagHash Vertex0;
 	TagHash Vertex1;
 	TagHash IndexBuffer;
@@ -159,6 +159,26 @@ struct Unk_80806C7D
 	uint32_t unk14;
 	TagHash terrain_tag;
 	TagHash occlusion_bound_tag;
+};
+
+struct Unk_80808019
+{
+	ResourcePointer Unk0;
+	std::array<uint64_t, 3> unk08;
+	uint32_t unk20;
+	StringHash combat_name;
+};
+
+struct Unk_80802AB1
+{
+	uint32_t unk0;   
+	uint32_t unk4;   
+};
+
+struct Unk_80802AB2
+{
+	std::array<uint32_t, 4> unk0;
+	std::vector<Unk_80802AB1> unk10;
 };
 
 struct Unk_808091F1

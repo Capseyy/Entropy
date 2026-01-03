@@ -1,4 +1,4 @@
-// GBuffer.h
+
 
 #include <wrl/client.h>
 #include <d3d11.h>
@@ -26,7 +26,7 @@ static HRESULT CompileVSFromMemory(
     const char* entryPoint,
     const char* target,
     ID3D11VertexShader** outVS,
-    ID3DBlob** outBytecode)   // keep bytecode so you can make the input layout
+    ID3DBlob** outBytecode)   
 {
     UINT flags = 0;
 
@@ -35,9 +35,9 @@ static HRESULT CompileVSFromMemory(
     Microsoft::WRL::ComPtr<ID3DBlob> bytecode, errors;
     HRESULT hr = D3DCompile(
         source, strlen(source),
-        /*sourceName*/ "SkinnedHackVS.hlsl",
-        /*defines*/ nullptr,
-        /*include*/ nullptr,
+         "SkinnedHackVS.hlsl",
+         nullptr,
+         nullptr,
         entryPoint, target, flags, 0,
         bytecode.GetAddressOf(), errors.GetAddressOf());
 
@@ -111,7 +111,7 @@ struct DepthState {
     }
 };
 
-// -------- factories: out-parameter, single definition in .cpp --------
+
 bool CreateColorRT(ID3D11Device* dev, UINT w, UINT h,
     DXGI_FORMAT texTypeless, DXGI_FORMAT rtvFmt, DXGI_FORMAT srvFmt,
     const char* debugName, RenderTarget& out);
@@ -124,7 +124,7 @@ bool CreateDepthState(ID3D11Device* dev, UINT w, UINT h,
     const char* name, DepthState& out);
 
 struct GBuffer {
-    mutable Microsoft::WRL::ComPtr<ID3D11Texture2D> lightDiffuseReadback1x1; // 1×1 staging
+    mutable Microsoft::WRL::ComPtr<ID3D11Texture2D> lightDiffuseReadback1x1; 
 
     bool ReadLightDiffusePixel(ID3D11DeviceContext* ctx, UINT x, UINT y,
         DirectX::XMFLOAT3& outRGB) const;
@@ -144,11 +144,11 @@ struct GBuffer {
     void Resize(ID3D11Device* dev, UINT W, UINT H);
     void BindGBufferForWriting(ID3D11DeviceContext* ctx) const;
     void UnbindMRTs(ID3D11DeviceContext* ctx) const;
-    // Ping–pong helpers
+    
     void GetPostprocessRT(RenderTarget*& src, RenderTarget*& dst, bool swapAfterUse);
     RenderTarget* GetPostprocessOutput();
 
-    // CPU depth readback helpers
+    
     void CopyDepthToStaging(ID3D11DeviceContext* ctx) const;
     bool ReadDepthPixel(ID3D11DeviceContext* ctx, UINT x, UINT y, float& outDepth) const;
 

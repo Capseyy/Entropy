@@ -6,34 +6,34 @@
 #include <cstdint>
 #include "TigerEngine/Map/static.h"
 
-// forward-declare to avoid circular includes; include "Technique.h" where you use it
+
 namespace EntropyAssets { struct Technique; }
 
-// One VAO-ish “group” of buffers used together when drawing
+
 struct BufferGroup {
-    // created by AssetSystem and wrapped as shared_ptr
+    
     std::shared_ptr<ID3D11Buffer> vertex;
     std::shared_ptr<ID3D11Buffer> index;
     std::shared_ptr<ID3D11Buffer> uv;
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> color;
 
-    // optional metadata for binding
+    
     UINT vertexStride = 0;
     UINT uvStride = 0;
     UINT colorStride = 0;
 
     UINT        indexCount = 0;
-    DXGI_FORMAT indexFormat = DXGI_FORMAT_R32_UINT; // or R16 if your data is 16-bit
+    DXGI_FORMAT indexFormat = DXGI_FORMAT_R32_UINT; 
 };
 
-// A draw “part” that uses a specific technique
+
 struct StaticMeshPart {
     uint32_t techniqueId = 0;
-    std::vector<uint32_t> bufferGroupIndices;            // which groups this part uses (optional)
+    std::vector<uint32_t> bufferGroupIndices;            
     SStaticMeshPart partInfo;
 };
 
-// The full mesh = groups + parts
+
 struct StaticMesh {
     uint32_t id = 0;
     std::vector<BufferGroup> groups;

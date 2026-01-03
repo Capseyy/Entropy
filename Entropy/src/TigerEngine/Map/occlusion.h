@@ -12,7 +12,7 @@
 struct ObjectVectors {
     glm::quat rotation;
     glm::vec3 translation;
-    float     scale;        // uniform
+    float     scale;        
 };
 
 

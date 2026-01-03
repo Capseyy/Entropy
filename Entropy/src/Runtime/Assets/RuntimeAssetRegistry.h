@@ -8,7 +8,7 @@
 #include <d3d11.h>
 #include <string>
 
-// ---------- Payloads ----------
+
 struct BufferPayload {
     D3D11_BUFFER_DESC desc{};
     std::vector<uint8_t> data;
@@ -18,40 +18,40 @@ struct BufferPayload {
 
 struct ShaderPayload {
     std::vector<uint8_t> bytecode;
-    std::vector<D3D11_INPUT_ELEMENT_DESC> input; // non-empty for VS
+    std::vector<D3D11_INPUT_ELEMENT_DESC> input; 
 };
 
 struct Texture2DPayload{
-    D3D11_TEXTURE2D_DESC  desc{};     // used when dim==Tex3D
-    std::vector<D3D11_SUBRESOURCE_DATA> subresources; // pointers into `data`
-    std::vector<uint8_t> data;                        // owns the pixel bytes
+    D3D11_TEXTURE2D_DESC  desc{};     
+    std::vector<D3D11_SUBRESOURCE_DATA> subresources; 
+    std::vector<uint8_t> data;                        
 };
 
 struct Texture3DPayload {
     D3D11_TEXTURE3D_DESC desc{};
-    std::vector<uint8_t> data;                     // tightly-packed mips [mip0 all Z][mip1 all Z]...
-    std::vector<D3D11_SUBRESOURCE_DATA> subresources; // one per mip, pSysMem points into data
+    std::vector<uint8_t> data;                     
+    std::vector<D3D11_SUBRESOURCE_DATA> subresources; 
 };
 
 struct CBufferMeta {
-    UINT byteSize = 0;                // we'll align to 16
-    std::vector<uint8_t> initial;     // optional
+    UINT byteSize = 0;                
+    std::vector<uint8_t> initial;     
 };
 
-// ---------- Technique descriptor ----------
+
 enum class ShaderStage : uint8_t { VS, PS, GS, HS, DS, CS };
 
 struct TechniqueDesc {
     std::optional<uint32_t> vs, ps, gs, hs, ds, cs;
-    std::vector<uint32_t> textures;   // SRV IDs (binding order)
-    std::vector<uint32_t> samplers;   // sampler IDs (binding order)
-    std::vector<uint32_t> cbuffers;   // cbuffer IDs (binding order)
+    std::vector<uint32_t> textures;   
+    std::vector<uint32_t> samplers;   
+    std::vector<uint32_t> cbuffers;   
 };
 
-// ---------- Runtime registry (thread-safe; single mutex) ----------
+
 class RuntimeAssetRegistry {
 public:
-    // Register (any thread)
+    
     void RegisterBuffer(uint32_t id, BufferPayload payload);
     void RegisterShader(uint32_t id, ShaderPayload payload);
     void RegisterTexture(uint32_t id, Texture2DPayload payload);
@@ -60,7 +60,7 @@ public:
     void RegisterCBuffer(uint32_t id, CBufferMeta meta);
     void RegisterTechnique(uint32_t techId, TechniqueDesc desc);
 
-    // Lookups (throw std::runtime_error if missing)
+    
     BufferPayload    GetBuffer(uint32_t id) const;
     ShaderPayload    GetShader(uint32_t id) const;
     Texture2DPayload   GetTexture(uint32_t id) const;
@@ -69,7 +69,7 @@ public:
     CBufferMeta      GetCBuffer(uint32_t id) const;
     TechniqueDesc    GetTechnique(uint32_t techId) const;
 
-    // Optional predicates
+    
     bool HasBuffer(uint32_t id) const;
     bool HasShader(uint32_t id) const;
     bool HasTexture(uint32_t id) const;
@@ -94,7 +94,7 @@ private:
 
 
 
-    // Single mutex: simplest + works everywhere
+    
     mutable std::mutex m_;
     std::unordered_map<uint32_t, BufferPayload>      buffers_;
     std::unordered_map<uint32_t, ShaderPayload>      shaders_;

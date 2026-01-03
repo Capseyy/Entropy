@@ -24,7 +24,7 @@ static int g_activations_this_frame = 0;
 
 Microsoft::WRL::ComPtr<ID3DUserDefinedAnnotation> anno_;
 void Graphics::InitAnnotation() {
-	pContext->QueryInterface(IID_PPV_ARGS(anno_.GetAddressOf())); // may be null
+	pContext->QueryInterface(IID_PPV_ARGS(anno_.GetAddressOf())); 
 }
 
 struct ScopedGpuEvent {
@@ -56,11 +56,10 @@ namespace {
         }
     }
 
-    // Projects a world position into screen space (pixels). Returns false if behind camera / off-screen.
+    
 	static inline bool WorldToScreen(const View& view, const glm::vec3& world, float screenW, float screenH, ImVec2& out) {
 		using namespace DirectX;
 
-		// Your matrices are written with XMStoreFloat4x4, so load them directly.
 		const XMMATRIX W2P = XMLoadFloat4x4(&view.world_to_projective);
 
 		const XMVECTOR p = XMVectorSet(world.x, world.y, world.z, 1.0f);
@@ -73,7 +72,7 @@ namespace {
 		const float ndcX = XMVectorGetX(clip) * invW;
 		const float ndcY = XMVectorGetY(clip) * invW;
 
-		// reject off-screen
+		
 		if (ndcX < -1.0f || ndcX > 1.0f || ndcY < -1.0f || ndcY > 1.0f) return false;
 
 		out.x = (ndcX * 0.5f + 0.5f) * screenW;
@@ -97,7 +96,7 @@ static bool TryActivateReady(std::shared_future<std::shared_ptr<T>>& fut,
 	if (g_activations_this_frame >= g_activation_budget_per_frame) return false;
 
 	try {
-		out = fut.get();            // may rethrow from producer
+		out = fut.get();            
 	}
 	catch (const std::exception& e) {
 		out.reset();           
@@ -114,8 +113,8 @@ static inline CB1Payload_override BuildCB1FromEntity(const RenderEntity& rs)
 	CB1Payload_override cb{};
 
 	
-	const auto& model_offset = rs.meshData.model_offset;  // glm::vec4
-	const auto& model_scale = rs.meshData.model_scale;   // glm::vec4
+	const auto& model_offset = rs.meshData.model_offset;  
+	const auto& model_scale = rs.meshData.model_scale;   
 	const float instance_scale = rs.pos.w;
 
 	const float texScale = rs.meshData.texcoord_scale.x;
@@ -164,17 +163,17 @@ BufferPayload BuildBufferPayloadFromTag(TagHash tag, StaticBufKind which)
 			throw std::runtime_error("BuildBufferPayloadFromTag: index data smaller than header declared size");
 
 		p.desc.Usage = D3D11_USAGE_IMMUTABLE;
-		p.desc.BindFlags = D3D11_BIND_INDEX_BUFFER;   // SRV will be added by Ensure... if needed
+		p.desc.BindFlags = D3D11_BIND_INDEX_BUFFER;   
 		p.desc.ByteWidth = static_cast<UINT>(want);
 		p.desc.CPUAccessFlags = 0;
 		p.desc.MiscFlags = 0;
 
-		p.stride = (ibh.is32 != 0) ? 4u : 2u;        // store “index stride” in payload.stride
+		p.stride = (ibh.is32 != 0) ? 4u : 2u;        
 		const auto* bytes = static_cast<const uint8_t*>(dataTag.data);
 		p.data.assign(bytes, bytes + want);
 	}
 	else {
-		// Vertex / UV / Colour share the same header
+		
 		const VertexBufferHeader vbh = bin::parse<VertexBufferHeader>(tag.data, tag.size, bin::Endian::Little);
 
 		TagHash dataTag(tag.reference);
@@ -188,14 +187,14 @@ BufferPayload BuildBufferPayloadFromTag(TagHash tag, StaticBufKind which)
 		p.desc.Usage = D3D11_USAGE_IMMUTABLE;
 		p.desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 		if (which == StaticBufKind::Color) {
-			// We’ll read this as a structured SRV later
+			
 			p.desc.BindFlags |= D3D11_BIND_SHADER_RESOURCE;
 		}
 		p.desc.ByteWidth = static_cast<UINT>(want);
 		p.desc.CPUAccessFlags = 0;
 		p.desc.MiscFlags = 0;
 
-		p.stride = vbh.stride;                       // real vertex element stride
+		p.stride = vbh.stride;                       
 		const auto* bytes = static_cast<const uint8_t*>(dataTag.data);
 		p.data.assign(bytes, bytes + want);
 	}
@@ -204,7 +203,7 @@ BufferPayload BuildBufferPayloadFromTag(TagHash tag, StaticBufKind which)
 
 bool Graphics::ResolveSpecialOnce(const SStaticSpecial& sp, ResolvedSpecial& out)
 {
-	// Ensure bind flags for everything present
+	
 	EnsureSpecialBufferRegistered(sp, StaticBufKind::Index, D3D11_BIND_INDEX_BUFFER);
 	EnsureSpecialBufferRegistered(sp, StaticBufKind::Vertex, D3D11_BIND_VERTEX_BUFFER);
 	if (sp.VertexBuffer2.hash && sp.VertexBuffer2.hash != 0xFFFFFFFFu)
@@ -212,7 +211,7 @@ bool Graphics::ResolveSpecialOnce(const SStaticSpecial& sp, ResolvedSpecial& out
 	if (sp.VertexColourBuffer.hash && sp.VertexColourBuffer.hash != 0xFFFFFFFFu)
 		EnsureSpecialBufferRegistered(sp, StaticBufKind::Color, D3D11_BIND_SHADER_RESOURCE);
 
-	// Enqueue futures
+	
 	auto& fIB = GetOrEnqueueBuffer(sp.IndexBuffer.hash, D3D11_BIND_INDEX_BUFFER);
 	auto& fVB1 = GetOrEnqueueBuffer(sp.VertexBuffer1.hash, D3D11_BIND_VERTEX_BUFFER);
 
@@ -224,13 +223,13 @@ bool Graphics::ResolveSpecialOnce(const SStaticSpecial& sp, ResolvedSpecial& out
 	const bool hasColor = (sp.VertexColourBuffer.hash && sp.VertexColourBuffer.hash != 0xFFFFFFFFu);
 	if (hasColor) fCol = &GetOrEnqueueBufferSRV(sp.VertexColourBuffer.hash);
 
-	// Ready?
+	
 	if (!FutReady(fIB) || !FutReady(fVB1) ||
 		(fVB2 && !FutReady(*fVB2)) ||
 		(hasColor && (!fCol || !FutReady(*fCol))))
 		return false;
 
-	// Resolve resources
+	
 	out.ib = fIB.get();
 	out.vb1 = fVB1.get();
 	out.vb2 = (fVB2 ? fVB2->get() : nullptr);
@@ -241,7 +240,7 @@ bool Graphics::ResolveSpecialOnce(const SStaticSpecial& sp, ResolvedSpecial& out
 		catch (...) { out.vCol = nullptr; }
 	}
 
-	// Read payloads for strides/formats
+	
 	const auto pIB = registry->GetBuffer(sp.IndexBuffer.hash);
 	const auto pVB1 = registry->GetBuffer(sp.VertexBuffer1.hash);
 
@@ -251,7 +250,7 @@ bool Graphics::ResolveSpecialOnce(const SStaticSpecial& sp, ResolvedSpecial& out
 	BufferPayload pVC{};
 	if (out.vCol) pVC = registry->GetBuffer(sp.VertexColourBuffer.hash);
 
-	// NEW: choose index format from index-buffer stride
+	
 	out.idxFmt = (pIB.stride == 2) ? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT;
 
 	out.indexStart = sp.index_start;
@@ -316,11 +315,11 @@ void Graphics::SubmitPackets(ID3D11DeviceContext* ctx,
 	ID3D11ShaderResourceView* s2[] = { this->sky_hemisphere_lookup.Get() };
 	if (stage == TfxRenderStage::Transparents) {
 		float bf[4] = { 1,1,1,1 };
-		ctx->OMSetBlendState(states.blend_states[8].Get(), bf, 0xFFFFFFFF); // alpha blend
-		ctx->OMSetDepthStencilState(depthStencilDecal.Get(), 0);            // read-only depth
-		ctx->RSSetState(rasterizerStateGBuffer.Get());                 // no-cull
+		ctx->OMSetBlendState(states.blend_states[8].Get(), bf, 0xFFFFFFFF); 
+		ctx->OMSetDepthStencilState(depthStencilDecal.Get(), 0);            
+		ctx->RSSetState(rasterizerStateGBuffer.Get());                 
 
-		// extra SRVs used by many transparent shaders (matches your old immediate path)
+		
 		ID3D11ShaderResourceView* s0[] = { this->temp_angle_lookup.Get() };
 		ID3D11ShaderResourceView* s1[] = { this->gbufA.depth.texCopySRV.Get() };
 		
@@ -348,7 +347,7 @@ void Graphics::SubmitPackets(ID3D11DeviceContext* ctx,
 				curVBs[0] = d.vb0; curVBs[1] = d.vb1; curStrides[0] = d.stride0; curStrides[1] = d.stride1;
 			}
 
-			// IB
+			
 			if (d.ib != curIB || d.idxFmt != curFmt) {
 				ctx->IASetIndexBuffer(d.ib, d.idxFmt, 0);
 				curIB = d.ib; curFmt = d.idxFmt;
@@ -446,13 +445,13 @@ bool Graphics::ResolveStaticPartOnce(
 	if (out.vCol) pVC = registry->GetBuffer(sb.VertexColourBuffer.hash);
 
 
-	out.indexStart = part.index_start;      // uint32_t or UINT
+	out.indexStart = part.index_start;      
 	out.indexCount = part.index_count;
 	out.stride0 = pVB0.stride;
 	out.stride1 = out.vb1 ? pVB1.stride : 0;
 	out.idxFmt = (pIB.stride == 2) ? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT;
 
-	// If you need a typed format for color anywhere:
+	
 	if (out.vCol) {
 		switch (pVC.stride) {
 		case 1:  out.vCOlfmt = DXGI_FORMAT_R8_UNORM;        break;
@@ -481,7 +480,7 @@ void Graphics::EnsureStaticBufferRegistered(const SStaticMeshData& mesh,
 
 	if (!registry->HasBuffer(id)) {
 		auto payload = BuildBufferPayloadFromTag(tag, which);
-		payload.desc.BindFlags |= addFlags;     // merge required flags for upcoming use
+		payload.desc.BindFlags |= addFlags;     
 		registry->RegisterBuffer(id, std::move(payload));
 		return;
 	}
@@ -504,7 +503,7 @@ void Graphics::EnsureBufferRegistered(TagHash tag,
 
 	if (!registry->HasBuffer(id)) {
 		auto payload = BuildBufferPayloadFromTag(tag, which);
-		payload.desc.BindFlags |= addFlags;     // merge required flags for upcoming use
+		payload.desc.BindFlags |= addFlags;     
 		registry->RegisterBuffer(id, std::move(payload));
 		return;
 	}
@@ -534,11 +533,11 @@ void Graphics::EnsureSpecialBufferRegistered(const SStaticSpecial& sp,
 	if (id == 0u || id == 0xFFFFFFFFu) return;
 
 	if (!registry->HasBuffer(id)) {
-		// Map SpecialBufKind -> StaticBufKind for header parse rules
+		
 		StaticBufKind asStatic =
 			(which == StaticBufKind::Index) ? StaticBufKind::Index :
 			(which == StaticBufKind::Color) ? StaticBufKind::Color :
-			StaticBufKind::Vertex; // VB1/VB2
+			StaticBufKind::Vertex; 
 		auto payload = BuildBufferPayloadFromTag(tag, asStatic);
 		payload.desc.BindFlags |= addFlags;
 		registry->RegisterBuffer(id, std::move(payload));
@@ -590,7 +589,7 @@ void Graphics::PublishGlobalTexturesToFrameExtern()
 		};
 
 	setSrv(FrameOff::kIridescenceLookup, "iridescence_lookup_texture");
-	// If you have these keys in your map, wire them too:
+	
 	setSrv(FrameOff::kSpecularLobeLookup, "specular_lobe_lookup_texture");
 	setSrv(FrameOff::kSpecularLobe3DLookup, "specular_lobe_3d_lookup_texture");
 	setSrv(FrameOff::kSpecularTintLookup, "specular_tint_lookup_texture");
@@ -602,7 +601,7 @@ std::shared_future<std::shared_ptr<EntropyAssets::BufferSRVRes>>&
 Graphics::GetOrEnqueueBufferSRV(uint32_t id)
 {
 	BufferPayload payload{};
-	if (!registry->TryGetBuffer(id, payload)) return bufferSrvFut_[id]; // nothing to do yet
+	if (!registry->TryGetBuffer(id, payload)) return bufferSrvFut_[id]; 
 	BufferSRVMeta meta{};
 	meta.kind = BufferSRVMeta::Kind::Structured;
 	meta.structureByteStride = payload.stride;
@@ -638,7 +637,7 @@ static inline void BindGBufferForWriting(ID3D11DeviceContext* ctx, const GBuffer
 		gbuf.rt1.rtv.Get(),
 		gbuf.rt2.rtv.Get()
 	};
-	ctx->OMSetRenderTargets(3, rts, gbuf.depth.dsv.Get()); // ? DSV for depth
+	ctx->OMSetRenderTargets(3, rts, gbuf.depth.dsv.Get()); 
 
 	D3D11_TEXTURE2D_DESC d{}; gbuf.rt0.tex->GetDesc(&d); 
 	D3D11_VIEWPORT vp{ 0,0, float(d.Width), float(d.Height), 0.0f, 1.0f };
@@ -763,7 +762,7 @@ void Graphics::InitializeInputLayouts()
 	{
 		Microsoft::WRL::ComPtr<ID3D11InputLayout> il;
 
-		// Skip empty layouts (prevents E_INVALIDARG spam)
+		
 		if (INPUT_LAYOUTS[i].elements.empty())
 			continue;
 
@@ -811,7 +810,7 @@ void Graphics::CreateInstanceBuffer()
 
 	D3D11_SHADER_RESOURCE_VIEW_DESC sd{};
 	sd.ViewDimension = D3D11_SRV_DIMENSION_BUFFEREX;
-	sd.Format = DXGI_FORMAT_UNKNOWN;              // structured
+	sd.Format = DXGI_FORMAT_UNKNOWN;              
 	sd.BufferEx.FirstElement = 0;
 	sd.BufferEx.NumElements = m_instanceCapacity;
 
@@ -823,7 +822,7 @@ void BuildViewAndProj(View& viewState, const Camera& camera, int windowWidth, in
 	XMMATRIX V = camera.GetViewMatrix();             
 	XMStoreFloat4x4(&viewState.world_to_camera, V);
 
-	const float fovY = XMConvertToRadians(90.0f);
+	const float fovY = XMConvertToRadians(120.0f);
 	const float aspect = float(windowWidth) / float(windowHeight);
 	const float zn = std::max(0.001f, camera.GetNearZ());
 
@@ -839,8 +838,8 @@ void BuildViewAndProj(View& viewState, const Camera& camera, int windowWidth, in
 	);
 	XMStoreFloat4x4(&viewState.camera_to_projective, P);
 
-	// --- Combined ---
-	XMMATRIX VP = XMMatrixMultiply(V, P);            // *** V * P (NOT P * V) ***
+	
+	XMMATRIX VP = XMMatrixMultiply(V, P);           
 	XMStoreFloat4x4(&viewState.world_to_projective, VP);
 }
 
@@ -859,7 +858,7 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view, TfxRende
 		visibleWorld.reserve(rs.world.size());
 		for (uint32_t i = 0; i < rs.world.size(); ++i) {
 			int failed = -1;
-			if (!culldbg::aabb_in_frustum_dbg(fr, rs.bounds[i], &failed, /*verbose=*/false))
+			if (!culldbg::aabb_in_frustum_dbg(fr, rs.bounds[i], &failed, false))
 				continue;
 			visibleWorld.push_back(rs.world[i]);
 			const glm::vec3 objPos = glm::vec3(rs.world[i].translation);
@@ -908,7 +907,7 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view, TfxRende
 	{
 		const auto& mg = mesh.mesh_groups[gi];
 		if (mg.TfxRenderStage != (UINT)renderStage) continue;
-		if (!seenPartIdx.insert(mg.part_index).second) continue; // dedupe
+		if (!seenPartIdx.insert(mg.part_index).second) continue; 
 
 		const auto& part = mesh.parts[mg.part_index];
 
@@ -922,8 +921,6 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view, TfxRende
 				continue;
 			}
 		}
-
-
 
 		std::shared_ptr<EntropyAssets::Technique> tech = nullptr;
 		if (gi >= 0 && gi < (int)rs.techniques.size())
@@ -969,7 +966,7 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view, TfxRende
 		dp.baseInstance = base;
 		dp.flags_or_maxColorBits = mesh.max_colour_index;
 
-		// optional: dp.sortKeyLow = 0;
+		
 
 		packets_.push_back(std::move(dp));
 	}
@@ -1000,7 +997,7 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view, TfxRende
 			DrawPacket dp{};
 			dp.meshId = spWrap.id ? spWrap.id : rs.id;
 
-			// Input layout
+			
 			const uint16_t ilIdx = spWrap.input_layout_index ? spWrap.input_layout_index
 				: sp.input_layout_index;
 			dp.inputLayoutIndex = ilIdx;
@@ -1101,7 +1098,7 @@ void Graphics::RunPostprocessChain()
 			it != globalTechniques.end())
 			it->second.get()->Bind(pDevice, pContext, externs, states, scopes);
 
-		ID3D11ShaderResourceView* srvs[] = { gbufA.shading_result.srv.Get() }; // t0
+		ID3D11ShaderResourceView* srvs[] = { gbufA.shading_result.srv.Get() }; 
 		ctx->PSSetShaderResources(0, 1, srvs);
 		ID3D11SamplerState* samp[] = { samplerLinearClamp.Get() };
 		ctx->PSSetSamplers(0, 1, samp);
@@ -1154,13 +1151,13 @@ void Graphics::CreateTerrainCB64()
 {
 	D3D11_BUFFER_DESC bd{};
 	bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-	bd.ByteWidth = 64;                    // exactly 64 bytes
+	bd.ByteWidth = 64;                    
 	bd.Usage = D3D11_USAGE_DYNAMIC;
 	bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 	bd.MiscFlags = 0;
 	bd.StructureByteStride = 0;
 
-	// optional: zero init
+	
 	TerrainCB64 zero{};
 	D3D11_SUBRESOURCE_DATA init{};
 	init.pSysMem = &zero;
@@ -1267,7 +1264,7 @@ void Graphics::DrawTerrain(const RenderTerrain& rt, const View& view)
 	const UINT stride0 = pVB0.stride;
 	const UINT stride1 = pVB1.stride;
 
-	// ---- bind shared IA buffers once ----
+	
 	{
 		pContext->IASetInputLayout(
 			(0xA < tiger_input_layouts.size() && tiger_input_layouts[22])
@@ -1306,7 +1303,7 @@ void Graphics::DrawTerrain(const RenderTerrain& rt, const View& view)
 		D3D11_MAPPED_SUBRESOURCE m{};
 		if (SUCCEEDED(pContext->Map(g_terrain_cb.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &m)))
 		{
-			std::memcpy(m.pData, &cb, sizeof(cb));     // 64 bytes
+			std::memcpy(m.pData, &cb, sizeof(cb));     
 			pContext->Unmap(g_terrain_cb.Get(), 0);
 		}
 
@@ -1434,7 +1431,7 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 
 			if (rs.rtype == EntityType::ParticleSystem && rs.partical_technique) {
 				uint32_t ptechId = *rs.partical_technique;
-				//printf("Using particle technique %08X for entity %08X\n", ptechId, rs.id);
+				
 				auto pitTech = TechCache_.find(ptechId);
 				if (pitTech == TechCache_.end())
 				{
@@ -1521,7 +1518,7 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 				(dm.skinning_buffer.hash != 0u &&
 					dm.skinning_buffer.hash != 0xFFFFFFFFu);
 
-			// --- Bind pipeline state for this part ---
+			
 			UINT offset = 0;
 			pContext->IASetInputLayout(il);
 			pContext->IASetPrimitiveTopology(
@@ -1547,60 +1544,60 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 			tech->Bind_With_Channels(pDevice, pContext, externs, states, scopes, rs.channels);
 			
 			
-			//if (rs.rtype == EntityType::ParticleSystem && rs.partical_technique)
-			//{
-			//	ptech->Bind_Only_PS(pDevice, pContext, externs, states, scopes, rs.channels);
-			//	// Load test bytecode blob
-			//	TagHash th(0x80CE2BD0);
-			//	const auto test_particle = bin::parse<Unk_80806927>(th.data, th.size);
+			
+			
+			
+			
+			
+			
 
-			//	// Build TFX program from raw bytecode/constants
-			//	TfxProgram testProg = TfxProgram::FromBytecode(
-			//		test_particle.TFX_Bytecode,
-			//		test_particle.TFX_Constants,
-			//		0x80CE2BD0
-			//	);
+			
+			
+			
+			
+			
+			
 
-			//	// Evaluate into a cb0 Vec4 array (same pattern as Technique::Bind)
-			//	std::vector<Vec4> cb0_test;
-			//	cb0_test.resize(120);            
-			//	testProg.Evaluate(externs, cb0_test, /*textures*/{});
+			
+			
+			
+			
 
-			//	ID3D11Buffer* buf = nullptr;
+			
 
-			//	if (ptech->CBuffers_fallback != nullptr) {
-			//		buf = ptech->CBuffers_fallback->buffer.Get();
-			//	}
-			//	else {
-			//		
-			//	}
+			
+			
+			
+			
+			
+			
 
-			//	if (buf) {
-			//		D3D11_BUFFER_DESC desc{};
-			//		buf->GetDesc(&desc);
+			
+			
+			
 
-			//		const size_t bytes_needed = cb0_test.size() * sizeof(Vec4);
-			//		const size_t bytes_copy = std::min<size_t>(bytes_needed, desc.ByteWidth);
+			
+			
 
-			//		if (desc.Usage == D3D11_USAGE_DYNAMIC) {
-			//			D3D11_MAPPED_SUBRESOURCE map{};
-			//			HRESULT hr = pContext->Map(buf, 0, D3D11_MAP_WRITE_DISCARD, 0, &map);
-			//			if (SUCCEEDED(hr) && map.pData) {
-			//				std::memcpy(map.pData, cb0_test.data(), bytes_copy);
-			//				pContext->Unmap(buf, 0);
-			//			}
-			//		}
-			//		else {
-			//			pContext->UpdateSubresource(buf, 0, nullptr, cb0_test.data(), 0, 0);
-			//		}
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
 
-			//		UINT slot = 0;
-			//		pContext->PSSetConstantBuffers(slot, 1, &buf);
-			//	}
+			
+			
+			
 
-			//	// Now bind only PS from the actual particle technique (your normal path)
-			//	
-			//}
+			
+			
+			
 			if (hasSkinning && entity_vs_override)
 			{
 				pContext->VSSetShader(entity_vs_override.Get(), nullptr, 0);
@@ -1687,9 +1684,9 @@ void Graphics::PrewarmVisibleAssets(const View& view)
 	const XMFLOAT4X4& W2P = view.world_to_projective;
 	Frustum fr = Frustum::FromColumnMajor(W2P, true);
 
-	// -------------------------
-	// 1) Statics
-	// -------------------------
+	
+	
+	
 	for (auto& rs : staticsToDraw)
 	{
 		if (g_activations_this_frame >= g_activation_budget_per_frame)
@@ -1753,9 +1750,9 @@ void Graphics::PrewarmVisibleAssets(const View& view)
 		}
 	}
 
-	// -------------------------
-	// 2) Specials
-	// -------------------------
+	
+	
+	
 	for (auto& rs : staticsToDraw)
 	{
 		if (g_activations_this_frame >= g_activation_budget_per_frame)
@@ -1816,9 +1813,9 @@ void Graphics::PrewarmVisibleAssets(const View& view)
 		}
 	}
 
-	// -------------------------
-	// 3) ENTITIES
-	// -------------------------
+	
+	
+	
 	static std::unordered_set<uint64_t> s_dynBufRegistered;
 
 for (auto& ent : entitiesToDraw)
@@ -1849,8 +1846,8 @@ for (auto& ent : entitiesToDraw)
             if (dm.colour_buffer.hash && dm.colour_buffer.hash != 0xFFFFFFFFu)
                 EnsureEntityBufferRegistered(dm, DynamicBufKind::Color,
                     D3D11_BIND_VERTEX_BUFFER | D3D11_BIND_SHADER_RESOURCE);
-            // if (dm.skinning_buffer.hash && dm.skinning_buffer.hash != 0xFFFFFFFFu)
-            //     EnsureEntityBufferRegistered(dm, DynamicBufKind::Skin, D3D11_BIND_SHADER_RESOURCE);
+            
+            
 
             s_dynBufRegistered.insert(regKey);
         }
@@ -1905,7 +1902,7 @@ for (auto& ent : entitiesToDraw)
                         std::snprintf(buf, sizeof(buf),
                             "PrewarmVisibleAssets ENT 0x%08X: tech 0x%08X activation failed: %s\n",
                             ent.id, techId, e.what());
-                        //outputdebugstringA(buf);
+                        
                     }
                 }
 
@@ -1920,7 +1917,7 @@ for (auto& ent : entitiesToDraw)
 
                 tryVB(dm.vertex0_buffer, D3D11_BIND_VERTEX_BUFFER);
                 tryVB(dm.vertex1_buffer, D3D11_BIND_VERTEX_BUFFER);
-                //tryVB(dm.buffer2,        D3D11_BIND_VERTEX_BUFFER);
+                
                 tryVB(dm.buffer3,        D3D11_BIND_VERTEX_BUFFER);
 
                 auto trySRV = [&](TagHash h)
@@ -1990,7 +1987,7 @@ void Graphics::RenderFrame()
 		drawLight_specular = false, drawDepth = false, drawShading = false,
 		drawShadingRead = false, drawLight_ibl = false, stageGlobalLighting = true;
 	
-	//mainQueue->Drain();
+	
 	mainQueue->RunSlice(8, 1);
 	auto pos = camera.GetPositionFloat3();
 	frameCameraPos.x = pos.x;
@@ -2002,7 +1999,7 @@ void Graphics::RenderFrame()
 	tfx::ResetGlobalChannelUsagePerFrame();
 	packets_.clear();
 	frameWorlds_.clear();
-	// Per-frame externs
+	
 	externs.SetFrameTimes(float(gTimer.total_game_time()), float(gTimer.delta_game_time()), 4.0f);
 	externs.SetFxaa(float(gTimer.total_game_time()));
 
@@ -2014,22 +2011,21 @@ void Graphics::RenderFrame()
 	const float zn = std::max(0.001f, camera.GetNearZ());
 
 	const float t = tanf(fovY * 0.5f);
-	const float m11 = 1.0f / (t * aspect); // ~0.53477 for 16:9
-	const float m22 = 1.0f / t;            // = 1.0 when fovY = 90°
+	const float m11 = 1.0f / (t * aspect); 
+	const float m22 = 1.0f / t;            
 
-	// Row-major (DirectXMath) layout:
 	DirectX::XMMATRIX proj = DirectX::XMMatrixSet(
-		m11, 0.0f, 0.0f, 0.0f,   // row 1
-		0.0f, m22, 0.0f, 0.0f,   // row 2
-		0.0f, 0.0f, 0.0f, -1.0f, // row 3
-		0.0f, 0.0f, zn, 0.0f   // row 4
+		m11, 0.0f, 0.0f, 0.0f,   
+		0.0f, m22, 0.0f, 0.0f,   
+		0.0f, 0.0f, 0.0f, -1.0f, 
+		0.0f, 0.0f, zn, 0.0f   
 	);
 
 	XMStoreFloat4x4(&viewState.camera_to_projective, proj);
 	viewState.derive_matrices_vs({ { float(windowWidth), float(windowHeight) } });
 
 	{
-		// View (needs to exist before you draw statics into the GBuffer)
+		
 		D3D11_VIEWPORT vp{};
 		vp.TopLeftX = 0.0f; vp.TopLeftY = 0.0f;
 		vp.Width = float(windowWidth);
@@ -2038,7 +2034,7 @@ void Graphics::RenderFrame()
 
 		externs.SetViewProjectiveToCamera(viewState, vp);
 
-		// Make sure CBs exist and push current bytes so the GBuffer pass can use them
+		
 		externs.EnsureAll(pDevice.Get());
 		externs.UploadAll(pContext.Get());
 	}
@@ -2054,11 +2050,11 @@ void Graphics::RenderFrame()
 	PublishGlobalTexturesToFrameExtern();
 	
 	ID3D11ShaderResourceView* vsSrvs[] = { m_instanceSRV.Get() };
-	pContext->VSSetShaderResources(15, 1, vsSrvs); // t15
+	pContext->VSSetShaderResources(15, 1, vsSrvs); 
 
-	// =========================
-	// generate_gbuffer
-	// =========================
+	
+	
+	
 	
 
 	if (!sceneEmpty) {
@@ -2069,7 +2065,7 @@ void Graphics::RenderFrame()
 		pContext->Map(m_instanceSB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &map);
 		m_instWritePtr = static_cast<uint8_t*>(map.pData);
 		ID3D11ShaderResourceView* srvs[] = { m_instanceSRV.Get() };
-		pContext->VSSetShaderResources(15, 1, srvs); // t15 (match HLSL)
+		pContext->VSSetShaderResources(15, 1, srvs); 
 
 		ID3D11RenderTargetView* rt_gbuf[3]{
 			gbufA.rt0.rtv.Get(),
@@ -2107,7 +2103,7 @@ void Graphics::RenderFrame()
 		pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 		
-		// Keep selection stable even when many entities share the same id/hash.
+		
 		if (selectedEntityIndex >= 0) {
 			if (selectedEntityIndex >= (int32_t)entitiesToDraw.size() ||
 				entitiesToDraw[(size_t)selectedEntityIndex].id != selectedEntityId ||
@@ -2151,13 +2147,13 @@ void Graphics::RenderFrame()
 		if (gbufA.depth.texCopy && gbufA.depth.tex)
 			pContext->CopyResource(gbufA.depth.texCopy.Get(), gbufA.depth.tex.Get());
 	}
-	{   // decals
+	{   
 		for (auto& rs : staticsToDraw) DrawStaticMesh(rs, viewState, TfxRenderStage::Decals);
 	}
 	
-	// =========================
-	// lighting_pass
-	// =========================
+	
+	
+	
 	if (!sceneEmpty) {
 		ScopedGpuEvent e(anno_.Get(), L"lighting_pass");
 
@@ -2184,12 +2180,12 @@ void Graphics::RenderFrame()
 
 
 		ID3D11ShaderResourceView* srvs[] = {
-			gbufA.rt2.srv.Get(),          // t0 material/params
-			gbufA.rt1_read.srv.Get(),     // t1 normal+roughness
-			gbufA.depth.texCopySRV.Get(), // t2 depth
-			white1x1SRV.Get(),            // t3
-			white1x1SRV.Get(),            // t4
-			white1x1SRV.Get(),            // t5
+			gbufA.rt2.srv.Get(),          
+			gbufA.rt1_read.srv.Get(),     
+			gbufA.depth.texCopySRV.Get(), 
+			white1x1SRV.Get(),            
+			white1x1SRV.Get(),            
+			white1x1SRV.Get(),            
 		};
 		pContext->PSSetShaderResources(0, (UINT)std::size(srvs), srvs);
 
@@ -2207,9 +2203,9 @@ void Graphics::RenderFrame()
 			DrawLight(light, viewState);
 	}
 
-	// =========================
-	// deferred_shading
-	// =========================
+	
+	
+	
 	if (!sceneEmpty) {
 		ScopedGpuEvent e(anno_.Get(), L"deferred_shading");
 
@@ -2228,14 +2224,14 @@ void Graphics::RenderFrame()
 		pContext->RSSetViewports(1, &vp);
 
 		ID3D11ShaderResourceView* srvs2[] = {
-			gbufA.rt1_read.srv.Get(),          // t0 : normals
-			gbufA.rt0.srv.Get(),               // t1 : albedo
-			gbufA.rt2.srv.Get(),               // t2 : material
-			gbufA.light_diffuse.srv.Get(),     // t3
-			gbufA.light_specular.srv.Get(),    // t4
-			gbufA.light_ibl_specular.srv.Get(),// t5
-			this->global_textures.find("iridescence_lookup_texture")->second.Get(), // t6
-			white1x1SRV.Get(),                 // t7
+			gbufA.rt1_read.srv.Get(),          
+			gbufA.rt0.srv.Get(),               
+			gbufA.rt2.srv.Get(),               
+			gbufA.light_diffuse.srv.Get(),     
+			gbufA.light_specular.srv.Get(),    
+			gbufA.light_ibl_specular.srv.Get(),
+			this->global_textures.find("iridescence_lookup_texture")->second.Get(), 
+			white1x1SRV.Get(),                 
 		};
 		pContext->PSSetShaderResources(0, (UINT)std::size(srvs2), srvs2);
 
@@ -2253,10 +2249,10 @@ void Graphics::RenderFrame()
 
 		externs.SetTransparentSRVs(
 			externs,
-			gbufA.atmos_ss_far_lookup.srv.Get(),             // 0x00
-			nullptr, // 0x08
-			gbufA.atmos_ss_far_lookup.srv.Get(),            // 0x10
-			nullptr,// 0x18
+			gbufA.atmos_ss_far_lookup.srv.Get(),             
+			nullptr, 
+			gbufA.atmos_ss_far_lookup.srv.Get(),            
+			nullptr,
 			nullptr,
 			this->grey1x1SRV.Get(),
 			this->grey1x1SRV.Get(),                 
@@ -2269,9 +2265,9 @@ void Graphics::RenderFrame()
 		);
 	}
 
-	// =========================
-	// transparency pass
-	// =========================
+	
+	
+	
 	if (!sceneEmpty) {
 
 		ID3D11ShaderResourceView* nulls[16] = {};
@@ -2294,7 +2290,7 @@ void Graphics::RenderFrame()
 		ID3D11ShaderResourceView* srvs[] = { m_instanceSRV.Get() };
 		pContext->VSSetShaderResources(15, 1, srvs);
 		ID3D11ShaderResourceView* srv_stage[] = { gbufA.rt0.srv.Get() };
-		pContext->PSSetShaderResources(23, 1, srv_stage); // t14
+		pContext->PSSetShaderResources(23, 1, srv_stage); 
 		pContext->RSSetState(rasterizerStateGBuffer.Get());
 		for (auto& rs : staticsToDraw) {
 			pContext->RSSetState(rasterizerStateGBuffer.Get());
@@ -2321,9 +2317,9 @@ void Graphics::RenderFrame()
 		RunPostprocessChain();
 	}
 
-	// =========================
-	// present_to_backbuffer
-	// =========================
+	
+	
+	
 	{
 		ScopedGpuEvent e(anno_.Get(), L"present_to_backbuffer");
 
@@ -2369,7 +2365,7 @@ void Graphics::RenderFrame()
 
 	if (wantDebugPreview)
 	{
-		ID3D11RenderTargetView* bbLinear = pRenderTargetViewLinear.Get(); // created at init
+		ID3D11RenderTargetView* bbLinear = pRenderTargetViewLinear.Get(); 
 		pContext->OMSetRenderTargets(1, &bbLinear, nullptr);
 		SetFullViewport(pContext.Get(), float(windowWidth), float(windowHeight));
 	}
@@ -2427,7 +2423,7 @@ void Graphics::RenderFrame()
 		if (itName == s_nameCache.end()) {
 			std::string name;
 			if (name.empty()) {
-				char tmp[32]; std::snprintf(tmp, sizeof(tmp), " %s 0x%08X",e.name.c_str(), e.id);
+				char tmp[64]; std::snprintf(tmp, sizeof(tmp), " %s 0x%08X",e.name.c_str(), e.id);
 				name = tmp;
 			}
 			itName = s_nameCache.emplace(entIdx, std::move(name)).first;
@@ -2870,7 +2866,7 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 
 		COM_ERROR_IF_FAILED(hr, "Failed to get back buffer.");
 		D3D11_RENDER_TARGET_VIEW_DESC rvd = {};
-		rvd.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;   // <-- sRGB view
+		rvd.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;   
 		rvd.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
 		rvd.Texture2D.MipSlice = 0;
 
@@ -2891,21 +2887,21 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 
 		this->pContext->OMSetRenderTargets(1, pRenderTargetView.GetAddressOf(), this->depthStencilView.Get());
 
-		// ----- Depth-stencil state: reversed-Z, writes ON (NO *_EQUAL) -----
+		
 		CD3D11_DEPTH_STENCIL_DESC dsRZ(D3D11_DEFAULT);
 		dsRZ.DepthEnable = TRUE;
 		dsRZ.StencilEnable = FALSE;
 		dsRZ.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
 		dsRZ.StencilReadMask = 0;
 		dsRZ.StencilWriteMask = 0;
-		dsRZ.DepthFunc = D3D11_COMPARISON_GREATER_EQUAL; // <? NOT GREATER_EQUAL
+		dsRZ.DepthFunc = D3D11_COMPARISON_GREATER_EQUAL;
 		hr = pDevice->CreateDepthStencilState(&dsRZ, depthStencilState.GetAddressOf());
 		COM_ERROR_IF_FAILED(hr, "Failed to create reversed-Z depth stencil state.");
 
 		CD3D11_DEPTH_STENCIL_DESC dsRZ1(D3D11_DEFAULT);
 		dsRZ1.DepthEnable = FALSE;
 		dsRZ1.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
-		dsRZ1.DepthFunc = D3D11_COMPARISON_NEVER; // <? NOT GREATER_EQUAL
+		dsRZ1.DepthFunc = D3D11_COMPARISON_NEVER;
 		hr = pDevice->CreateDepthStencilState(&dsRZ1, depthStencilStateLighting.GetAddressOf());
 		COM_ERROR_IF_FAILED(hr, "Failed to create reversed-Z depth stencil state.");
 
@@ -2916,8 +2912,6 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		
 		pContext->OMSetDepthStencilState(depthStencilState.Get(), 0);
 
-		
-		// Flip FrontCounterClockwise to FALSE if your geometry is clockwise.
 		CD3D11_RASTERIZER_DESC rsDesc(D3D11_DEFAULT);
 		rsDesc.CullMode = D3D11_CULL_BACK;
 		rsDesc.FrontCounterClockwise = TRUE;
@@ -3043,7 +3037,7 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		}
 		{
 			CD3D11_SAMPLER_DESC s(D3D11_DEFAULT);
-			s.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;   // trilinear
+			s.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;   
 			s.AddressU = s.AddressV = s.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
 			s.MipLODBias = 0.0f;
 			pDevice->CreateSamplerState(&s, shading2.GetAddressOf());
@@ -3057,7 +3051,7 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		}
 		{
 			CD3D11_SAMPLER_DESC s(D3D11_DEFAULT);
-			s.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;   // trilinear
+			s.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;   
 			s.AddressU = s.AddressV = s.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
 			s.MipLODBias = -0.5f;
 			pDevice->CreateSamplerState(&s, lighting2.GetAddressOf());
@@ -3066,7 +3060,7 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		{
 			D3D11_BLEND_DESC bd{};
 			bd.RenderTarget[0].BlendEnable = FALSE;
-			bd.RenderTarget[0].SrcBlend = D3D11_BLEND_DEST_COLOR; // src * dest
+			bd.RenderTarget[0].SrcBlend = D3D11_BLEND_DEST_COLOR; 
 			bd.RenderTarget[0].DestBlend = D3D11_BLEND_ZERO;
 			bd.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
 			bd.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
@@ -3130,8 +3124,8 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		{
 			CD3D11_DEPTH_STENCIL_DESC ds(D3D11_DEFAULT);
 			ds.DepthEnable = FALSE;
-			ds.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;        // read-only
-			ds.DepthFunc = D3D11_COMPARISON_ALWAYS;          // reversed-Z
+			ds.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;        
+			ds.DepthFunc = D3D11_COMPARISON_ALWAYS;          
 			ds.StencilReadMask = 0;
 			ds.StencilWriteMask = 0;
 			ds.BackFace = dsdesc;
@@ -3147,7 +3141,7 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 		CD3D11_DEPTH_STENCIL_DESC ds_decal(D3D11_DEFAULT);
 		ds_decal.DepthEnable = TRUE;
 		ds_decal.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
-		ds_decal.DepthFunc = D3D11_COMPARISON_GREATER_EQUAL; // <? NOT GREATER_EQUAL
+		ds_decal.DepthFunc = D3D11_COMPARISON_GREATER_EQUAL; 
 		ds_decal.StencilEnable = FALSE;
 		ds_decal.StencilReadMask = 0;
 		ds_decal.StencilWriteMask = 0;
@@ -3177,7 +3171,7 @@ bool Graphics::InitializeDirectX(HWND hWnd)
 	mainQueue = std::make_unique<MainThreadQueue>();
 	registry = std::make_unique<RuntimeAssetRegistry>();
 	assets = std::make_unique<AssetSystem>(pDevice.Get(), pContext.Get(), *pool, *mainQueue, registry.get());
-	// Create the camera constant buffer
+	
 	CreateTerrainCB64();
 	CreateScopeViewCB12(pDevice.Get());
 	CreateInstanceBuffer();
@@ -3202,7 +3196,7 @@ bool Graphics::InitializeShaders()
 		vsBytecode.GetAddressOf());
 	if (FAILED(hr)) {
 		ErrorLogger::Log(hr, "VS compile failed");
-		//return false;
+		
 	}
 	return true;
 }
@@ -3239,10 +3233,10 @@ void Graphics::LoadGlobalTextures() {
 		hr = pDevice->CreateShaderResourceView(textureLoaded.Get(), &sd, &texSrv);
 		this->global_textures[tex.first] = texSrv;
 	}
-	HRESULT hr = LoadEmbeddedTextureSRV(pDevice.Get(), 102,/*srgb*/false, this->temp_angle_lookup.GetAddressOf());
+	HRESULT hr = LoadEmbeddedTextureSRV(pDevice.Get(), 102,false, this->temp_angle_lookup.GetAddressOf());
 	if (FAILED(hr))
 		ErrorLogger::Log(hr, "Failed to load baked texture1");
-	hr = LoadEmbeddedTextureSRV(pDevice.Get(), IDB_SKY,/*srgb*/false, this->sky_hemisphere_lookup.GetAddressOf());
+	hr = LoadEmbeddedTextureSRV(pDevice.Get(), IDB_SKY,false, this->sky_hemisphere_lookup.GetAddressOf());
 	if (FAILED(hr))
 		ErrorLogger::Log(hr, "Failed to load baked texture2");
 }
@@ -3251,7 +3245,7 @@ bool Graphics::InitializeScene()
 {
 	try {
 		camera.SetPosition(0.0f, 0.0f, 0.0f);
-		camera.SetProjectionValues(90.0f, static_cast<float>(windowWidth) / static_cast<float>(windowHeight), 0.01f, 1.0f);
+		camera.SetProjectionValues(120.0f, static_cast<float>(windowWidth) / static_cast<float>(windowHeight), 0.01f, 1.0f);
 	}
 	catch (COMException& exception)
 	{
@@ -3268,18 +3262,11 @@ bool Graphics::InitializeScene()
 	InitAnnotation();
 	this->activities = GlobalData::globalActivities();
 	loadzone = std::make_unique<LoadZone>(*this);
-	//loadzone->parentHash = 0x8112FC9E; //duality
-	//loadzone->ProcessMap();
-	//this->staticsToDraw = loadzone->statics;
-	//this->lightsToDraw = loadzone->lights;
-	//this->entitiesToDraw = loadzone->entities;
-	//this->staticAO1 = loadzone->AOMap1;
-	//loadzone->load_datatable_into_scene(TagHash(0x80AD26AB));
-	//loadzone->load_datatable_into_scene(TagHash(0x80FDC30D));
-	auto e_to_load = TagHash(0x8111d10e);
+
+	auto e_to_load = TagHash(0x80CB582E);
 	Aabb a;
-	loadzone->load_entity_model_into_scene(e_to_load, glm::quat(0, 0, 0, 0) , glm::vec4(0,0,0,0), {},{},a,EntityType::SkyEntity);
-	//loadzone->load_datatable_into_scene(TagHash(0x80D40A7F));
+	loadzone->load_entity_into_scene(e_to_load, glm::quat(), glm::vec4(1.0f,1.0f,1.0f,1.0f));
+	
 	if (loadzone) {
 		this->staticsToDraw = loadzone->statics;
 		this->lightsToDraw = loadzone->lights;
@@ -3288,7 +3275,7 @@ bool Graphics::InitializeScene()
 	}
 	EnsureCB1_StaticReusable(pDevice.Get(), g_cb1);
 	printf("Loading Render Engine\n");
-	//exit(1);
+	
 	gTimer.reset();
 	return true;
 }

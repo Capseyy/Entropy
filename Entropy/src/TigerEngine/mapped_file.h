@@ -7,8 +7,8 @@ struct MappedFile {
     const unsigned char* data = nullptr;
 
 #ifdef _WIN32
-    void* hFile = nullptr;   // HANDLE
-    void* hMap = nullptr;   // HANDLE
+    void* hFile = nullptr;   
+    void* hMap = nullptr;   
     bool open(const std::string& path);
     void close();
     ~MappedFile() { close(); }

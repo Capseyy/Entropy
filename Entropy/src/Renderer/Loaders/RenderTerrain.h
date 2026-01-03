@@ -9,18 +9,18 @@
 
 struct alignas(16) TerrainCB64
 {
-    float mesh_offset[4];          // xyz = mesh offset, w = unused (0)
-    float texcoord_offset[4];      // xyzw = texcoord offset (vec4)
+    float mesh_offset[4];          
+    float texcoord_offset[4];      
 
-    // 32 bytes of guaranteed-zero padding/reserved
-    float _zero0[4];               // must be 0
-    float _zero1[4];               // must be 0
+    
+    float _zero0[4];               
+    float _zero1[4];               
 };
 
 static_assert(sizeof(TerrainCB64) == 64, "TerrainCB64 must be exactly 64 bytes");
 static_assert(alignof(TerrainCB64) == 16, "TerrainCB64 must be 16-byte aligned");
 
-// Helper to build it (ensures the last 32 bytes are 0)
+
 inline TerrainCB64 MakeTerrainCB64(float offX, float offY, float offZ, float offW,
     float t0, float t1, float t2, float t3)
 {
@@ -35,8 +35,8 @@ inline TerrainCB64 MakeTerrainCB64(float offX, float offY, float offZ, float off
     cb.texcoord_offset[2] = t2;
     cb.texcoord_offset[3] = t3;
 
-    // cb{} already zeroes _zero0/_zero1, but keeping explicit is fine:
-    // std::memset(cb._zero0, 0, 32);
+    
+    
 
     return cb;
 }

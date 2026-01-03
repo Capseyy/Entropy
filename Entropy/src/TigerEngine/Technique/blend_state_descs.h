@@ -5,7 +5,7 @@ struct TigerBlendDesc {
     D3D11_RENDER_TARGET_BLEND_DESC RenderTarget[4];
 };
 
-//region Blend states
+
 
 static const TigerBlendDesc BLEND_STATE_DESCS[0x5a] = {
     { {            {
@@ -3789,4 +3789,4 @@ static const TigerBlendDesc BLEND_STATE_DESCS[0x5a] = {
         }
     },
 };
-//endregion
+

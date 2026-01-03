@@ -10,7 +10,7 @@
 #include "TigerEngine/ClientStartup/RenderGlobals.h"
 #include "Renderer/Loaders/Scope.h"
 
-namespace EntropyAssets {           // <<< add
+namespace EntropyAssets {           
 
     struct BufferSRVRes {
         Microsoft::WRL::ComPtr<ID3D11Buffer>            buffer;
@@ -34,8 +34,8 @@ namespace EntropyAssets {           // <<< add
 
 
     struct TexBinding {
-        UINT slot = 0;                                  // t-slot
-        std::shared_ptr<Texture2DRes> tex;              // SRV wrapper
+        UINT slot = 0;                                  
+        std::shared_ptr<Texture2DRes> tex;              
     };
 
     using Microsoft::WRL::ComPtr;
@@ -76,7 +76,7 @@ namespace EntropyAssets {           // <<< add
         std::shared_ptr<CBufferRes>                  CBuffers_fallback = nullptr;
         UINT                                         psCBSlots_fallback;
 
-        //VS
+        
         std::vector<std::shared_ptr<Texture2DRes>>   Textures_VS;
         std::vector<UINT>                            vsTextureSlots;
 

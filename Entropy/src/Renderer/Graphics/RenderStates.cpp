@@ -1,4 +1,4 @@
-// RenderStates.cpp
+
 #include "RenderStates.h"
 #include <cassert>
 
@@ -12,17 +12,17 @@ HRESULT RenderStates::Create(ID3D11Device* device, RenderStates& out)
 {
     if (!device) return E_INVALIDARG;
 
-    // ---- Blend states (90) ----
+    
     for (size_t i = 0; i < out.blend_states.size(); ++i) {
         D3D11_BLEND_DESC bd{};
         bd.AlphaToCoverageEnable  = FALSE;
         bd.IndependentBlendEnable = TRUE;
 
-        // First 4 from table
+        
         for (int rt = 0; rt < 4; ++rt)
             bd.RenderTarget[rt] = BLEND_STATE_DESCS[i].RenderTarget[rt];
 
-        // Extend by repeating slot 3 for RT[4..7], matching your Rust behavior
+        
         for (int rt = 4; rt < 8; ++rt)
             bd.RenderTarget[rt] = BLEND_STATE_DESCS[i].RenderTarget[3];
 
@@ -31,18 +31,18 @@ HRESULT RenderStates::Create(ID3D11Device* device, RenderStates& out)
     }
 
 	out.rasterizer_states=CompileRasterizerStates(device);
-    constexpr size_t kBlendCount = std::size(BLEND_STATE_DESCS); // 0x5a == 90
+    constexpr size_t kBlendCount = std::size(BLEND_STATE_DESCS); 
     static_assert(kBlendCount == 0x5a, "Blend state table size mismatch");
 
-    // Ensure the destination container can hold them all
+    
 
     for (size_t i = 0; i < kBlendCount; ++i)
     {
         D3D11_BLEND_DESC bd = {};
-        bd.AlphaToCoverageEnable = FALSE;   // keep as-is (table doesn't carry this)
+        bd.AlphaToCoverageEnable = FALSE;   
         bd.IndependentBlendEnable = TRUE;
 
-        // Copy RT[0..3] from the table
+        
         for (int rt = 0; rt < 4; ++rt)
         {
             bd.RenderTarget[rt].BlendEnable = BLEND_STATE_DESCS[i].RenderTarget[rt].BlendEnable;
@@ -55,7 +55,7 @@ HRESULT RenderStates::Create(ID3D11Device* device, RenderStates& out)
             bd.RenderTarget[rt].RenderTargetWriteMask = BLEND_STATE_DESCS[i].RenderTarget[rt].RenderTargetWriteMask;
         }
 
-        // Repeat slot 3 for RT[4..7] (matches your Rust behavior)
+        
         for (int rt = 4; rt < 8; ++rt)
         {
             bd.RenderTarget[rt] = bd.RenderTarget[3];
@@ -65,10 +65,10 @@ HRESULT RenderStates::Create(ID3D11Device* device, RenderStates& out)
         if (FAILED(hr)) return hr;
     }
 
-    // TODO: create rasterizer/depth-stencil states here as needed.
+    
     
 
-    // ---- DepthStencil (89 pairs) ----
+    
    
     
 

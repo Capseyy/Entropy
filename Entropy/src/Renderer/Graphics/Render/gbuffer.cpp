@@ -1,4 +1,4 @@
-// GBuffer.cpp
+
 #include "GBuffer.h"
 #include <stdexcept>
 #include <algorithm>
@@ -16,7 +16,7 @@ static inline void SetDbgName(ID3D11DeviceChild* o, const char* n) {
     if (o && n) o->SetPrivateData(WKPDID_D3DDebugObjectName, (UINT)strlen(n), n);
 }
 
-// --- small convenience: same format for typeless/RTV/SRV
+
 static bool CreateColorRTSimple(
     ID3D11Device* dev, UINT w, UINT h,
     DXGI_FORMAT fmt,
@@ -74,7 +74,7 @@ bool CreateStaging(ID3D11Device* dev, UINT w, UINT h,
     td.Width = std::max<UINT>(w, 1);
     td.Height = std::max<UINT>(h, 1);
     td.MipLevels = 1; td.ArraySize = 1;
-    td.Format = fmt;                               // typed for readback
+    td.Format = fmt;                               
     td.SampleDesc = { 1,0 };
     td.Usage = D3D11_USAGE_STAGING;
     td.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
@@ -134,7 +134,7 @@ bool CreateDepthState(ID3D11Device* dev, UINT w, UINT h,
     if (!dev) return false;
     out.Reset();
 
-    // Typeless so we can create both DSV + SRV on the same resource
+    
     D3D11_TEXTURE2D_DESC dd{};
     dd.Width = std::max<UINT>(w, 1);
     dd.Height = std::max<UINT>(h, 1);
@@ -147,14 +147,14 @@ bool CreateDepthState(ID3D11Device* dev, UINT w, UINT h,
     ThrowIfFailed(dev->CreateTexture2D(&dd, nullptr, out.tex.GetAddressOf()), "Create depth tex");
     SetDbgName(out.tex.Get(), (std::string(name) + " (Texture)").c_str());
 
-    // DSV: D32_FLOAT
+    
     D3D11_DEPTH_STENCIL_VIEW_DESC dsvd{};
     dsvd.Format = DXGI_FORMAT_D32_FLOAT;
     dsvd.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
     dsvd.Texture2D.MipSlice = 0;
     ThrowIfFailed(dev->CreateDepthStencilView(out.tex.Get(), &dsvd, out.dsv.GetAddressOf()), "Create DSV");
 
-    // SRV: R32_FLOAT
+    
     D3D11_SHADER_RESOURCE_VIEW_DESC sd{};
     sd.Format = DXGI_FORMAT_R32_FLOAT;
     sd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
@@ -162,28 +162,28 @@ bool CreateDepthState(ID3D11Device* dev, UINT w, UINT h,
     sd.Texture2D.MipLevels = 1;
     ThrowIfFailed(dev->CreateShaderResourceView(out.tex.Get(), &sd, out.srv.GetAddressOf()), "Create depth SRV");
 
-    // Optional copy target (for lighting or post) + SRV
+    
     D3D11_TEXTURE2D_DESC cd = dd;
     cd.BindFlags = D3D11_BIND_SHADER_RESOURCE;
     ThrowIfFailed(dev->CreateTexture2D(&cd, nullptr, out.texCopy.GetAddressOf()), "Create depth copy");
     ThrowIfFailed(dev->CreateShaderResourceView(out.texCopy.Get(), &sd, out.texCopySRV.GetAddressOf()), "Create copy SRV");
 
-    // Depth states (write and read-only) — reversed-Z with GREATER_EQUAL
+    
     D3D11_DEPTH_STENCIL_DESC wr{};
     wr.DepthEnable = TRUE;
     wr.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
-    wr.DepthFunc = D3D11_COMPARISON_GREATER_EQUAL;   // <<< as requested
+    wr.DepthFunc = D3D11_COMPARISON_GREATER_EQUAL;   
     ThrowIfFailed(dev->CreateDepthStencilState(&wr, out.dsWrite.GetAddressOf()), "Create dsWrite");
 
     D3D11_DEPTH_STENCIL_DESC ro = wr;
     ro.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
-    ro.DepthFunc = D3D11_COMPARISON_GREATER_EQUAL;   // <<< read-only state too
+    ro.DepthFunc = D3D11_COMPARISON_GREATER_EQUAL;   
     ThrowIfFailed(dev->CreateDepthStencilState(&ro, out.dsReadOnly.GetAddressOf()), "Create dsReadOnly");
 
     return true;
 }
 
-// ---------------------- GBuffer ----------------------
+
 
 void GBuffer::Create(ID3D11Device* dev, UINT W, UINT H)
 {
@@ -191,8 +191,8 @@ void GBuffer::Create(ID3D11Device* dev, UINT W, UINT H)
     if (W == 0 || H == 0) { W = 1; H = 1; }
     w = W; h = H;
 
-    // --- Geometry ---
-    // RT0 (albedo) must be sRGB for both RTV and SRV, on a TYPELESS texture
+    
+    
     if (!CreateColorRTSimple(dev, W, H, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
         "RT0_Albedo", rt0)) throw std::runtime_error("rt0");
 
@@ -201,35 +201,35 @@ void GBuffer::Create(ID3D11Device* dev, UINT W, UINT H)
     if (!CreateColorRTSimple(dev, W, H, DXGI_FORMAT_R10G10B10A2_UNORM, "RT1_Clone", rt1_read))
         throw std::runtime_error("rt1_clone");
 
-    // RT2/RT3 are linear UNORM
+    
     if (!CreateColorRTSimple(dev, W, H, DXGI_FORMAT_B8G8R8A8_UNORM, "RT2_Material", rt2))
         throw std::runtime_error("rt2");
     if (!CreateColorRTSimple(dev, W, H, DXGI_FORMAT_B8G8R8A8_UNORM, "RT3_Extra", rt3))
         throw std::runtime_error("rt3");
 
-    // --- Lighting ---
+    
     CreateColorRTSimple(dev, W, H, DXGI_FORMAT_R11G11B10_FLOAT, "Light_Diffuse", light_diffuse);
     CreateColorRTSimple(dev, W, H, DXGI_FORMAT_R11G11B10_FLOAT, "Light_Specular", light_specular);
     CreateColorRTSimple(dev, W, H, DXGI_FORMAT_R11G11B10_FLOAT, "Specular_IBL", light_ibl_specular);
 
-    // --- Shading/output ---
+    
     CreateColorRTSimple(dev, W, H, DXGI_FORMAT_R11G11B10_FLOAT, "Shading", shading_result);
     CreateColorRTSimple(dev, W, H, DXGI_FORMAT_R11G11B10_FLOAT, "Shading_Clone", shading_result_read);
 
-    // --- Depth + CPU staging ---
+    
     if (!CreateDepthState(dev, W, H, "gbuffer_depth", depth)) throw std::runtime_error("depth");
 
-    // staging must be typed; use R32_FLOAT for readback
+    
     if (!CreateStaging(dev, W, H, DXGI_FORMAT_R32_FLOAT, "Depth_Staging", depth_staging))
         throw std::runtime_error("depth_staging");
 
-    // --- Misc & lookups ---
+    
     CreateColorRTSimple(dev, W, H, DXGI_FORMAT_R8_UNORM, "SSAO_Intermediate", ssao_intermediate);
     CreateColorRTSimple(dev, W / 4, H / 4, DXGI_FORMAT_R16G16B16A16_FLOAT, "atmos_ss_far_lookup", atmos_ss_far_lookup);
     CreateColorRTSimple(dev, W / 4, H / 4, DXGI_FORMAT_R16G16B16A16_FLOAT, "atmos_ss_near_lookup", atmos_ss_near_lookup);
     CreateColorRTSimple(dev, 512, 512, DXGI_FORMAT_R16G16B16A16_FLOAT, "depth_angle_density_lookup", depth_angle_density_lookup);
 
-    // --- Postprocess ping/pong (typeless + sRGB views) ---
+    
     CreateColorRT(dev, W, H, DXGI_FORMAT_R8G8B8A8_TYPELESS,
         DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
         "postprocess_ping", postprocess_ping);
@@ -264,15 +264,15 @@ void GBuffer::BindGBufferForWriting(ID3D11DeviceContext* ctx) const {
     vp.MinDepth = 0.0f; vp.MaxDepth = 1.0f;
     ctx->RSSetViewports(1, &vp);
 
-    // Clear defaults:
+    
     const float c0[4] = { 0,0,0,1 };
-    const float n0[4] = { 1.0f, 0.5f, 1.0f, 1.0f }; // normal=(0,0,1), roughness=1
+    const float n0[4] = { 1.0f, 0.5f, 1.0f, 1.0f }; 
     const float z0[4] = { 0,0,0,0 };
     ctx->ClearRenderTargetView(rt0.rtv.Get(), z0);
     ctx->ClearRenderTargetView(rt1.rtv.Get(), z0);
     ctx->ClearRenderTargetView(rt2.rtv.Get(), n0);
 
-    // Reversed-Z: clear depth to 0.0 (far) and use GREATER_EQUAL in the depth state
+    
     ctx->ClearDepthStencilView(depth.dsv.Get(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 0.0f, 0);
 }
 
@@ -281,7 +281,7 @@ void GBuffer::UnbindMRTs(ID3D11DeviceContext* ctx) const {
     ctx->OMSetRenderTargets(3, nullRTV, nullptr);
 }
 
-// -------------------- NEW helpers --------------------
+
 
 void GBuffer::GetPostprocessRT(RenderTarget*& src, RenderTarget*& dst, bool swapAfterUse)
 {
@@ -318,7 +318,7 @@ bool GBuffer::ReadDepthPixel(ID3D11DeviceContext* ctx, UINT x, UINT y, float& ou
 }
 
 
-// In a common .cpp near your other helpers
+
 static inline void PP_SetFS(ID3D11DeviceContext* ctx) {
     ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
     ctx->IASetInputLayout(nullptr);

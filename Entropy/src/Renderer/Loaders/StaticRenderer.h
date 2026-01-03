@@ -1,9 +1,9 @@
 #pragma once
 #include <cstdint>
-#include "RenderStatic.h"     // has StaticMesh etc.
-#include "TigerEngine/tag.h"// TagHash
+#include "RenderStatic.h"     
+#include "TigerEngine/tag.h"
 
-class Graphics;               // <- forward declare (do NOT include here)
+class Graphics;               
 
 class StaticRenderer {
 public:

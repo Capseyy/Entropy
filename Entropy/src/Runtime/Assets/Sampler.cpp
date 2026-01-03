@@ -5,7 +5,7 @@ std::optional<D3D11_SAMPLER_DESC> BuildSamplerDescFromTag(TagHash tag)
     auto sampTag = bin::parse<UT_SamplerRaw>(tag.data, tag.size, bin::Endian::Little);
 
     D3D11_SAMPLER_DESC sd = {};
-    // Cast raw numeric enums from your game data to D3D11 types (with light sanitization)
+    
     sd.Filter = static_cast<D3D11_FILTER>(sampTag.Filter);
     sd.AddressU = static_cast<D3D11_TEXTURE_ADDRESS_MODE>(sampTag.AddressU);
     sd.AddressV = static_cast<D3D11_TEXTURE_ADDRESS_MODE>(sampTag.AddressV);

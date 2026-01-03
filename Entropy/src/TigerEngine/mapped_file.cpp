@@ -13,7 +13,7 @@ static void log_last_error(const char* where) {
 }
 
 bool MappedFile::open(const std::string& path) {
-    // Match _SH_DENYNO: allow others to read/write/delete while we map
+    
     hFile = CreateFileA(path.c_str(), GENERIC_READ,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -60,7 +60,7 @@ bool MappedFile::open(const std::string& path) {
     if (p == MAP_FAILED) { std::fprintf(stderr, "mmap failed: %d\n", errno); close(); return false; }
     data = static_cast<const unsigned char*>(p);
 
-    // advise sequential to help readahead
+    
     posix_madvise((void*)data, size, POSIX_MADV_SEQUENTIAL);
     return true;
 }

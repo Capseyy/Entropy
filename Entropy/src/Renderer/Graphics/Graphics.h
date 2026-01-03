@@ -95,23 +95,23 @@ struct ResolvedSpecial {
 
 enum class SpecialBufKind { Index, VB1, VB2, Color };
 
-// Graphics.h (or a nearby header)
+
 struct ResolvedStaticPart
 {
 	std::shared_ptr<ID3D11Buffer> ib;
 	std::shared_ptr<ID3D11Buffer> vb0;
-	std::shared_ptr<ID3D11Buffer> vb1;    // optional UV
-	std::shared_ptr<EntropyAssets::BufferSRVRes> vCol; // optional color SRV
+	std::shared_ptr<ID3D11Buffer> vb1;    
+	std::shared_ptr<EntropyAssets::BufferSRVRes> vCol; 
 	DXGI_FORMAT vCOlfmt = DXGI_FORMAT_R8G8B8A8_UNORM;
 	UINT stride0 = 0, stride1 = 0;
 	DXGI_FORMAT idxFmt = DXGI_FORMAT_R16_UINT;
 	bool ready = false;
 	uint32_t indexCount = 0;
 	uint32_t indexStart = 0;
-	uint8_t  lastIL = 0xFF;               // to reduce IL rebinds
+	uint8_t  lastIL = 0xFF;               
 };
 
-// Graphics.cpp (or a small header)
+
 static inline const wchar_t* StageName(TfxRenderStage s) {
 	switch (s) {
 	case TfxRenderStage::GenerateGbuffer: return L"GenerateGBuffer";
@@ -121,10 +121,10 @@ static inline const wchar_t* StageName(TfxRenderStage s) {
 	}
 }
 
-// Put near ResolveStaticPartOnce/ResolveSpecialOnce
+
 struct ResolvedDynamicPart {
 	std::shared_ptr<ID3D11Buffer> ib, vb0, vb1, vb2;
-	std::shared_ptr<EntropyAssets::BufferSRVRes> vCol; // optional vertex-color SRV
+	std::shared_ptr<EntropyAssets::BufferSRVRes> vCol; 
 	UINT stride0 = 0, stride1 = 0, stride2 = 0;
 	DXGI_FORMAT idxFmt = DXGI_FORMAT_R16_UINT;
 	uint32_t indexStart = 0, indexCount = 0;
@@ -141,10 +141,10 @@ struct ResolvedTerrainPart {
 
 struct InstanceData
 {
-	DirectX::XMFLOAT4 translation; // xyz + maybe w (leave as 4 floats for alignment)
-	DirectX::XMFLOAT4 rotation;    // quaternion
-	float              scale;      // 1 float
-	float              _pad[3];    // pad to 16B multiple (stride = 48 bytes)
+	DirectX::XMFLOAT4 translation; 
+	DirectX::XMFLOAT4 rotation;    
+	float              scale;      
+	float              _pad[3];    
 };
 
 struct GpuMarker {
@@ -183,8 +183,8 @@ private:
 	void DrawTerrain(const RenderTerrain& rt, const View& view);
 	void RunPostprocessChain();
 	Microsoft::WRL::ComPtr<ID3D11Buffer> g_terrain_cb;
-	std::unordered_map<uint32_t, std::shared_future<std::shared_ptr<ID3D11Buffer>>> bufferFut_;      // VB/UV/IB
-	std::unordered_map<uint32_t, std::shared_future<std::shared_ptr<EntropyAssets::BufferSRVRes>>> bufferSrvFut_; // color SRV
+	std::unordered_map<uint32_t, std::shared_future<std::shared_ptr<ID3D11Buffer>>> bufferFut_;      
+	std::unordered_map<uint32_t, std::shared_future<std::shared_ptr<EntropyAssets::BufferSRVRes>>> bufferSrvFut_; 
 	
 	void CreateTerrainCB64();
 	std::unordered_map<uint64_t, ResolvedEntityPart> entityPartCache_;
@@ -221,7 +221,7 @@ private:
 		const SDynamicMeshPart& part,
 		ResolvedDynamicPart& out);
 	uint8_t* m_instWritePtr = nullptr;
-	std::atomic<UINT> m_instCursor{ 0 };   // in elements (not bytes)
+	std::atomic<UINT> m_instCursor{ 0 };   
 	std::atomic<UINT> m_worldCursor{ 0 };
 	bool ResolveStaticPartOnce(
 		const SStaticMeshData& mesh,
@@ -367,10 +367,10 @@ private:
 
 	std::unordered_map<std::string, std::shared_future<std::shared_ptr<EntropyAssets::Technique>>> globalTechniques;
 
-	Microsoft::WRL::ComPtr<ID3D11VertexShader> fsTriVS; // fullscreen triangle VS
+	Microsoft::WRL::ComPtr<ID3D11VertexShader> fsTriVS; 
 	Microsoft::WRL::ComPtr<ID3D11PixelShader>  gbufferPS;
 	Microsoft::WRL::ComPtr<ID3D11PixelShader>  deferredPS;
-	Microsoft::WRL::ComPtr<ID3D11Buffer>       deferredCamCB; // InvProj + CameraPos
+	Microsoft::WRL::ComPtr<ID3D11Buffer>       deferredCamCB; 
 	Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerStateNoCull;
 	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> white1x1SRV;
 	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> grey1x1SRV;

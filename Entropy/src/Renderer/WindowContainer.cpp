@@ -7,7 +7,7 @@ WindowContainer::WindowContainer()
 	{
 		RAWINPUTDEVICE rid;
 
-		rid.usUsagePage = 0x01; //Mouse
+		rid.usUsagePage = 0x01; 
 		rid.usUsage = 0x02;
 		rid.dwFlags = 0;
 		rid.hwndTarget = NULL;
@@ -29,7 +29,7 @@ LRESULT WindowContainer::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM 
 
 	switch (uMsg)
 	{
-		//KB Watcher
+		
 	case WM_KEYDOWN:
 	{
 		unsigned char keyCode = static_cast<unsigned char>(wParam);
@@ -70,7 +70,7 @@ LRESULT WindowContainer::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM 
 		}
 		return 0;
 	}
-	//Mouse watcher
+	
 	case WM_MOUSEMOVE:
 	{
 		int x = LOWORD(lParam);
@@ -137,7 +137,7 @@ LRESULT WindowContainer::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM 
 	case WM_INPUT:
 	{
 		UINT dataSize;
-		GetRawInputData(reinterpret_cast<HRAWINPUT>(lParam), RID_INPUT, NULL, &dataSize, sizeof(RAWINPUTHEADER)); //Need to populate data size first
+		GetRawInputData(reinterpret_cast<HRAWINPUT>(lParam), RID_INPUT, NULL, &dataSize, sizeof(RAWINPUTHEADER)); 
 
 		if (dataSize > 0)
 		{
@@ -153,7 +153,7 @@ LRESULT WindowContainer::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM 
 			}
 		}
 
-		return DefWindowProc(hwnd, uMsg, wParam, lParam); //Need to call DefWindowProc for WM_INPUT messages
+		return DefWindowProc(hwnd, uMsg, wParam, lParam); 
 	}
 	default:
 		return DefWindowProc(hwnd, uMsg, wParam, lParam);

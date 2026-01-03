@@ -14,5 +14,5 @@ struct RenderLight {
     uint32_t idx;
     uint32_t parent;
     Vec4 unk50;
-    // add per-part overrides if your format has them
+    
 };

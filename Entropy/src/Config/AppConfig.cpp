@@ -21,7 +21,7 @@ static std::wstring GetConfigFilePath()
 	}
 	else
 	{
-		// Fallback: current directory
+		
 		base = L".";
 	}
 
@@ -65,7 +65,7 @@ static bool TryReadConfig(AppConfig& outConfig)
 	if (!f) return false;
 	std::string s((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
 
-	// Minimal JSON-ish parse: look for "game_root": "..."
+	
 	const std::string key = "\"game_root\"";
 	const size_t kpos = s.find(key);
 	if (kpos == std::string::npos) return false;
@@ -77,7 +77,7 @@ static bool TryReadConfig(AppConfig& outConfig)
 	if (secondQuote == std::string::npos) return false;
 	std::string val = s.substr(firstQuote + 1, secondQuote - firstQuote - 1);
 
-	// Convert UTF-8 to wide
+	
 	int wlen = MultiByteToWideChar(CP_UTF8, 0, val.c_str(), (int)val.size(), nullptr, 0);
 	std::wstring wv(wlen, 0);
 	MultiByteToWideChar(CP_UTF8, 0, val.c_str(), (int)val.size(), wv.data(), wlen);
@@ -115,7 +115,7 @@ static bool IsReadableDirectory(const std::filesystem::path& p)
 	if (!std::filesystem::exists(p, ec) || ec) return false;
 	if (!std::filesystem::is_directory(p, ec) || ec) return false;
 
-	// If we can construct an iterator without error, it's readable enough for our purposes.
+	
 	std::filesystem::directory_iterator it(p, ec);
 	return !ec;
 }
@@ -127,13 +127,13 @@ static std::wstring CanonicalizePath(const std::wstring& in)
 	std::filesystem::path p(Trim(in));
 	if (p.empty()) return {};
 
-	// Expand relative -> absolute
+	
 	p = std::filesystem::absolute(p, ec);
 	if (ec) return {};
 
 	
 	p = std::filesystem::weakly_canonical(p, ec);
-	if (ec) return p.wstring(); // fall back to absolute if canonical fails
+	if (ec) return p.wstring(); 
 
 	return p.wstring();
 }
@@ -147,14 +147,14 @@ static bool LooksLikePackagesFolder(const std::filesystem::path& packagesDir)
 
 	for (const auto& entry : std::filesystem::directory_iterator(packagesDir, ec))
 	{
-		if (ec) return false; // enumeration failed mid-way -> treat as invalid
+		if (ec) return false; 
 		if (!entry.is_regular_file(ec) || ec) continue;
 
-		// Ignore tiny metadata files if you want; otherwise count everything.
-		// if (entry.file_size(ec) < 1024) continue;
+		
+		
 
 		fileCount++;
-		if (fileCount >= 5) // threshold: directory isn't empty / isn't just one odd file
+		if (fileCount >= 5) 
 			return true;
 	}
 
@@ -203,7 +203,7 @@ std::wstring DerivePackagesFolder(const std::wstring& gameRoot)
 		return {};
 	}
 
-	// Otherwise derive <root>\packages
+	
 	std::filesystem::path packages = root / L"packages";
 	if (LooksLikePackagesFolder(packages))
 		return packages.wstring();
@@ -215,7 +215,7 @@ bool LoadOrCreateConfig(AppConfig& outConfig)
 {
 	if (TryReadConfig(outConfig))
 	{
-		// Validate
+		
 		if (!DerivePackagesFolder(outConfig.game_root).empty())
 			return true;
 	}

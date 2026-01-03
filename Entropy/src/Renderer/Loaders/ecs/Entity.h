@@ -30,15 +30,15 @@ static inline TagHash GetEntityBufTag(const SDynamicMesh& m, DynamicBufKind whic
 }
 
 struct ResolvedEntityPart {
-    // GPU objects (resolved once)
+    
     std::shared_ptr<ID3D11Buffer> ib;
-    std::shared_ptr<ID3D11Buffer> vb0;  UINT stride0 = 0; // vertex0
-    std::shared_ptr<ID3D11Buffer> vb1;  UINT stride1 = 0; // vertex1
-    std::shared_ptr<ID3D11Buffer> vb2;  UINT stride2 = 0; // buffer2
-    std::shared_ptr<ID3D11Buffer> vb3;  UINT stride3 = 0; // buffer3
-    std::shared_ptr<ID3D11Buffer> vSkin; UINT strideSkin = 0; // skin (optional)
+    std::shared_ptr<ID3D11Buffer> vb0;  UINT stride0 = 0; 
+    std::shared_ptr<ID3D11Buffer> vb1;  UINT stride1 = 0; 
+    std::shared_ptr<ID3D11Buffer> vb2;  UINT stride2 = 0; 
+    std::shared_ptr<ID3D11Buffer> vb3;  UINT stride3 = 0; 
+    std::shared_ptr<ID3D11Buffer> vSkin; UINT strideSkin = 0; 
 
-    std::shared_ptr<EntropyAssets::BufferSRVRes> vCol; // color SRV (optional)
+    std::shared_ptr<EntropyAssets::BufferSRVRes> vCol; 
     UINT colorStride = 0;
     DXGI_FORMAT colorTypedFmt = DXGI_FORMAT_UNKNOWN;
 

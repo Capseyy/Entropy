@@ -127,7 +127,7 @@ bool Graphics::LoadGlobalTextureOptional(const std::string& key,
 {
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
 
-    // Try disk (nice in dev)
+    
     if (!onDiskPath.empty() && std::filesystem::exists(onDiskPath))
     {
         if (SUCCEEDED(LoadTextureFromFileWIC(pDevice.Get(), onDiskPath, forceSRGB, srv.GetAddressOf())))
@@ -157,7 +157,7 @@ bool Graphics::LoadGlobalTextureOptional(const std::string& key,
         }
     }
 
-    // Last resort: keep a safe white SRV (you already create white1x1SRV)
+    
     if (white1x1SRV) {
         this->global_textures[key] = white1x1SRV;
         return false;

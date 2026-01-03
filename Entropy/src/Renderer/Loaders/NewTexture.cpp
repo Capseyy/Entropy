@@ -1,4 +1,4 @@
-// TextureLoader.cpp
+
 #include "NewTexture.h"
 #include "TigerEngine/Technique/texture.h"
 using Microsoft::WRL::ComPtr;
@@ -39,7 +39,7 @@ LoadTextureData(TagHash hash, bool load_full_mip)
 
 std::optional<LoadedTexture> LoadTexture(ID3D11Device* device, TagHash hash)
 {
-    auto ld = LoadTextureData(hash, /*load_full_mip=*/true);
+    auto ld = LoadTextureData(hash, true);
     if (!ld) return std::nullopt;
     const STextureHeader& tex = ld->first;
     const std::vector<uint8_t>& bytes = ld->second;
@@ -48,7 +48,7 @@ std::optional<LoadedTexture> LoadTexture(ID3D11Device* device, TagHash hash)
 
     
     if (tex.depth > 1) {
-        // -------- Texture3D path (mips = 1) ----------
+        
         auto [rowPitch, slicePitch] = calculate_pitch(fmt, tex.width, tex.height);
         D3D11_SUBRESOURCE_DATA s{};
         s.pSysMem = bytes.data();
@@ -164,7 +164,7 @@ std::optional<LoadedTexture> LoadTexture(ID3D11Device* device, TagHash hash)
         }
 
         if (mipcount_fixed < 1) {
-            // mirrors Rust error! log
+            
             return std::nullopt;
         }
 
@@ -198,7 +198,7 @@ std::optional<LoadedTexture> LoadTexture(ID3D11Device* device, TagHash hash)
     }
 }
 
-// ---- raw helpers (load_2d_raw / load_3d_raw) ----
+
 std::optional<LoadedTexture> Load2DRaw(
     ID3D11Device* device, UINT width, UINT height,
     const uint8_t* data, DXGI_FORMAT fmt, const char* name = nullptr)

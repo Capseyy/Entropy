@@ -13,7 +13,7 @@ struct namedTagEntry
 
 class GlobalData {
 public:
-    // Provides access to the single shared unordered_map
+    
     static std::unordered_map<int, Package>& getMap() {
         static std::unordered_map<int, Package> PackageCache;
         return PackageCache;

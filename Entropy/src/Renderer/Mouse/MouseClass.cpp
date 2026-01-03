@@ -102,8 +102,8 @@ MouseEvent MouseClass::ReadEvent()
 	}
 	else
 	{
-		MouseEvent e = this->eventBuffer.front(); //Get first event from buffer
-		this->eventBuffer.pop(); //Remove first event from buffer
+		MouseEvent e = this->eventBuffer.front(); 
+		this->eventBuffer.pop(); 
 		return e;
 	}
 }

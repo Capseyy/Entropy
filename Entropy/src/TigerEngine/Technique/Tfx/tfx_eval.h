@@ -21,7 +21,7 @@ namespace tfx_eval_detail {
 
     inline Vec4 round4(const Vec4& a) { return Vec4(std::round(a.x), std::round(a.y), std::round(a.z), std::round(a.w)); }
 
-    inline Vec4 wrap_to_half(const Vec4& a) { // wrap to [-0.5, 0.5]
+    inline Vec4 wrap_to_half(const Vec4& a) { 
         return a - round4(a);
     }
 
@@ -176,7 +176,7 @@ namespace tfx_eval_detail {
         );
     }
 
-    // XOR for {0,1} masks: a ? b = a + b - 2ab
+    
     inline Vec4 xor01(const Vec4& a, const Vec4& b) {
         return Vec4(
             a.x + b.x - 2.f * a.x * b.x,
@@ -190,7 +190,7 @@ namespace tfx_eval_detail {
 
 
 
-} // namespace tfx_eval_detail
+} 
 #endif 
 
 inline const char* OpName(TfxBytecode);
@@ -334,7 +334,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
         }
 
         switch (i.op) {
-            // ---------------- math ----------------
+            
         case TfxBytecode::Add:
         case TfxBytecode::Add2: { auto b = pop1(ip, "Add"), a = pop1(ip, "Add"); push(a + b); break; }
         case TfxBytecode::Subtract: { auto b = pop1(ip, "Sub"), a = pop1(ip, "Sub"); push(a - b); break; }
@@ -380,7 +380,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
         case TfxBytecode::PermuteAllX: { auto a = pop1(ip, "PermXXXX"); push(Vec4(a.x, a.x, a.x, a.x)); break; }
         case TfxBytecode::Permute: { auto d = std::get<PermuteData>(i.data); auto a = pop1(ip, "Perm"); push(swizzle_fields(a, d.fields)); break; }
 
-                                 // ------------- constants / externs -------------
+                                 
         case TfxBytecode::PushConstantVec4: {
             auto d = std::get<PushConstantVec4Data>(i.data);
             Vec4 v = (d.constant_index < constants.size()) ? constants[d.constant_index] : Vec4::zero();
@@ -407,7 +407,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
         }
         case TfxBytecode::PushExternInputVec4: {
             auto d = std::get<PushExternInputVec4Data>(i.data);
-            // FIX: offset is in vec4s -> bytes = offset * 16
+            
             push(externs.getVec4(d.ext, size_t(d.offset) * 16));
             break;
         }
@@ -415,7 +415,10 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
         case TfxBytecode::PushExternInputMat4: {
             auto d = std::get<PushExternInputMat4Data>(i.data);
             Mat4 m = externs.getMat4(d.ext, size_t(d.offset) * 16);
-
+            
+            if (trace) {
+                PrintMat4("PushExternInputMat4",m, size_t(d.offset) * 16);
+            }
 
             cachedM = m;
             temp[0] = m.x_axis;
@@ -430,7 +433,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
                 push(m.z_axis);
                 push(m.w_axis);
             }
-            // Otherwise, do NOT push anything?TransformVec4 will use cachedM.
+            
             break;
         }
 
@@ -440,10 +443,10 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             break;
         }
 
-                                       // ----------- channels (NEW: actually fetch) -----------
+                                       
         case TfxBytecode::PushGlobalChannelVector: {
             const auto d = std::get<PushGlobalChannelVectorData>(i.data);
-            // Track per-frame usage for the Global Channel editor.
+            
             tfx::MarkGlobalChannelUsed(d.unk1);
 
             if (trace) {
@@ -456,14 +459,14 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
         case TfxBytecode::PushObjectChannelVector: {
             const auto& d = std::get_if<PushObjectChannelVectorData>(&i.data);
             if (!channel_floats.empty()) {
-                //printf("PushObjectChannelVector: hash_be=0x%08X\n", d->hash_be);
+                
                 const auto it = channel_floats.find(d->hash_be);
                 const Vec4 float_value = (it != channel_floats.end()) ? it->second : Vec4::splat(1.0f);
                 
                 push(float_value);
             }
             else {
-                // Fallback: push 1.0f if no channel floats provided
+                
                 push(Vec4::splat(1.0f));
             }
             if (trace) {
@@ -482,8 +485,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             const Vec4 v = swizzle_fields(dims, d.fields);
 
 
-            /*std::printf("    PushTexDimensions(Rust): idx=%u fields=0x%02X base=%s -> %s\n",
-                    d.index, d.fields, to_str(dims).c_str(), to_str(v).c_str());*/
+            
 
             if (trace) {
                 std::printf("    PushTexDimensions: idx=%u fields=0x%02X -> %s\n",
@@ -493,7 +495,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             break;
         }
 
-        // ------------- temps / outputs -------------
+        
         case TfxBytecode::PushTemp: { auto d = std::get<PushTempData>(i.data); push(temp[d.slot]); break; }
         case TfxBytecode::PopTemp: { auto d = std::get<PopTempData>(i.data);  temp[d.slot] = pop1(ip, "PopTemp"); break; }
         case TfxBytecode::PushFromOutput: {
@@ -510,10 +512,10 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
 
         case TfxBytecode::Spline8Const: {
             auto d = std::get<SplineConstData>(i.data);
-            // x comes from stack top
+            
             Vec4 X = pop1(ip, "Spline8Const");
 
-            // Load 10 constants starting at constant_start (C:0..3, D:4..7, thresholds:8,9)
+            
             auto load = [&](size_t rel) -> Vec4 {
                 size_t k = size_t(d.constant_start) + rel;
                 return (k < constants.size()) ? constants[k] : Vec4::zero();
@@ -522,7 +524,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             Vec4 D3 = load(4), D2 = load(5), D1 = load(6), D0 = load(7);
             Vec4 Cth = load(8), Dth = load(9);
 
-            // Estrin cubic on each bank
+            
             Vec4 X2 = X * X;
             Vec4 Chigh = C3 * X + C2;
             Vec4 Clow = C1 * X + C0;
@@ -532,20 +534,20 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             Vec4 Dlow = D1 * X + D0;
             Vec4 Deval = Dhigh * X2 + Dlow;
 
-            // Threshold masks, channel XOR masks
+            
             Vec4 Cmask = step4(Cth, X);
             Vec4 Dmask = step4(Dth, X);
 
             Vec4 Cchan = Vec4(xor01(Cmask, yzww(Cmask)).x,
                 xor01(Cmask, yzww(Cmask)).y,
                 xor01(Cmask, yzww(Cmask)).z,
-                Cmask.w); // keep .w
+                Cmask.w); 
             Vec4 Dchan = Vec4(xor01(Dmask, yzww(Dmask)).x,
                 xor01(Dmask, yzww(Dmask)).y,
                 xor01(Dmask, yzww(Dmask)).z,
                 Dmask.w);
 
-            // Masked contributions + horizontal sum
+            
             float Csum = hsum4(Ceval * Cchan);
             float Dsum = hsum4(Deval * Dchan);
 
@@ -560,7 +562,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             push(result);
             break;
         }
-                                      // --- Spline4Const (cubic over 4 channels) ---
+                                      
         case TfxBytecode::Spline4Const: {
             auto d = std::get<SplineConstData>(i.data);
             Vec4 X = pop1(ip, "Spline4Const");
@@ -588,7 +590,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             break;
         }
 
-                                      // --- Spline8ConstChain (two-bank cubic with recursion passthrough) ---
+                                      
         case TfxBytecode::Spline8ConstChain: {
             auto d = std::get<SplineConstData>(i.data);
 
@@ -639,9 +641,9 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             break;
         }
 
-                                           // --- Gradient4Const ---
+                                           
         case TfxBytecode::Gradient4Const: {
-            auto d = std::get<GradientConstData>(i.data); // same payload shape (start index)
+            auto d = std::get<GradientConstData>(i.data); 
             Vec4 X = pop1(ip, "Gradient4Const");
 
             auto load = [&](size_t rel)->Vec4 {
@@ -656,14 +658,14 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             Vec4 calpha = load(4);
             Vec4 Th = load(5);
 
-            // segment intervals: (Th.y, Th.z, Th.w, 1) - (Th.x, Th.y, Th.z, Th.w)
+            
             Vec4 seg = Vec4(Th.y, Th.z, Th.w, 1.0f) - Th;
             Vec4 off = X - Th;
 
-            // Per-component safe divide + saturate
+            
             auto safe_div = [&](float num, float den)->float {
                 if (std::fabs(den) > 1e-6f) return num / den;
-                // fallback: matches rust logic using sign of numerator
+                
                 return (num >= 0.0f) ? 1.0f : 0.0f;
                 };
 
@@ -675,7 +677,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             );
             Vec4 pct = saturate4(div);
 
-            // influences
+            
             Vec4 Xinfl = cred * pct;
             Vec4 Yinfl = cgreen * pct;
             Vec4 Zinfl = cblue * pct;
@@ -694,7 +696,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             break;
         }
 
-                                        // --- Triangle / Jitter / Wander / Rand / RandSmooth ---
+                                        
         case TfxBytecode::Triangle: {
             auto a = pop1(ip, "Triangle");
             push(triangle4(a));
@@ -721,7 +723,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             break;
         }
 
-                                    // --- VectorRotations* ---
+                                    
         case TfxBytecode::VecRotSin: {
             auto a = pop1(ip, "VRSin");
             push(sin_rot_est(a));
@@ -765,10 +767,10 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             break;
         }
 
-                                       // ------------- resource/sampler ops -------------
+                                       
         case TfxBytecode::PushSampler: {
-            // This participates in the binding stack; SetShaderSampler expects
-            // to pop a u32 index that was previously pushed by PushSampler.
+            
+            
             const auto d = std::get<PushSamplerData>(i.data);
             push_u32(d.index);
             if (trace) std::printf("    PushSampler idx=%u\n", d.index);
@@ -800,7 +802,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
         }
 
         case TfxBytecode::SetShaderUav: {
-            // Not currently used in our runtime, but MUST NOT fallthrough.
+            
             const auto d = std::get<SetShaderBindingData>(i.data);
             const uint32_t idx = pop_u32(ip, "SetShaderUav");
             if (outBindings) outBindings->setUav(d.stage, d.slot, idx);
@@ -810,7 +812,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
 
         case TfxBytecode::PushExternInputTextureView: {
             const auto d = std::get<PushExternInputTexData>(i.data);
-            const size_t byte_off = size_t(d.offset) * 8; // spec: texture handles are 8 bytes
+            const size_t byte_off = size_t(d.offset) * 8; 
 
             ID3D11ShaderResourceView* srv = externs.getSRV(d.ext, byte_off);
             uint32_t idx = 0;
@@ -823,14 +825,14 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
                 }
                 if (!found) {
                     auto wrap = std::make_shared<EntropyAssets::Texture2DRes>();
-                    wrap->srv = srv; // ComPtr assignment AddRefs
+                    wrap->srv = srv; 
                     wrap->width = 1;
                     wrap->height = 1;
                     texs_eval.push_back(std::move(wrap));
                     idx = (uint32_t)texs_eval.size() - 1;
                 }
             } else {
-                // nullptr SRV: push sentinel that will resolve to nullptr.
+                
                 idx = (uint32_t)texs_eval.size();
             }
 
@@ -862,7 +864,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
                 break;
             }
 
-            Vec4 base(0.25f, 0.25f, 0.25f, 0.0625f);
+            Vec4 base(0.2f, 0.167f, 0.2f, 0.2f);
 
 
             Vec4 v = tfx_eval_detail::swizzle_fields(base, d->fields);

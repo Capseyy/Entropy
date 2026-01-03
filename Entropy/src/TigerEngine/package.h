@@ -88,8 +88,8 @@ struct PkgHeader
     uint32_t namedTagCount;
     uint32_t namedTagOffset;
     uint8_t _pad3[56];
-    uint32_t hash64TableSize; //0xb8
-    uint32_t hash64TableOffset; //0xbc
+    uint32_t hash64TableSize; 
+    uint32_t hash64TableOffset; 
 
 
     void printHeader(const PkgHeader& h) {
@@ -184,7 +184,7 @@ public:
             Block block;
             file.read(reinterpret_cast<char*>(&block), sizeof(block));
             Blocks.push_back(block);
-            //block.print();
+            
         }
         if (!Header.hash64TableSize == 0) {
             file.seekg(Header.hash64TableOffset + 0x60, std::ios::beg);
@@ -220,12 +220,7 @@ public:
                 }
             }
 
-            /*for (const auto& name : namedTags) {
-                std::printf("Name %s - Hash %08X - Reference %08X\n",
-                    name.raw_name.c_str(),
-                    static_cast<unsigned>(name.tag),
-                    static_cast<unsigned>(name.reference));
-            }*/
+            
         }
 
         ModifyNonce();
@@ -250,8 +245,8 @@ public:
 
 void GetAllNamedTags();
 
-// Configurable at runtime (set during app startup).
-// Default is defined in package.cpp for backwards compatibility.
+
+
 extern std::string gPackagePath;
 
 inline const std::string& GetPackagePath() { return gPackagePath; }

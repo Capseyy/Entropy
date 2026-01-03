@@ -7,7 +7,7 @@
 
 
 
-// Hard-coded AES keys (if they were global before)
+
 const unsigned char AES_KEY_0[16] = {
     0xD6, 0x2A, 0xB2, 0xC1, 0x0C, 0xC0, 0x1B, 0xC5,
     0x35, 0xDB, 0x7B, 0x86, 0x55, 0xC7, 0xDC, 0x3B,
@@ -17,13 +17,13 @@ const unsigned char AES_KEY_1[16] = {
     0x7E, 0x63, 0xE6, 0x76, 0xE4, 0x08, 0x92, 0xB5,
 };
 
-// Thread-local contexts (one per key flavor)
+
 static thread_local EVP_CIPHER_CTX* tls_ctx0 = nullptr;
 static thread_local EVP_CIPHER_CTX* tls_ctx1 = nullptr;
 static thread_local EVP_CIPHER_CTX* tls_ctx_custom = nullptr;
 
 void CryptoInit() {
-    // OpenSSL self-init is automatic on 1.1.1+, no global init needed.
+    
 }
 
 void CryptoCleanup() {
@@ -70,7 +70,7 @@ bool AESGCM_Decrypt(const unsigned char* key,
     size_t size,
     const std::string& pname)
 {
-    // Pick correct thread-local context
+    
     EVP_CIPHER_CTX* ctx =
         (key == AES_KEY_0) ? get_ctx_for_key(AES_KEY_0) :
         (key == AES_KEY_1) ? get_ctx_for_key(AES_KEY_1) :
@@ -78,7 +78,7 @@ bool AESGCM_Decrypt(const unsigned char* key,
 
     if (!ctx) return false;
 
-    // Set IV for this block
+    
     if (EVP_DecryptInit_ex(ctx, nullptr, nullptr, nullptr, nonce) != 1) {
         std::fprintf(stderr, "EVP_DecryptInit_ex(IV) failed\n");
         return false;
@@ -90,7 +90,7 @@ bool AESGCM_Decrypt(const unsigned char* key,
         return false;
     }
 
-    // Supply authentication tag
+    
     if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_TAG, 16, (void*)gcmTag) != 1) {
         std::fprintf(stderr, "EVP_CTRL_AEAD_SET_TAG failed\n");
         return false;

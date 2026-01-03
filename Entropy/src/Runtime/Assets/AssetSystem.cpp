@@ -50,9 +50,9 @@ std::array<float_t, 4> ToArray(const Vec4& v) {
     return { v.x, v.y, v.z, v.w };
 }
 
-//------------------------------------------------------------------------------
-// Shader creation helper (C++11-friendly explicit specializations)
-//------------------------------------------------------------------------------
+
+
+
 namespace {
     template<typename T>
     inline HRESULT CreateDx11Shader(ID3D11Device*, const void*, size_t, T**) { return E_FAIL; }
@@ -65,9 +65,9 @@ namespace {
     template<> inline HRESULT CreateDx11Shader<ID3D11DomainShader>(ID3D11Device* d, const void* bc, size_t n, ID3D11DomainShader** o) { return d->CreateDomainShader(bc, n, nullptr, o); }
 }
 
-//------------------------------------------------------------------------------
-// ctor
-//------------------------------------------------------------------------------
+
+
+
 AssetSystem::AssetSystem(ID3D11Device* device, ID3D11DeviceContext* context,
     ThreadPool& pool,
     MainThreadQueue& mainThread,
@@ -77,19 +77,19 @@ AssetSystem::AssetSystem(ID3D11Device* device, ID3D11DeviceContext* context,
     assert(device_ && "AssetSystem requires a valid ID3D11Device*");
 }
 
-//------------------------------------------------------------------------------
-// Buffers
-//------------------------------------------------------------------------------
+
+
+
 AssetHandle<ID3D11Buffer> AssetSystem::EnqueueBuffer(uint32_t id)
 {
-    // Reuse the cache future directly (no thread-pool hop on hits).
+    
     auto fut = bufferCache_.GetOrLoad(id, [=] {
         BufferPayload payload = R_->GetBuffer(id);
         return createBuffer_(payload);
         });
 
     AssetHandle<ID3D11Buffer> h;
-    h.future = fut;              // shared_future<shared_ptr<ID3D11Buffer>>
+    h.future = fut;              
     return h;
 }
 std::shared_ptr<ID3D11Buffer> AssetSystem::createBuffer_(const BufferPayload& p)
@@ -111,9 +111,9 @@ std::shared_ptr<ID3D11Buffer> AssetSystem::createBuffer_(const BufferPayload& p)
         [](ID3D11Buffer* b) { if (b) b->Release(); });
 }
 
-//------------------------------------------------------------------------------
-// Shaders
-//------------------------------------------------------------------------------
+
+
+
 std::shared_ptr<EntropyAssets::VertexShader>
 AssetSystem::createVertexShader_(uint32_t id, const ShaderPayload& p, uint32_t tech_id)
 {
@@ -126,8 +126,8 @@ AssetSystem::createVertexShader_(uint32_t id, const ShaderPayload& p, uint32_t t
         throw std::runtime_error("CreateVertexShader failed");
     }
     SetDebugNameFmt(vs.Get(), "TECH_%08X", tech_id);
-    //printf("CreateVS hr=0x%08X size=%zu magic=0x%08X\n", (unsigned)hr, p.bytecode.size(),
-     //   p.bytecode.size() >= 4 ? *(const uint32_t*)p.bytecode.data() : 0u);
+    
+     
 
     auto out = std::make_shared<EntropyAssets::VertexShader>();
     out->vs = vs;
@@ -183,7 +183,7 @@ std::shared_ptr<EntropyAssets::VertexShader> AssetSystem::createVS_(const Shader
 
 AssetHandle<EntropyAssets::VertexShader> AssetSystem::EnqueueVertexShader(uint32_t id, uint32_t tech_id)
 {
-	//printf("EnqueueVertexShader ID %0x8\n", id);
+	
     auto fut = pool_.Submit([=] {
         return vsCache_.GetOrLoad(id, [&] {
             ShaderPayload payload = R_->GetShader(id);
@@ -196,7 +196,7 @@ AssetHandle<EntropyAssets::VertexShader> AssetSystem::EnqueueVertexShader(uint32
 
 AssetHandle<EntropyAssets::PixelShader> AssetSystem::EnqueuePixelShader(uint32_t id, uint32_t tech_id)
 {
-    //printf("EnqueuePixelShader ID %0x8\n", id);
+    
     auto fut = pool_.Submit([=] {
         return psCache_.GetOrLoad(id, [&] {
             ShaderPayload payload = R_->GetShader(id);
@@ -272,7 +272,7 @@ AssetSystem::EnqueueBufferSRV(uint32_t id, const BufferSRVMeta& meta)
 {
     auto fut = pool_.Submit([=] {
         return bufSrvCache_.GetOrLoad(id, [&] {
-            // Pull bytes from registry (same as EnqueueBuffer)
+            
             BufferPayload payload = R_->GetBuffer(id);
 			payload.id = id;
             return createBufferSRV_(payload, meta);
@@ -282,9 +282,9 @@ AssetSystem::EnqueueBufferSRV(uint32_t id, const BufferSRVMeta& meta)
     AssetHandle<EntropyAssets::BufferSRVRes> h; h.future = fut; return h;
 }
 
-//------------------------------------------------------------------------------
-// Textures / Samplers / CBuffers
-//------------------------------------------------------------------------------
+
+
+
 
 
 std::shared_ptr<EntropyAssets::Texture3DRes>
@@ -326,17 +326,17 @@ AssetSystem::createTexture_(const Texture2DPayload& p)
     ComPtr<ID3D11Texture2D> tex;
 
     if (providedAllWanted) {
-        // Upload exactly what caller asked for
+        
         HRESULT hr = device_->CreateTexture2D(&p.desc,
             p.subresources.empty() ? nullptr : p.subresources.data(),
             &tex);
         if (FAILED(hr)) throw std::runtime_error("CreateTexture2D failed (full chain provided)");
     }
     else {
-        // Autogen remaining mips
+        
         D3D11_TEXTURE2D_DESC d = p.desc;
 
-        // Build a *full* chain (or stick with 'wantedMips' if you prefer header length)
+        
         d.MipLevels = std::max<UINT>(wantedMips, fullMips);
         d.BindFlags |= D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
         d.MiscFlags |= D3D11_RESOURCE_MISC_GENERATE_MIPS;
@@ -347,20 +347,20 @@ AssetSystem::createTexture_(const Texture2DPayload& p)
         ID3D11DeviceContext* ctx = context_;
         const UINT mipLevels = d.MipLevels;
 
-        // Upload what we *do* have. If only 1 subresource, treat it as slice0/mip0.
+        
         if (provided > 0) {
             const size_t perSlice = (provided >= arraySize) ? (provided / arraySize) : 1;
             for (UINT slice = 0; slice < arraySize; ++slice) {
                 const size_t idx = std::min<size_t>(slice * perSlice, provided - 1);
-                const auto& s = p.subresources[idx]; // expect mip0
+                const auto& s = p.subresources[idx]; 
                 const UINT sub = D3D11CalcSubresource(0, slice, mipLevels);
                 ctx->UpdateSubresource(tex.Get(), sub, nullptr, s.pSysMem, s.SysMemPitch, s.SysMemSlicePitch);
             }
         }
 
-        // Generate the rest
+        
         D3D11_SHADER_RESOURCE_VIEW_DESC tmp{};
-        tmp.Format = p.desc.Format; // keep *_SRGB if present
+        tmp.Format = p.desc.Format; 
         if (d.ArraySize > 1) {
             tmp.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
             tmp.Texture2DArray.MostDetailedMip = 0;
@@ -378,7 +378,7 @@ AssetSystem::createTexture_(const Texture2DPayload& p)
         ctx->GenerateMips(tmpSrv.Get());
     }
 
-    // Final SRV (typed if typeless; preserves *_SRGB)
+    
     auto ToTypedForSRV = [](DXGI_FORMAT f)->DXGI_FORMAT {
         switch (f) {
         case DXGI_FORMAT_R8G8B8A8_TYPELESS: return DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -399,7 +399,7 @@ AssetSystem::createTexture_(const Texture2DPayload& p)
     D3D11_TEXTURE2D_DESC finalDesc{};
     tex->GetDesc(&finalDesc);
 
-    // Check if this texture is actually a cube / cube array
+    
     const bool isCube = (finalDesc.MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE) != 0;
 
     if (isCube)
@@ -409,14 +409,14 @@ AssetSystem::createTexture_(const Texture2DPayload& p)
 
         if (numCubes <= 1)
         {
-            // Single cube
+            
             sd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURECUBE;
             sd.TextureCube.MostDetailedMip = 0;
             sd.TextureCube.MipLevels = -1;
         }
         else
         {
-            // Cube array: 6 faces per cube, packed in the array slices
+            
             sd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURECUBEARRAY;
             sd.TextureCubeArray.MostDetailedMip = 0;
             sd.TextureCubeArray.MipLevels = -1;
@@ -426,7 +426,7 @@ AssetSystem::createTexture_(const Texture2DPayload& p)
     }
     else
     {
-        // Regular 2D / 2D array SRV
+        
         if (finalDesc.ArraySize > 1) {
             sd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
             sd.Texture2DArray.MostDetailedMip = 0;
@@ -445,15 +445,15 @@ AssetSystem::createTexture_(const Texture2DPayload& p)
     HRESULT hr = device_->CreateShaderResourceView(tex.Get(), &sd, &srv);
     if (FAILED(hr)) throw std::runtime_error("CreateShaderResourceView failed");
 
-    // (Optional) quick sanity print:
-    // D3D11_TEXTURE2D_DESC check{}; tex->GetDesc(&check);
-    // printf("created mips = %u (wanted %u, full %u)\n", check.MipLevels, wantedMips, fullMips);
+    
+    
+    
 
     auto out = std::make_shared<EntropyAssets::Texture2DRes>();
     out->width = p.desc.Width;
     out->height = p.desc.Height;
     out->arraySize = p.desc.ArraySize;
-//out->depth = p.desc todo add depth here
+
     out->srv = srv;
     return out;
 }
@@ -514,7 +514,7 @@ std::shared_ptr<EntropyAssets::CBufferRes> AssetSystem::createCBuffer_(UINT byte
     bd.CPUAccessFlags = 0;
     bd.MiscFlags = 0;
     bd.StructureByteStride = 0;
-    bd.ByteWidth = (byteSize + 15u) & ~15u; // 16-byte align
+    bd.ByteWidth = (byteSize + 15u) & ~15u; 
 
     D3D11_SUBRESOURCE_DATA srd;
     srd.pSysMem = init; srd.SysMemPitch = 0; srd.SysMemSlicePitch = 0;
@@ -549,7 +549,7 @@ AssetSystem::createBufferSRV_(const BufferPayload& p, const BufferSRVMeta& meta)
 
     std::shared_ptr<ID3D11Buffer> existing;
     try {
-        existing = bufferCache_.GetOrLoad(p.id, [&] { return createBuffer_(p); }).get(); // if you store id in payload
+        existing = bufferCache_.GetOrLoad(p.id, [&] { return createBuffer_(p); }).get(); 
     }
     catch (...) {
         
@@ -624,14 +624,14 @@ AssetSystem::createCBufferFromRaw_(const void* bytes, UINT sizeBytes)
 }
 
 static inline UINT Align16(UINT n) { return (n + 15u) & ~15u; }
-//------------------------------------------------------------------------------
-// Techniques
-//------------------------------------------------------------------------------
+
+
+
 std::shared_future<std::shared_ptr<EntropyAssets::Technique>>
 AssetSystem::EnqueueTechnique(TagHash techniqueId)
 {
     const uint32_t id = techniqueId.hash;
-    //printf("[Tech] EnqueueTechnique %08X (tag bytes=%zu)\n", id, (size_t)techniqueId.size);
+    
 
     static AssetCache<EntropyAssets::Technique> techCache;
 
@@ -699,7 +699,7 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
                     meta.byteSize = Align16(static_cast<UINT>(cbTag.size));
                     meta.initial.resize(static_cast<size_t>(cbTag.size));
                     std::memcpy(meta.initial.data(), cbTag.data, static_cast<size_t>(cbTag.size));
-                    // any padding up to byteSize stays zeroed
+                    
                 }
                 else {
                 
@@ -714,7 +714,7 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
         if (ensureShaderPayload(vsId)) fVS = EnqueueVertexShader(vsId,techniqueId.hash).future;
         if (ensureShaderPayload(psId)) fPS = EnqueuePixelShader(psId, techniqueId.hash).future;
 
-        // --------- Textures
+        
         using TexFuture = std::shared_future<std::shared_ptr<EntropyAssets::Texture2DRes>>;
         using TexFuture3D = std::shared_future<std::shared_ptr<EntropyAssets::Texture3DRes>>;
         std::vector<std::pair<UINT, TexFuture>> psTexF;
@@ -725,7 +725,7 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
             const uint32_t texId = t.Texture.tagHash32;
             TagHash texTag(texId);
             if (texTag.sub_type == 3) {
-                //printf("Found 3s tex");
+                
                 if (!R_->HasTexture(texId)) {
                     if (auto payload = BuildTexture3DPayloadFromTag(texTag)) {
                         R_->Register3DTexture(texId, std::move(*payload));
@@ -784,7 +784,7 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
             psSampF.emplace_back(slot, EnqueueSampler(id).future);
         }
 
-        // ---------- PS CONSTANT BUFFER ----------
+        
         std::shared_future<std::shared_ptr<EntropyAssets::CBufferRes>> fPSCB;
         UINT psCBSlot = 0;
 
@@ -806,7 +806,7 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
                 try {
                     auto cb = createCBufferFromRaw_(Tfx.PixelShader.SamplerFallback.data(), Tfx.PixelShader.SamplerFallback.size() * 0x10);
                     if (cb) {
-                        // Reuse your existing vectors so your draw code stays unchanged
+                        
                         tech->CBuffers_fallback = cb;
                         tech->psCBSlots_fallback = 0;
                     }
@@ -823,7 +823,7 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
             try {
                 auto cb = createCBufferFromRaw_(Tfx.VertexShader.SamplerFallback.data(), Tfx.VertexShader.SamplerFallback.size() * 0x10);
                 if (cb) {
-                    // Reuse your existing vectors so your draw code stays unchanged
+                    
                     tech->CBuffers_fallback_VS = cb;
                     tech->vsCBSlots_fallback = 0;
                 }
@@ -832,7 +832,7 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
                 printf("[Tech] %08X fallback PS cbuffer failed: %s\n", id, e.what());
             }
         }
-        //VS CBUFFER 
+        
         std::shared_future<std::shared_ptr<EntropyAssets::CBufferRes>> fVSCB;
         UINT vsCBSlot = 0;
         const uint32_t cbId_vs = Tfx.VertexShader.contstant_buffer.reference;
@@ -849,11 +849,11 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
             }
         }
 
-        // --------- Collect everything ----------
+        
         if (fVS.valid()) if (auto vs = fVS.get()) tech->VS.push_back(vs);
         if (fPS.valid()) if (auto ps = fPS.get()) tech->PS.push_back(ps);
 
-        // Textures
+        
         tech->Textures.reserve(psTexF.size());
         tech->psTextureSlots.reserve(psTexF.size());
         for (auto& [slot, fut] : psTexF) {
