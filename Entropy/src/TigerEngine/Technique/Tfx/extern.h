@@ -302,9 +302,7 @@ struct FrameExtern
     float   unk190 = 0.0f;                         
     float   unk194 = 0.0f;                         
 
-    uint8_t _pad198[0x1A0 - 0x198]{};        
-
-    Vec4    unk1a0 = Vec4::zero();                 
+    Vec4    unk1a0 = Vec4::one();                 
     Vec4    unk1b0 = Vec4::one();                 
     Vec4    unk1c0 = Vec4(1.0f, 1.0f, 0.0f, 1.0f); 
 

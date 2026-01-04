@@ -71,6 +71,13 @@ struct Unk_80809AF7
 	ResourcePointer unk10;
 };
 
+struct Unk_80800006 {
+	uint16_t unk0;
+	uint16_t unk2;
+	uint16_t unk4;
+	uint16_t unk6;
+};
+
 struct Unk_80806D8F  
 {
 	SkipTo<0x38> Unk0;
@@ -80,7 +87,9 @@ struct Unk_80806D8F
 	SkipTo<0x330> Unk248;           
 	TagHash texplates;
 	SkipTo<0x3E0> Unk334;
-    std::vector<Unk_808072C5> entity_material_map;  
+    std::vector<Unk_808072C5> entity_material_map; 
+	/*SkipTo<0x400> Unkidk;
+	std::vector<Unk_80800006> entity_index_map;*/
 	SkipTo<0x420> Unk3f0;                     
     std::vector<uint32_t> materials;                          
 };
@@ -180,9 +189,10 @@ struct Unk_80808019
 
 struct Unk_80802AB1
 {
-	uint32_t unk0;   
-	uint32_t unk4;   
+	uint32_t schema_type;
+	uint32_t schema_hash;
 };
+
 
 struct Unk_80802AB2
 {

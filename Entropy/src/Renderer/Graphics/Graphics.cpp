@@ -1546,61 +1546,6 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 			
 			tech->Bind_With_Channels(pDevice, pContext, externs, states, scopes, rs.channels);
 			
-			
-			
-			
-			
-			
-			
-			
-
-			
-			
-			
-			
-			
-			
-
-			
-			
-			
-			
-
-			
-
-			
-			
-			
-			
-			
-			
-
-			
-			
-			
-
-			
-			
-
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-
-			
-			
-			
-
-			
-			
-			
 			if (hasSkinning && entity_vs_override)
 			{
 				pContext->VSSetShader(entity_vs_override.Get(), nullptr, 0);
@@ -1988,7 +1933,7 @@ void Graphics::RenderFrame()
 {
 	static bool drawrt1 = false, drawrt0 = false, drawrt2 = false, drawLight_diffuse = false,
 		drawLight_specular = false, drawDepth = false, drawShading = false,
-		drawShadingRead = false, drawLight_ibl = false, stageGlobalLighting = true;
+		drawShadingRead = false, drawLight_ibl = false, stageGlobalLighting = true, drawEntityLabels = false;
 	
 	
 	mainQueue->RunSlice(8, 1);
@@ -2132,11 +2077,12 @@ void Graphics::RenderFrame()
 			DrawTerrain(rt, viewState);
 		}
 	}
+		
+		SubmitPackets(pContext.Get(), packets_,TfxRenderStage::GenerateGbuffer);
 		for (size_t entIdx = 0; entIdx < entitiesToDraw.size(); ++entIdx) {
 			auto& re = entitiesToDraw[entIdx];
 			DrawEntity(re, viewState, TfxRenderStage::GenerateGbuffer, (uint32_t)entIdx);
 		}
-		SubmitPackets(pContext.Get(), packets_,TfxRenderStage::GenerateGbuffer);
 		pContext->Unmap(m_instanceSB.Get(), 0);
 		m_instWritePtr = nullptr;
 
@@ -2206,8 +2152,6 @@ void Graphics::RenderFrame()
 			DrawLight(light, viewState);
 	}
 
-	
-	
 	
 	if (!sceneEmpty) {
 		ScopedGpuEvent e(anno_.Get(), L"deferred_shading");
@@ -2400,64 +2344,68 @@ void Graphics::RenderFrame()
 	ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground |
 		ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
 		ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoFocusOnAppearing;
-	ImGui::Begin("Entity Labels", nullptr, flags);
 
-	for (size_t entIdx = 0; entIdx < entitiesToDraw.size(); ++entIdx)
-	{
-		const auto& e = entitiesToDraw[entIdx];
+	
+	if (drawEntityLabels){
+		ImGui::Begin("Entity Labels", nullptr, flags);
+		for (size_t entIdx = 0; entIdx < entitiesToDraw.size(); ++entIdx)
+		{
+			const auto& e = entitiesToDraw[entIdx];
 
-		if (e.rtype == EntityType::SkyEntity)
-			continue;
+			if (e.rtype == EntityType::SkyEntity)
+				continue;
 
-		if (!IsEntityTypeVisible(e.rtype))
-			continue;
+			if (!IsEntityTypeVisible(e.rtype))
+				continue;
 
-		ImVec2 screen;
-		if (!WorldToScreen(viewState, glm::vec3(e.pos.x, e.pos.y, e.pos.z),
-			io.DisplaySize.x, io.DisplaySize.y, screen))
-			continue;
+			ImVec2 screen;
+			if (!WorldToScreen(viewState, glm::vec3(e.pos.x, e.pos.y, e.pos.z),
+				io.DisplaySize.x, io.DisplaySize.y, screen))
+				continue;
 
-		screen.x += 12.0f;
-		screen.y -= 12.0f;
-		auto itName = s_nameCache.find(entIdx);
-		if (itName == s_nameCache.end()) {
-			std::string name;
-			if (name.empty()) {
-				char tmp[64]; std::snprintf(tmp, sizeof(tmp), " %s 0x%08X",e.name.c_str(), e.id);
-				name = tmp;
+			screen.x += 12.0f;
+			screen.y -= 12.0f;
+			auto itName = s_nameCache.find(entIdx);
+			if (itName == s_nameCache.end()) {
+				std::string name;
+				if (name.empty()) {
+					char tmp[64]; std::snprintf(tmp, sizeof(tmp), " %s 0x%08X", e.name.c_str(), e.id);
+					name = tmp;
+				}
+				itName = s_nameCache.emplace(entIdx, std::move(name)).first;
 			}
-			itName = s_nameCache.emplace(entIdx, std::move(name)).first;
+
+			char label[256];
+			std::snprintf(label, sizeof(label), "%s  (%s)", itName->second.c_str(), EntityTypeName(e.rtype));
+			ImGui::PushID((int)entIdx);
+
+			const ImVec2 textSize = ImGui::CalcTextSize(label);
+
+			ImGui::SetCursorScreenPos(screen);
+			ImGui::InvisibleButton("##ent_label", textSize);
+
+			const bool hovered = ImGui::IsItemHovered();
+			const bool clicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
+
+			if (clicked) {
+				selectedEntityIndex = (int32_t)entIdx;
+				selectedEntityId = e.id;
+				selectedEntityType = e.rtype;
+				selectedEntityPos = { e.pos.x, e.pos.y, e.pos.z };
+				selectedEntitySettingsOpen = true;
+			}
+
+			const ImU32 col = hovered ? IM_COL32(255, 255, 0, 255) : IM_COL32(255, 255, 255, 220);
+
+			ImGui::GetForegroundDrawList()->AddText(screen, col, label);
+
+			ImGui::PopID();
 		}
 
-		char label[256];
-		std::snprintf(label, sizeof(label), "%s  (%s)", itName->second.c_str(), EntityTypeName(e.rtype));
-		ImGui::PushID((int)entIdx);
-
-		const ImVec2 textSize = ImGui::CalcTextSize(label);
-
-		ImGui::SetCursorScreenPos(screen);
-		ImGui::InvisibleButton("##ent_label", textSize);
-
-		const bool hovered = ImGui::IsItemHovered();
-		const bool clicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
-
-		if (clicked) {
-			selectedEntityIndex = (int32_t)entIdx;          
-			selectedEntityId = e.id;                       
-			selectedEntityType = e.rtype;
-			selectedEntityPos = { e.pos.x, e.pos.y, e.pos.z };
-			selectedEntitySettingsOpen = true;
-		}
-
-		const ImU32 col = hovered ? IM_COL32(255, 255, 0, 255) : IM_COL32(255, 255, 255, 220);
-
-		ImGui::GetForegroundDrawList()->AddText(screen, col, label);
-
-		ImGui::PopID();
+		ImGui::End();
 	}
-
-	ImGui::End();
-}
+	}
+	
 	DrawTfxBytecodeInspectorUI();
 	ImGui::Begin("Debug Menu");
 	static float value = 50.0f;
@@ -2468,6 +2416,7 @@ void Graphics::RenderFrame()
 	ImGui::Checkbox("Draw Light_specular", &drawLight_specular);
 	ImGui::Checkbox("Draw Shading", &drawShading);
 	ImGui::Checkbox("Global Lighting", &stageGlobalLighting);
+	ImGui::Checkbox("Show Entity Labels", &drawEntityLabels);
 	ImGui::SliderFloat("Lod/View Distance", &lod_distance, 0.0f, 1000.0f);
 	if (lod_distance == 1000.0f) {
 		lod_distance = INFINITY;
@@ -2628,7 +2577,7 @@ void Graphics::RenderFrame()
 
 		auto& e = entitiesToDraw[(size_t)selectedEntityIndex];
 
-		// Optional: ensure it matches what you think is selected
+	
 		if (!(e.id == selectedEntityId && e.rtype == selectedEntityType)) {
 			ImGui::TextDisabled("Selected entity does not match draw-list entry.");
 			ImGui::End();
@@ -2646,16 +2595,19 @@ void Graphics::RenderFrame()
 			e.pos.z = pos[2];
 			selectedEntityPos = { e.pos.x, e.pos.y, e.pos.z };
 			e.cb1_single = BuildCB1FromEntity(e);
+			e.occlusion_bounds = Aabb::FromCenterExtents(e.meshData.model_offset + e.pos, e.meshData.model_scale* e.pos.w);
 		}
 
 		if (ImGui::DragFloat("Scale", &scale, 0.01f, 0.0f, 10000.0f)) {
 			e.pos.w = scale;
 			e.cb1_single = BuildCB1FromEntity(e);
+			e.occlusion_bounds = Aabb::FromCenterExtents(e.meshData.model_offset + e.pos, e.meshData.model_scale * e.pos.w);
 		}
 
 		if (ImGui::Button("Reset")) {
 			e.pos = e.base_placement_pos;
 			e.cb1_single = BuildCB1FromEntity(e);
+			e.occlusion_bounds = Aabb::FromCenterExtents(e.meshData.model_offset + e.pos, e.meshData.model_scale * e.pos.w);
 		}
 
 		ImGui::Text("Channels: %zu", sel->channels.size());
@@ -3294,9 +3246,9 @@ bool Graphics::InitializeScene()
 	this->activities = GlobalData::globalActivities();
 	loadzone = std::make_unique<LoadZone>(*this);
 
-	auto e_to_load = TagHash(0x810A3E87);
+	auto e_to_load = TagHash(0x80D4078B);
 	Aabb a;
-	loadzone->load_entity_into_scene(e_to_load, glm::quat(),glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+	loadzone->load_datatable_into_scene(e_to_load,glm::quat(),glm::vec4(),EntityType::Combatant);
 	
 	if (loadzone) {
 		this->staticsToDraw = loadzone->statics;

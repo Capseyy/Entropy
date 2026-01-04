@@ -191,6 +191,10 @@ inline void LoadZone::load_datatable_into_scene(TagHash table, glm::quat quat_ov
 			if (resource.combat_name.hash != 0x811C9DC5) {
 				name = resource.combat_name.string;
 			}
+			if (resource.Unk0.type == 0x80802ab2) {
+				const auto unk_resource = resource.Unk0.Parse<Unk_80802AB2>(table);
+			}
+
 			break;
 
 		}
