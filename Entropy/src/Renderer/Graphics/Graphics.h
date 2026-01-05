@@ -381,5 +381,7 @@ private:
 	float_t lod_distance = 1000.0f;
 	GBufferRT gbufA;
 
+	bool runAmbientOcclusion = true;
+
 	glm::vec3 frameCameraPos{ 0.0f,0.0f,0.0f };
 };

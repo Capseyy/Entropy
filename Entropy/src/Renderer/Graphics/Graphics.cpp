@@ -17,8 +17,6 @@ static int g_activation_budget_per_frame = 8;
 static int g_activations_this_frame = 0;
 
 
-
-
 #pragma comment(lib, "d3dcompiler.lib")
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
 
@@ -313,7 +311,7 @@ void Graphics::SubmitPackets(ID3D11DeviceContext* ctx,
 	D3D11_PRIMITIVE_TOPOLOGY curTopo = (D3D11_PRIMITIVE_TOPOLOGY)~0u;
 	EntropyAssets::Technique* curTech = nullptr;
 	ID3D11ShaderResourceView* s2[] = { this->sky_hemisphere_lookup.Get() };
-	if (stage == TfxRenderStage::Transparents) {
+	if (stage == TfxRenderStage::Transparents || stage == TfxRenderStage::DecalsAdditive) {
 		float bf[4] = { 1,1,1,1 };
 		ctx->OMSetBlendState(states.blend_states[8].Get(), bf, 0xFFFFFFFF); 
 		ctx->OMSetDepthStencilState(depthStencilDecal.Get(), 0);            
@@ -333,6 +331,9 @@ void Graphics::SubmitPackets(ID3D11DeviceContext* ctx,
 		const DrawPacket& d = *it.p;
 		if (d.instanceCount == 0 || d.indexCount == 0) continue;
 
+		if (d.meshId == 0x80EFC095) {
+			int bp = 1;
+		}
 		if (it.key != curKey) {
 			if (d.layout != curIL) { ctx->IASetInputLayout(d.layout); curIL = d.layout; }
 
@@ -347,6 +348,13 @@ void Graphics::SubmitPackets(ID3D11DeviceContext* ctx,
 				curVBs[0] = d.vb0; curVBs[1] = d.vb1; curStrides[0] = d.stride0; curStrides[1] = d.stride1;
 			}
 
+			if (this->staticAO1.ao_buffer && runAmbientOcclusion) {
+				ID3D11ShaderResourceView* aoSRV = this->staticAO1.ao_buffer.Get();
+				ctx->VSSetShaderResources(1, 1, &aoSRV);
+			} else {
+				ID3D11ShaderResourceView* nullSRV = nullptr;
+				ctx->VSSetShaderResources(1, 1, &nullSRV);
+			}
 			
 			if (d.ib != curIB || d.idxFmt != curFmt) {
 				ctx->IASetIndexBuffer(d.ib, d.idxFmt, 0);
@@ -366,7 +374,7 @@ void Graphics::SubmitPackets(ID3D11DeviceContext* ctx,
 
 			curKey = it.key;
 		}
-
+		
 			
 			
 		UpdateCB1_StaticReusable(ctx, d.cb1,
@@ -1289,7 +1297,7 @@ void Graphics::DrawTerrain(const RenderTerrain& rt, const View& view)
 			TagHash th(techId);
 			it = TechCache_.emplace(techId, assets->EnqueueTechnique(th)).first;
 		}
-		
+
 		std::shared_ptr<EntropyAssets::Technique> tech;
 		try { tech = it->second.get(); }
 		catch (...) { continue; }
@@ -1303,11 +1311,10 @@ void Graphics::DrawTerrain(const RenderTerrain& rt, const View& view)
 		D3D11_MAPPED_SUBRESOURCE m{};
 		if (SUCCEEDED(pContext->Map(g_terrain_cb.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &m)))
 		{
-			std::memcpy(m.pData, &cb, sizeof(cb));     
+			std::memcpy(m.pData, &cb, sizeof(cb));
 			pContext->Unmap(g_terrain_cb.Get(), 0);
 		}
-
-		
+    
 
 		tech->Bind(pDevice, pContext, externs, states, scopes);
 
@@ -1317,9 +1324,25 @@ void Graphics::DrawTerrain(const RenderTerrain& rt, const View& view)
 		const UINT indexCount = (UINT)mesh_part.IndexCount;
 		pContext->RSSetState(rasterizerStateGBuffer.Get());
 		if (indexCount == 0) continue;
+		const uint32_t gi = mesh_part.groupIndex;
+		if (gi >= rt.meshData.mesh_groups.size()) continue;
+
+		ID3D11ShaderResourceView* dyemapSRV = white1x1SRV.Get(); // fallback
+
+		auto& fut = rt.terrain_dyemap_srvs[gi];
+		if (FutReady(fut)) {
+			std::shared_ptr<EntropyAssets::Texture2DRes> tex;
+			try { tex = fut.get(); }
+			catch (...) { tex.reset(); }
+
+			if (tex && tex->srv) {
+				dyemapSRV = tex->srv.Get();
+			}
+		}
+
 		ID3D11Buffer* b = g_terrain_cb.Get();
 		pContext->VSSetConstantBuffers(11, 1, &b);
-
+		pContext->PSSetShaderResources(14, 1, &dyemapSRV);
 		pContext->DrawIndexed(
 			indexCount,
 			firstIndex,
@@ -1894,6 +1917,30 @@ for (auto& ent : entitiesToDraw)
 		}
 	}
 	}
+	for (auto& rt : terrainToDraw) // must be &
+	{
+		rt.terrain_dyemap_srvs.clear();
+		rt.terrain_dyemap_srvs.reserve(rt.meshData.mesh_groups.size());
+
+		for (auto& mg : rt.meshData.mesh_groups)
+		{
+			const uint32_t id = mg.dyemap.hash;
+
+			if (id == 0u || id == 0xFFFFFFFFu) {
+				rt.terrain_dyemap_srvs.emplace_back(); 
+				continue;
+			}
+
+			if (!registry->HasTexture(id)) {
+				auto payload = BuildTexturePayloadFromTag(mg.dyemap);
+				registry->RegisterTexture(id, *payload);
+			}
+
+			auto req = assets->EnqueueTexture(id);
+			rt.terrain_dyemap_srvs.push_back(req.future);
+		}
+	}
+
 }	
 
 void Graphics::EnsureEntityBufferRegistered(const SDynamicMesh& mesh,
@@ -1936,7 +1983,7 @@ void Graphics::RenderFrame()
 		drawShadingRead = false, drawLight_ibl = false, stageGlobalLighting = true, drawEntityLabels = false;
 	
 	
-	mainQueue->RunSlice(8, 1);
+	mainQueue->RunSlice(64, 4);
 	auto pos = camera.GetPositionFloat3();
 	frameCameraPos.x = pos.x;
 	frameCameraPos.y = pos.y;
@@ -2238,12 +2285,25 @@ void Graphics::RenderFrame()
 		pContext->VSSetShaderResources(15, 1, srvs);
 		ID3D11ShaderResourceView* srv_stage[] = { gbufA.rt0.srv.Get() };
 		pContext->PSSetShaderResources(23, 1, srv_stage); 
-		pContext->RSSetState(rasterizerStateGBuffer.Get());
+		{
+			ScopedGpuEvent e(anno_.Get(), L"decals_additive");
+			pContext->RSSetState(rasterizerStateGBuffer.Get());
+			{
+				for (auto& rs : staticsToDraw) DrawStaticMesh(rs, viewState, TfxRenderStage::DecalsAdditive);
+			}
+			for (size_t entIdx = 0; entIdx < entitiesToDraw.size(); ++entIdx) {
+				auto& re = entitiesToDraw[entIdx];
+				pContext->RSSetState(rasterizerStateGBuffer.Get());
+				DrawEntity(re, viewState, TfxRenderStage::DecalsAdditive, (uint32_t)entIdx);
+			}
+			SubmitPackets(pContext.Get(), packets_, TfxRenderStage::DecalsAdditive);
+		}
+		
 		for (auto& rs : staticsToDraw) {
 			pContext->RSSetState(rasterizerStateGBuffer.Get());
 			DrawStaticMesh(rs, viewState, TfxRenderStage::Transparents);
 		}
-
+		
 		SubmitPackets(pContext.Get(), packets_, TfxRenderStage::Transparents);
 		for (size_t entIdx = 0; entIdx < entitiesToDraw.size(); ++entIdx) {
 			auto& re = entitiesToDraw[entIdx];
@@ -2345,9 +2405,9 @@ void Graphics::RenderFrame()
 		ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
 		ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoFocusOnAppearing;
 
-	
+	ImGui::Begin("Entity Labels", nullptr, flags);
 	if (drawEntityLabels){
-		ImGui::Begin("Entity Labels", nullptr, flags);
+		
 		for (size_t entIdx = 0; entIdx < entitiesToDraw.size(); ++entIdx)
 		{
 			const auto& e = entitiesToDraw[entIdx];
@@ -2402,10 +2462,10 @@ void Graphics::RenderFrame()
 			ImGui::PopID();
 		}
 
-		ImGui::End();
+		//
 	}
 	}
-	
+	ImGui::End();
 	DrawTfxBytecodeInspectorUI();
 	ImGui::Begin("Debug Menu");
 	static float value = 50.0f;
@@ -2417,6 +2477,7 @@ void Graphics::RenderFrame()
 	ImGui::Checkbox("Draw Shading", &drawShading);
 	ImGui::Checkbox("Global Lighting", &stageGlobalLighting);
 	ImGui::Checkbox("Show Entity Labels", &drawEntityLabels);
+	ImGui::Checkbox("Run Ambient Occlusion", &runAmbientOcclusion);
 	ImGui::SliderFloat("Lod/View Distance", &lod_distance, 0.0f, 1000.0f);
 	if (lod_distance == 1000.0f) {
 		lod_distance = INFINITY;

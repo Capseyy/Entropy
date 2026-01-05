@@ -381,14 +381,12 @@ AssetSystem::createTexture_(const Texture2DPayload& p)
     
     auto ToTypedForSRV = [](DXGI_FORMAT f)->DXGI_FORMAT {
         switch (f) {
-        case DXGI_FORMAT_R8G8B8A8_TYPELESS: return DXGI_FORMAT_R8G8B8A8_UNORM;
-        case DXGI_FORMAT_B8G8R8A8_TYPELESS: return DXGI_FORMAT_B8G8R8A8_UNORM;
-        case DXGI_FORMAT_BC1_TYPELESS:      return DXGI_FORMAT_BC1_UNORM;
-        case DXGI_FORMAT_BC2_TYPELESS:      return DXGI_FORMAT_BC2_UNORM;
-        case DXGI_FORMAT_BC3_TYPELESS:      return DXGI_FORMAT_BC3_UNORM;
-        case DXGI_FORMAT_BC4_TYPELESS:      return DXGI_FORMAT_BC4_UNORM;
-        case DXGI_FORMAT_BC5_TYPELESS:      return DXGI_FORMAT_BC5_UNORM;
-        case DXGI_FORMAT_BC7_TYPELESS:      return DXGI_FORMAT_BC7_UNORM;
+        case DXGI_FORMAT_R8G8B8A8_TYPELESS: return DXGI_FORMAT_R8G8B8A8_UNORM; 
+        case DXGI_FORMAT_B8G8R8A8_TYPELESS: return DXGI_FORMAT_B8G8R8A8_UNORM; 
+        case DXGI_FORMAT_BC1_TYPELESS:      return DXGI_FORMAT_BC1_UNORM;      
+        case DXGI_FORMAT_BC2_TYPELESS:      return DXGI_FORMAT_BC2_UNORM;     
+        case DXGI_FORMAT_BC3_TYPELESS:      return DXGI_FORMAT_BC3_UNORM;     
+        case DXGI_FORMAT_BC7_TYPELESS:      return DXGI_FORMAT_BC7_UNORM;     
         default:                            return f;
         }
         };
@@ -443,7 +441,9 @@ AssetSystem::createTexture_(const Texture2DPayload& p)
 
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
     HRESULT hr = device_->CreateShaderResourceView(tex.Get(), &sd, &srv);
-    if (FAILED(hr)) throw std::runtime_error("CreateShaderResourceView failed");
+    if (FAILED(hr)) {
+        throw std::runtime_error("CreateShaderResourceView failed");
+    }
 
     
     

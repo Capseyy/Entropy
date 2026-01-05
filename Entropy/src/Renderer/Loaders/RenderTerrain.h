@@ -6,6 +6,7 @@
 #include <glm/gtc/quaternion.hpp> 
 #include "TigerEngine/Technique/Tfx/tfx_program.h"
 #include "Renderer/Graphics/Scope/instance.h"
+#include "Runtime/Assets/Technique.h"
 
 struct alignas(16) TerrainCB64
 {
@@ -62,4 +63,5 @@ struct RenderTerrain {
     uint32_t id;
     std::optional<Aabb> occlusion_bounds;
     CB1Payload_override cb1_single;
+    std::vector<std::shared_future<std::shared_ptr<EntropyAssets::Texture2DRes>>> terrain_dyemap_srvs;
 };

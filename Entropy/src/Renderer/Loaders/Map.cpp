@@ -184,6 +184,8 @@ inline void LoadZone::load_datatable_into_scene(TagHash table, glm::quat quat_ov
 			rt.occlusion_bounds = terrain_data.bounds;
 			this->terrain_patches.emplace_back(rt);
 
+
+
 			break;
 		}
 		case 0x80808019: {

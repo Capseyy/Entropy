@@ -54,7 +54,9 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
     auto used = TfxScope::from_bits_truncate(this->usedScopes);
     ShaderBindingState bindingState{};
     const auto sel = DecodeStateSelection(this->StateSelection);
-
+    if (this->id == 0x80EFC074) {
+        int u = 1;
+    }
     
     if (sel.blend && *sel.blend < states.blend_states.size() &&
         states.blend_states[*sel.blend]) {
@@ -236,7 +238,7 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
         }
     }
 
-
+   
 
 
     
