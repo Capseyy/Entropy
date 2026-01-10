@@ -766,6 +766,55 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
             
         }
 
+        std::vector<std::pair<UINT, TexFuture>> vsTexF;
+        std::vector<std::pair<UINT, TexFuture3D>> vsTexF3D;
+        psTexF.reserve(Tfx.VertexShader.Textures.size());
+        for (const auto& t : Tfx.VertexShader.Textures) {
+            const UINT slot = t.TextureIndex;
+            const uint32_t texId = t.Texture.tagHash32;
+            TagHash texTag(texId);
+            if (texTag.sub_type == 3) {
+
+                if (!R_->HasTexture(texId)) {
+                    if (auto payload = BuildTexture3DPayloadFromTag(texTag)) {
+                        R_->Register3DTexture(texId, std::move(*payload));
+                    }
+                    else {
+                        continue;
+                    }
+                }
+                vsTexF3D.emplace_back(slot, Enqueue3DTexture(texId).future);
+            }
+            else if (texTag.sub_type == 1) {
+                if (!R_->HasTexture(texId)) {
+                    if (auto payload = BuildTexturePayloadFromTag(texTag)) {
+                        R_->RegisterTexture(texId, std::move(*payload));
+                    }
+                    else {
+                        continue;
+                    }
+                }
+                vsTexF.emplace_back(slot, EnqueueTexture(texId).future);
+            }
+            else if (texTag.sub_type == 2) {
+                if (!R_->HasTexture(texId)) {
+                    if (auto payload = BuildTextureCubePayloadFromTag(texTag)) {
+
+                        R_->RegisterTexture(texId, std::move(*payload));
+                    }
+                    else {
+                        continue;
+                    }
+                }
+
+
+                vsTexF.emplace_back(slot, EnqueueTexture(texId).future);
+            }
+
+
+
+        }
+
         using SampFuture = std::shared_future<std::shared_ptr<EntropyAssets::SamplerRes>>;
         std::vector<std::pair<UINT, SampFuture>> psSampF;
         psSampF.reserve(Tfx.PixelShader.Samplers.size());
@@ -784,6 +833,23 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
             psSampF.emplace_back(slot, EnqueueSampler(id).future);
         }
 
+
+        std::vector<std::pair<UINT, SampFuture>> vsSampF;
+        vsSampF.reserve(Tfx.VertexShader.Samplers.size());
+
+        for (size_t i = 0; i < Tfx.VertexShader.Samplers.size(); ++i)
+        {
+            const auto& s = Tfx.VertexShader.Samplers[i];
+            const uint32_t id = s.sampler.reference;
+
+
+            const UINT slot = i;
+
+
+            if (!ensureSamplerPayload(id)) continue;
+
+            vsSampF.emplace_back(slot, EnqueueSampler(id).future);
+        }
         
         std::shared_future<std::shared_ptr<EntropyAssets::CBufferRes>> fPSCB;
         UINT psCBSlot = 0;
@@ -854,6 +920,15 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
         if (fPS.valid()) if (auto ps = fPS.get()) tech->PS.push_back(ps);
 
         
+        tech->Textures_VS.reserve(vsTexF.size());
+        tech->vsTextureSlots.reserve(vsTexF.size());
+        for (auto& [slot, fut] : vsTexF) {
+            if (!fut.valid()) continue;
+            if (auto texRes = fut.get()) {
+                tech->Textures_VS.push_back(texRes);
+                tech->vsTextureSlots.push_back(slot);
+            }
+        }
         tech->Textures.reserve(psTexF.size());
         tech->psTextureSlots.reserve(psTexF.size());
         for (auto& [slot, fut] : psTexF) {
@@ -873,12 +948,31 @@ AssetSystem::EnqueueTechnique(TagHash techniqueId)
             }
         }
 
+        tech->Textures3D_VS.reserve(vsTexF3D.size());
+        tech->vsTextureSlots3D.reserve(vsTexF3D.size());
+        for (auto& [slot, fut] : vsTexF3D) {
+            if (!fut.valid()) continue;
+            if (auto texRes = fut.get()) {
+                tech->Textures3D_VS.push_back(texRes);
+                tech->vsTextureSlots3D.push_back(slot);
+            }
+        }
+
         tech->Samplers.reserve(psSampF.size());
         tech->psSamplerSlots.reserve(psSampF.size());
         for (auto& [slot, fut] : psSampF) {
             if (auto sres = fut.get()) {
                 tech->Samplers.push_back(sres);
                 tech->psSamplerSlots.push_back(slot);
+            }
+        }
+
+        tech->Samplers_VS.reserve(vsSampF.size());
+        tech->vsSamplerSlots.reserve(vsSampF.size());
+        for (auto& [slot, fut] : vsSampF) {
+            if (auto sres = fut.get()) {
+                tech->Samplers_VS.push_back(sres);
+                tech->vsSamplerSlots.push_back(slot);
             }
         }
 

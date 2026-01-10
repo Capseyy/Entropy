@@ -356,7 +356,7 @@ private:
 	void Create1x1SRV(UINT color, ComPtr<ID3D11ShaderResourceView>&);
 	void InitializeScopes();
 	void LoadGlobalTextures();
-	void DrawLight(const RenderLight& rs, const View& view);
+	void DrawLight(const RenderLight& rs, const View& view, const TfxRenderStage stage);
 	void CreateLightVolumeResources();
 
 	void PublishGlobalTexturesToFrameExtern();

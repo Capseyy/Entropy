@@ -11,6 +11,7 @@ struct RenderLight {
     glm::vec3 pos;
     float_t scale;
     std::shared_ptr<EntropyAssets::Technique> technique;
+    std::shared_ptr<EntropyAssets::Technique> volume_technique;
     uint32_t idx;
     uint32_t parent;
     Vec4 unk50;

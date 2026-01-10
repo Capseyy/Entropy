@@ -914,7 +914,9 @@ void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view, TfxRende
 	for (int gi = 0; gi < (int)mesh.mesh_groups.size(); ++gi)
 	{
 		const auto& mg = mesh.mesh_groups[gi];
+
 		if (mg.TfxRenderStage != (UINT)renderStage) continue;
+		
 		if (!seenPartIdx.insert(mg.part_index).second) continue; 
 
 		const auto& part = mesh.parts[mg.part_index];
@@ -1422,7 +1424,6 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 
 		size_t start = dm.part_range_per_render_stage[(int)stage];
 		size_t end = dm.part_range_per_render_stage[(int)stage + 1];
-
 		const uint8_t ilIdx = dm.input_layout_per_render_stage[(int)stage];
 		ID3D11InputLayout* il =
 			(ilIdx < tiger_input_layouts.size() && tiger_input_layouts[ilIdx])
@@ -2196,7 +2197,7 @@ void Graphics::RenderFrame()
 		pContext->Draw(4, 0);
 
 		for (auto& light : lightsToDraw)
-			DrawLight(light, viewState);
+			DrawLight(light, viewState,TfxRenderStage::LightingApply);
 	}
 
 	
@@ -2311,9 +2312,12 @@ void Graphics::RenderFrame()
 			DrawEntity(re, viewState, TfxRenderStage::Transparents, (uint32_t)entIdx);
 		}
 
-
 		pContext->Unmap(m_instanceSB.Get(), 0);
 		m_instWritePtr = nullptr;
+
+		//for (auto& light : lightsToDraw) {
+			//DrawLight(light, viewState, TfxRenderStage::Volumetrics);
+		//}
 
 		pContext->PSSetShaderResources(0, 16, nulls);
 		pContext->VSSetShaderResources(0, 16, nulls);
@@ -3307,9 +3311,9 @@ bool Graphics::InitializeScene()
 	this->activities = GlobalData::globalActivities();
 	loadzone = std::make_unique<LoadZone>(*this);
 
-	auto e_to_load = TagHash(0x80D4078B);
+	auto e_to_load = TagHash(0x810A8296);
 	Aabb a;
-	loadzone->load_datatable_into_scene(e_to_load,glm::quat(),glm::vec4(),EntityType::Combatant);
+	loadzone->load_entity_into_scene(e_to_load, glm::quat(), glm::vec4(0.0f,0.0f,0.0f,1.0f));
 	
 	if (loadzone) {
 		this->staticsToDraw = loadzone->statics;

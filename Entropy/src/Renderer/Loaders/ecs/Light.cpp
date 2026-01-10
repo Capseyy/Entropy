@@ -4,18 +4,12 @@
 static struct CBLightSimpleGeometry { DirectX::XMFLOAT4X4 transform; };
 static Microsoft::WRL::ComPtr<ID3D11Buffer> cbLightSimpleGeometry;
 
-void Graphics::DrawLight(const RenderLight& rl, const View& view)
+void Graphics::DrawLight(const RenderLight& rl, const View& view, const TfxRenderStage stage)
 {
 	ID3D11DeviceContext* ctx = pContext.Get();
 	wchar_t label[128];
 	swprintf(label, 128, L"Light Render %08X %d", rl.parent, rl.idx);
 	GpuMarker mark(ctx, label);
-
-	ID3D11RenderTargetView* rts[] = {
-		gbufA.light_diffuse.rtv.Get(),
-		gbufA.light_specular.rtv.Get()
-	};
-	ctx->OMSetRenderTargets(2, rts, nullptr);
 
 	using namespace DirectX;
 
@@ -47,16 +41,30 @@ void Graphics::DrawLight(const RenderLight& rl, const View& view)
 	}
 	externs.SetDeferredLight(camT, l2wRel, rl.unk50);
 
-	ID3D11ShaderResourceView* srvs[] = {
-	gbufA.rt1_read.srv.Get(),
-	gbufA.depth.texCopySRV.Get(),
-	gbufA.rt2.srv.Get(),
 
-	};
-	ctx->PSSetShaderResources(0, (UINT)std::size(srvs), srvs);
 
-	if (rl.technique) rl.technique->Bind(pDevice, pContext, externs, states, scopes);
+    if (rl.technique && stage == TfxRenderStage::LightingApply) {
+        ID3D11ShaderResourceView* srvs[] = {
+        gbufA.rt1_read.srv.Get(),
+        gbufA.depth.texCopySRV.Get(),
+        gbufA.rt2.srv.Get(),
 
+        };
+        ctx->PSSetShaderResources(0, (UINT)std::size(srvs), srvs);
+        ID3D11RenderTargetView* rts[] = {
+        gbufA.light_diffuse.rtv.Get(),
+        gbufA.light_specular.rtv.Get()
+        };
+        ctx->OMSetRenderTargets(2, rts, nullptr);
+        rl.technique->Bind(pDevice, pContext, externs, states, scopes);
+    }
+    else if (rl.volume_technique && stage == TfxRenderStage::Volumetrics) {
+        rl.technique->Bind(pDevice, pContext, externs, states, scopes);
+    }
+    /*if (rl.volume_technique) {
+        rl.volume_technique->Bind(pDevice, pContext, externs, states, scopes);
+        printf("Volume Tech %08X ", rl.volume_technique->id);
+    }*/
 	float bf[4] = { 1,1,1,1 };
 	ctx->OMSetBlendState(bsAdditive2RT.Get(), bf, 0xFFFFFFFF);
 	ctx->OMSetDepthStencilState(depthStencilLightVolume.Get(), 0);

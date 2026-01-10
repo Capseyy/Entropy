@@ -210,6 +210,7 @@ inline void UploadScopeViewCB12_All(
 
     auto* cb = reinterpret_cast<ScopeViewCB12_VS*>(m.pData);
     cb->world_to_projective = view.world_to_projective;
+    cb->world_to_projective.m[0][0] *= 0.1f;
     cb->camera_to_world = view.camera_to_world;
     cb->camera_to_projective = view.camera_to_projective;
 

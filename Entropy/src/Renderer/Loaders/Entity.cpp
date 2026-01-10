@@ -65,6 +65,7 @@ void LoadZone::load_entity_into_scene(TagHash& tag, glm::quat quat, glm::vec4 po
     if (auto it = entity_render_cache.find(key); it != entity_render_cache.end()) {
         for (auto& proto : it->second) {
             auto chIt = proto.channels.find(0xA7A7FE43);
+            //continue;
             if (chIt != proto.channels.end()) {
                 Vec4 a;
 				a.x = pos.x;
@@ -128,6 +129,7 @@ void LoadZone::load_entity_into_scene(TagHash& tag, glm::quat quat, glm::vec4 po
     auto [insIt, _] = entity_render_cache.emplace(key, std::move(protos));
     for (auto& proto : insIt->second) {
         auto chIt = proto.channels.find(0xA7A7FE43);  
+        //continue;
         if (chIt != proto.channels.end()) {
             Vec4 a;
             a.x = pos.x;

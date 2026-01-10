@@ -288,61 +288,63 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
     return true;
 }
 
-bool EntropyAssets::Technique::Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11Device> pDevice,
-    Microsoft::WRL::ComPtr<ID3D11DeviceContext> pContext, ExternStorage& externs, RenderStates& states, std::vector<std::pair<std::string, TigerScope>>& scopes, std::unordered_map<uint32_t, Vec4> channels)
+bool EntropyAssets::Technique::Bind_With_Channels(
+    Microsoft::WRL::ComPtr<ID3D11Device>        /*pDevice*/,
+    Microsoft::WRL::ComPtr<ID3D11DeviceContext> pContext,
+    ExternStorage& externs,
+    RenderStates& states,
+    std::vector<std::pair<std::string, TigerScope>>& scopes,
+    std::unordered_map<uint32_t, Vec4> channels)
 {
-    uint32_t StateSelection = this->StateSelection;
-
-    uint64_t UsedScopes = this->usedScopes;
-    auto used = TfxScope::from_bits_truncate(this->usedScopes);
 
     const auto sel = DecodeStateSelection(this->StateSelection);
 
-    if (sel.blend && *sel.blend < states.blend_states.size() &&
-        states.blend_states[*sel.blend]) {
+    if (sel.blend && *sel.blend < states.blend_states.size() && states.blend_states[*sel.blend]) {
         const float blendFactor[4] = { 1.f, 1.f, 1.f, 1.f };
         const UINT sampleMask = 0xFFFFFFFFu;
-        
         pContext->OMSetBlendState(states.blend_states[*sel.blend].Get(), blendFactor, sampleMask);
     }
 
-    if (sel.rasterizer && *sel.rasterizer < 9) {
+    if (sel.rasterizer && *sel.rasterizer < states.rasterizer_states.size()) {
         auto& rs = states.rasterizer_states[*sel.rasterizer];
-        if (rs) {
-            pContext->RSSetState(rs.Get());
-        }
+        if (rs) pContext->RSSetState(rs.Get());
     }
+
 
     if (!this->VS.empty()) {
-
-        ID3D11VertexShader* vs = this->VS[0]->vs.Get();
-        pContext->VSSetShader(vs, nullptr, 0);
+        pContext->VSSetShader(this->VS[0]->vs.Get(), nullptr, 0);
     }
     if (!this->PS.empty()) {
-
-        ID3D11PixelShader* ps = this->PS[0]->ps.Get();
-        pContext->PSSetShader(ps, nullptr, 0);
+        pContext->PSSetShader(this->PS[0]->ps.Get(), nullptr, 0);
     }
 
-    TfxProgram prog = TfxProgram::FromBytecode(this->pixeldata.TFX_Bytecode,
-        this->pixeldata.TFX_Constants, this->id);
+    enum class Stage : uint8_t { VS = 0, PS = 1 };
 
-    auto& cb0 = this->pixeldata.SamplerFallback;
+    auto SetCBs = [&](Stage st, UINT slot, UINT count, ID3D11Buffer* const* bufs) {
+        if (st == Stage::VS) pContext->VSSetConstantBuffers(slot, count, bufs);
+        else                pContext->PSSetConstantBuffers(slot, count, bufs);
+        };
 
-    ShaderBindingState binds{};
+    auto SetSRVs = [&](Stage st, UINT slot, UINT count, ID3D11ShaderResourceView* const* srvs) {
+        if (st == Stage::VS) pContext->VSSetShaderResources(slot, count, srvs);
+        else                pContext->PSSetShaderResources(slot, count, srvs);
+        };
 
-    prog.Evaluate_With_Channels(externs, cb0, channels, this->Textures, &binds, false);
+    auto SetSamplers = [&](Stage st, UINT slot, UINT count, ID3D11SamplerState* const* samps) {
+        if (st == Stage::VS) pContext->VSSetSamplers(slot, count, samps);
+        else                pContext->PSSetSamplers(slot, count, samps);
+        };
 
-    
-
-    if (this->CBuffers.empty() && this->CBuffers_fallback != nullptr) {
-        ID3D11Buffer* buf = this->CBuffers_fallback->buffer.Get();
+    auto UploadFallbackCB0 = [&](ID3D11Buffer* buf, const std::vector<Vec4>& cb0) {
+        if (!buf) return;
 
         D3D11_BUFFER_DESC desc{};
         buf->GetDesc(&desc);
 
         const size_t bytes_needed = cb0.size() * sizeof(Vec4);
         const size_t bytes_copy = std::min<size_t>(bytes_needed, desc.ByteWidth);
+
+        if (bytes_copy == 0) return;
 
         if (desc.Usage == D3D11_USAGE_DYNAMIC) {
             D3D11_MAPPED_SUBRESOURCE map{};
@@ -354,24 +356,15 @@ bool EntropyAssets::Technique::Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11D
         else {
             pContext->UpdateSubresource(buf, 0, nullptr, cb0.data(), 0, 0);
         }
-        pContext->PSSetConstantBuffers(UINT(this->psCBSlots_fallback), 1, &buf);
-    }
+        };
 
-    if (!this->CBuffers.empty()) {
-        for (size_t i = 0; i < this->CBuffers.size(); ++i) {
-            ID3D11Buffer* b = this->CBuffers[i]->buffer.Get();
-            pContext->PSSetConstantBuffers(UINT(i), 1, &b);
-        }
-    }
+    struct SamplerBind { UINT slot; UINT sampler_index; };
 
-    struct PsSamplerBind { UINT slot; UINT sampler_index; };
-    std::vector<PsSamplerBind> psBinds;
-
-    {
-        
+    auto ParseSamplerBinds = [&](const std::vector<uint8_t>& bytecode, Stage stage) -> std::vector<SamplerBind> {
+        std::vector<SamplerBind> out;
         std::vector<int> sstack; sstack.reserve(16);
 
-        auto ops = ParseAll(this->pixeldata.TFX_Bytecode, false);
+        auto ops = ParseAll(bytecode, false);
         for (const auto& op : ops) {
             switch (op.op) {
             case TfxBytecode::PushSampler: {
@@ -381,101 +374,129 @@ bool EntropyAssets::Technique::Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11D
             }
             case TfxBytecode::SetShaderSampler: {
                 auto d = std::get<SetShaderBindingData>(op.data);
-                
-                if (!sstack.empty()) {
-                    int idx = sstack.back(); sstack.pop_back();
-                    if (d.stage == 1) {
-                        psBinds.push_back(PsSamplerBind{ UINT(d.slot), UINT(idx) });
-                    }
+                if (sstack.empty()) break;
+
+                const int idx = sstack.back();
+                sstack.pop_back();
+
+               
+                const uint32_t want = (stage == Stage::VS) ? 0u : 1u;
+                if (d.stage == want) {
+                    out.push_back(SamplerBind{ UINT(d.slot), UINT(idx) });
                 }
                 break;
             }
             default: break;
             }
         }
-    }
+        return out;
+        };
 
-    
-    for (const auto& b : psBinds) {
-        if (b.sampler_index < this->Samplers.size() && this->Samplers[b.sampler_index]) {
-            ID3D11SamplerState* s = this->Samplers[b.sampler_index]->sampler.Get();
-            pContext->PSSetSamplers(b.slot, 1, &s);
+   
+    auto BindStage = [&](Stage stage, bool trace = false) {
+     
+        const auto& tfxBytecode = (stage == Stage::PS) ? this->pixeldata.TFX_Bytecode : this->vertexdata.TFX_Bytecode;
+        const auto& tfxConstants = (stage == Stage::PS) ? this->pixeldata.TFX_Constants : this->vertexdata.TFX_Constants;
+
+        auto& cb0 = (stage == Stage::PS) ? this->pixeldata.SamplerFallback : this->vertexdata.SamplerFallback;
+
+        auto& textures2D = (stage == Stage::PS) ? this->Textures : this->Textures_VS;
+        auto& textures3D = (stage == Stage::PS) ? this->Textures3D : this->Textures3D_VS;
+        const auto& slots2D = (stage == Stage::PS) ? this->psTextureSlots : this->vsTextureSlots;
+        const auto& slots3D = (stage == Stage::PS) ? this->psTextureSlots3D : this->vsTextureSlots3D;
+
+        auto& samplers = (stage == Stage::PS) ? this->Samplers : this->Samplers_VS;
+
+        auto& cbuffers = (stage == Stage::PS) ? this->CBuffers : this->CBuffers_VS;
+
+        auto* fallbackCB =
+            (stage == Stage::PS)
+            ? (this->CBuffers_fallback ? this->CBuffers_fallback->buffer.Get() : nullptr)
+            : (this->CBuffers_fallback_VS ? this->CBuffers_fallback_VS->buffer.Get() : nullptr);
+
+        const UINT fallbackCBSlot =
+            (stage == Stage::PS) ? UINT(this->psCBSlots_fallback) : UINT(this->vsCBSlots_fallback);
+
+        ShaderBindingState binds{};
+        TfxProgram prog = TfxProgram::FromBytecode(tfxBytecode, tfxConstants, this->id);
+		if (trace)
+		    printf("Binding TFX Program ID 0x%08X to %s stage\n", this->id, (stage == Stage::PS) ? "PS" : "VS");
+        prog.Evaluate_With_Channels(externs, cb0, channels, textures2D, &binds, trace);
+
+        // --- Constant buffers ---
+        if (cbuffers.empty() && fallbackCB) {
+            UploadFallbackCB0(fallbackCB, cb0);
+            ID3D11Buffer* buf = fallbackCB;
+            SetCBs(stage, fallbackCBSlot, 1, &buf);
         }
-    }
-
-    
-    if (psBinds.empty()) {
-        for (size_t i = 0; i < this->Samplers.size(); ++i) {
-            ID3D11SamplerState* s = this->Samplers[i]->sampler.Get();
-            pContext->PSSetSamplers(UINT(i), 1, &s); 
+        else if (!cbuffers.empty()) {
+            for (UINT i = 0; i < (UINT)cbuffers.size(); ++i) {
+                ID3D11Buffer* b = cbuffers[i]->buffer.Get();
+                SetCBs(stage, i, 1, &b);
+            }
         }
-    }
 
-    if (!this->Textures.empty()) {
-        const size_t n = std::min(this->Textures.size(), this->psTextureSlots.size());
-        for (size_t i = 0; i < n; ++i) {
-            const UINT slot = this->psTextureSlots[i];
-            ID3D11ShaderResourceView* srv = this->Textures[i] ? this->Textures[i]->Get() : nullptr;
-            pContext->PSSetShaderResources(slot, 1, &srv);
-        }
-    }
-    if (!this->Textures3D.empty()) {
-        const size_t n = std::min(this->Textures3D.size(), this->psTextureSlots3D.size());
-        for (size_t i = 0; i < n; ++i) {
-            const UINT slot = this->psTextureSlots3D[i];
-            ID3D11ShaderResourceView* srv = this->Textures3D[i] ? this->Textures3D[i]->Get() : nullptr;
-            pContext->PSSetShaderResources(slot, 1, &srv);
-        }
-    }
-
-    if (this->vertexdata.TFX_Bytecode.size() != 0 && this->vertexdata.contstant_buffer.hash == 0xffffffff) {
-        TfxProgram prog_vs = TfxProgram::FromBytecode(this->vertexdata.TFX_Bytecode,
-            this->vertexdata.TFX_Constants, this->id);
-        auto& cb0_vs = this->vertexdata.SamplerFallback;
-        prog_vs.Evaluate_With_Channels(externs, cb0_vs, channels, this->Textures_VS, nullptr, false);
-        if (this->CBuffers_VS.empty() && this->CBuffers_fallback_VS != nullptr) {
-            ID3D11Buffer* buf = this->CBuffers_fallback_VS->buffer.Get();
-
-            D3D11_BUFFER_DESC desc{};
-            buf->GetDesc(&desc);
-
-            const size_t bytes_needed = cb0_vs.size() * sizeof(Vec4);
-            const size_t bytes_copy = std::min<size_t>(bytes_needed, desc.ByteWidth);
-
-            if (desc.Usage == D3D11_USAGE_DYNAMIC) {
-                D3D11_MAPPED_SUBRESOURCE map{};
-                if (SUCCEEDED(pContext->Map(buf, 0, D3D11_MAP_WRITE_DISCARD, 0, &map))) {
-                    std::memcpy(map.pData, cb0_vs.data(), bytes_copy);
-                    pContext->Unmap(buf, 0);
+        const auto samplerBinds = ParseSamplerBinds(tfxBytecode, stage);
+        if (!samplerBinds.empty()) {
+            for (const auto& b : samplerBinds) {
+                if (b.sampler_index < samplers.size() && samplers[b.sampler_index]) {
+                    ID3D11SamplerState* s = samplers[b.sampler_index]->sampler.Get();
+                    SetSamplers(stage, b.slot, 1, &s);
                 }
             }
-            else {
-                pContext->UpdateSubresource(buf, 0, nullptr, cb0_vs.data(), 0, 0);
-            }
-            pContext->VSSetConstantBuffers(UINT(this->vsCBSlots_fallback), 1, &buf);
         }
-    }
-    
-    for (UINT slot = 0; slot < ShaderBindingState::MaxSlots; ++slot) {
-        if (!binds.textures[1][slot]) continue; 
-
-        ID3D11ShaderResourceView* srv = nullptr;
-        if (binds.textures[1][slot]) {
-            srv = binds.textures[1][slot]->Get();
+        else {
             
+            for (UINT i = 0; i < (UINT)samplers.size(); ++i) {
+                ID3D11SamplerState* s = samplers[i] ? samplers[i]->sampler.Get() : nullptr;
+                SetSamplers(stage, i, 1, &s);
+            }
         }
 
-        pContext->PSSetShaderResources(slot, 1, &srv);
-    }
-
-    if (!this->CBuffers_VS.empty()) {
-        for (size_t i = 0; i < this->CBuffers_VS.size(); ++i) {
-            ID3D11Buffer* b = this->CBuffers_VS[i]->buffer.Get();
-            pContext->VSSetConstantBuffers(UINT(i), 1, &b);
+      
+        if (!textures2D.empty() && !slots2D.empty()) {
+            const size_t n = std::min(textures2D.size(), slots2D.size());
+            for (size_t i = 0; i < n; ++i) {
+                const UINT slot = slots2D[i];
+                ID3D11ShaderResourceView* srv = textures2D[i] ? textures2D[i]->Get() : nullptr;
+                SetSRVs(stage, slot, 1, &srv);
+            }
         }
+
+        
+        if (!textures3D.empty() && !slots3D.empty()) {
+            const size_t n = std::min(textures3D.size(), slots3D.size());
+            for (size_t i = 0; i < n; ++i) {
+                const UINT slot = slots3D[i];
+                ID3D11ShaderResourceView* srv = textures3D[i] ? textures3D[i]->Get() : nullptr;
+                SetSRVs(stage, slot, 1, &srv);
+            }
+        }
+
+        
+        const UINT bindsStageIndex = (stage == Stage::VS) ? 0u : 1u;
+        for (UINT slot = 0; slot < ShaderBindingState::MaxSlots; ++slot) {
+            if (!binds.textures[bindsStageIndex][slot]) continue;
+            ID3D11ShaderResourceView* srv = binds.textures[bindsStageIndex][slot]->Get();
+            SetSRVs(stage, slot, 1, &srv);
+        }
+        };
+
+  /*  if (this->id == 0x81089F5D) {
+        BindStage(Stage::PS, true);
+        BindStage(Stage::VS, true);
     }
+    else */
+    {
+        BindStage(Stage::PS);
+        BindStage(Stage::VS);
+    }
+    
 
     
+    const auto used = TfxScope::from_bits_truncate(this->usedScopes);
+
+
     if (TfxScope::has(used, TfxScope::FRAME)) { scopes[0].second.Bind(pContext); }
     if (TfxScope::has(used, TfxScope::VIEW)) { scopes[1].second.Bind(pContext); }
     if (TfxScope::has(used, TfxScope::RIGID_MODEL)) { scopes[2].second.Bind(pContext); }
@@ -517,7 +538,6 @@ bool EntropyAssets::Technique::Bind_With_Channels(Microsoft::WRL::ComPtr<ID3D11D
     if (TfxScope::has(used, TfxScope::PLAYER_CENTERED_CASCADED_GRID)) { scopes[38].second.Bind(pContext); }
     if (TfxScope::has(used, TfxScope::GEAR_DYE_012)) { scopes[39].second.Bind(pContext); }
     if (TfxScope::has(used, TfxScope::COLOR_GRADING_UBERSHADER)) { scopes[40].second.Bind(pContext); }
-
 
     return true;
 }

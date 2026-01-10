@@ -101,6 +101,7 @@ inline void LoadZone::load_datatable_into_scene(TagHash table, glm::quat quat_ov
 				ls.scale = light_parent.transforms[i].scale;
 				
 				ls.technique = gfx.GetStaticTechniqueOrEnqueue(light_parent.lights[i].technique_shading.hash);
+				ls.volume_technique = gfx.GetStaticTechniqueOrEnqueue(light_parent.lights[i].technique_volumetrics.hash);
 				ls.idx = i;
 				ls.parent = resource.light_collection.hash;
 				ls.unk50 = light_parent.lights[i].unk50;
@@ -199,6 +200,10 @@ inline void LoadZone::load_datatable_into_scene(TagHash table, glm::quat quat_ov
 
 			break;
 
+		}
+		case  0x80806A71: {
+			int u = 1; //global channel override placeholder
+			break;
 		}
 		default:
 			break;
