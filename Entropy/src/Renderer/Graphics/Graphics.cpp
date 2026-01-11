@@ -609,7 +609,8 @@ std::shared_future<std::shared_ptr<EntropyAssets::BufferSRVRes>>&
 Graphics::GetOrEnqueueBufferSRV(uint32_t id)
 {
 	BufferPayload payload{};
-	if (!registry->TryGetBuffer(id, payload)) return bufferSrvFut_[id]; 
+	if (!registry->TryGetBuffer(id, payload)) 
+		return bufferSrvFut_[id]; 
 	BufferSRVMeta meta{};
 	meta.kind = BufferSRVMeta::Kind::Structured;
 	meta.structureByteStride = payload.stride;
@@ -824,33 +825,6 @@ void Graphics::CreateInstanceBuffer()
 
 	pDevice->CreateShaderResourceView(m_instanceSB.Get(), &sd, m_instanceSRV.GetAddressOf());
 }
-
-void BuildViewAndProj(View& viewState, const Camera& camera, int windowWidth, int windowHeight)
-{
-	XMMATRIX V = camera.GetViewMatrix();             
-	XMStoreFloat4x4(&viewState.world_to_camera, V);
-
-	const float fovY = XMConvertToRadians(120.0f);
-	const float aspect = float(windowWidth) / float(windowHeight);
-	const float zn = std::max(0.001f, camera.GetNearZ());
-
-	const float t = tanf(0.5f * fovY);
-	const float m11 = 1.0f / (t * aspect);
-	const float m22 = 1.0f / t;
-
-	XMMATRIX P = XMMatrixSet(
-		m11, 0.0f, 0.0f, 0.0f,
-		0.0f, m22, 0.0f, 0.0f,
-		0.0f, 0.0f, 0.0f, -1.0f,
-		0.0f, 0.0f, zn, 0.0f
-	);
-	XMStoreFloat4x4(&viewState.camera_to_projective, P);
-
-	
-	XMMATRIX VP = XMMatrixMultiply(V, P);           
-	XMStoreFloat4x4(&viewState.world_to_projective, VP);
-}
-
 
 void Graphics::DrawStaticMesh(const RenderStatic& rs, const View& view, TfxRenderStage renderStage)
 {
@@ -1193,6 +1167,9 @@ bool Graphics::ResolveDynamicPartOnce(
 	if (dm.colour_buffer.hash && dm.colour_buffer.hash != 0xFFFFFFFFu)
 		EnsureEntityBufferRegistered(dm, DynamicBufKind::Color,
 			D3D11_BIND_VERTEX_BUFFER | D3D11_BIND_SHADER_RESOURCE);
+	if (dm.skinning_buffer.hash && dm.skinning_buffer.hash != 0xFFFFFFFFu)
+		EnsureEntityBufferRegistered(dm, DynamicBufKind::Skin,
+			D3D11_BIND_VERTEX_BUFFER | D3D11_BIND_SHADER_RESOURCE);
 
 	auto& fIB = GetOrEnqueueBuffer(dm.index_buffer.hash, D3D11_BIND_INDEX_BUFFER);
 	auto& fVB0 = GetOrEnqueueBuffer(dm.vertex0_buffer.hash, D3D11_BIND_VERTEX_BUFFER);
@@ -1207,10 +1184,15 @@ bool Graphics::ResolveDynamicPartOnce(
 	const bool hasCol = (dm.colour_buffer.hash && dm.colour_buffer.hash != 0xFFFFFFFFu);
 	if (hasCol) fCol = &GetOrEnqueueBufferSRV(dm.colour_buffer.hash);
 
+	std::shared_future<std::shared_ptr<EntropyAssets::BufferSRVRes>>* fSkin = nullptr;
+	const bool hasSkin = (dm.skinning_buffer.hash && dm.skinning_buffer.hash != 0xFFFFFFFFu);
+	if (hasSkin) fSkin = &GetOrEnqueueBufferSRV(dm.skinning_buffer.hash);
+
 	if (!FutReady(fIB) || !FutReady(fVB0) ||
 		(fVB1 && !FutReady(*fVB1)) ||
 		(fVB2 && !FutReady(*fVB2)) ||
-		(hasCol && (!fCol || !FutReady(*fCol))))
+		(hasCol && (!fCol || !FutReady(*fCol))) ||
+		(hasSkin && (!fSkin || !FutReady(*fSkin))))
 		return false;
 
 	out.ib = fIB.get();
@@ -1218,6 +1200,7 @@ bool Graphics::ResolveDynamicPartOnce(
 	out.vb1 = (fVB1 ? fVB1->get() : nullptr);
 	out.vb2 = (fVB2 ? fVB2->get() : nullptr);
 	out.vCol = (hasCol ? fCol->get() : nullptr);
+	out.skin = (hasSkin ? fSkin->get() : nullptr);
 
 	const auto pIB = registry->GetBuffer(dm.index_buffer.hash);
 	const auto pVB0 = registry->GetBuffer(dm.vertex0_buffer.hash);
@@ -1599,7 +1582,8 @@ void Graphics::DrawEntity(const RenderEntity& rs,
 
 			if (resolved.vCol)
 				pContext->VSSetShaderResources(0, 1, resolved.vCol->srv.GetAddressOf());
-
+			if (resolved.skin)
+				pContext->VSSetShaderResources(1, 1, resolved.skin->srv.GetAddressOf());
 			pContext->DrawIndexedInstanced(
 				resolved.indexCount,
 				1,
@@ -1818,6 +1802,9 @@ for (auto& ent : entitiesToDraw)
             if (dm.colour_buffer.hash && dm.colour_buffer.hash != 0xFFFFFFFFu)
                 EnsureEntityBufferRegistered(dm, DynamicBufKind::Color,
                     D3D11_BIND_VERTEX_BUFFER | D3D11_BIND_SHADER_RESOURCE);
+			if (dm.skinning_buffer.hash && dm.skinning_buffer.hash != 0xFFFFFFFFu)
+				EnsureEntityBufferRegistered(dm, DynamicBufKind::Skin,
+					D3D11_BIND_VERTEX_BUFFER | D3D11_BIND_SHADER_RESOURCE);
             
             
 
@@ -1901,6 +1888,7 @@ for (auto& ent : entitiesToDraw)
                 };
 
                 trySRV(dm.colour_buffer);
+				trySRV(dm.skinning_buffer);
                
                 
                 resolved = dynamicPartCache_[key];
@@ -2002,7 +1990,7 @@ void Graphics::RenderFrame()
 	View viewState{};
 
 	XMStoreFloat4x4(&viewState.world_to_camera, camera.GetViewMatrix());
-	const float fovY = DirectX::XMConvertToRadians(90.0f);
+	const float fovY = DirectX::XMConvertToRadians(105.0f);
 	const float aspect = float(windowWidth) / float(windowHeight);
 	const float zn = std::max(0.001f, camera.GetNearZ());
 
@@ -3293,7 +3281,7 @@ bool Graphics::InitializeScene()
 {
 	try {
 		camera.SetPosition(0.0f, 0.0f, 0.0f);
-		camera.SetProjectionValues(120.0f, static_cast<float>(windowWidth) / static_cast<float>(windowHeight), 0.01f, 1.0f);
+		camera.SetProjectionValues(105.0f, static_cast<float>(windowWidth) / static_cast<float>(windowHeight), 0.01f, 1.0f);
 	}
 	catch (COMException& exception)
 	{
@@ -3311,7 +3299,7 @@ bool Graphics::InitializeScene()
 	this->activities = GlobalData::globalActivities();
 	loadzone = std::make_unique<LoadZone>(*this);
 
-	auto e_to_load = TagHash(0x810A8296);
+	auto e_to_load = TagHash(0x810A3E35);
 	Aabb a;
 	loadzone->load_entity_into_scene(e_to_load, glm::quat(), glm::vec4(0.0f,0.0f,0.0f,1.0f));
 	

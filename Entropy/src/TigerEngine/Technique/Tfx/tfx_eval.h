@@ -13,6 +13,34 @@
 #define TFX_EVAL_HELPERS_DEFINED
 #include "Runtime/Assets/Technique.h"
 
+#include <cstdarg>
+
+struct TfxTraceSink {
+    std::string* out = nullptr;
+};
+
+inline void TfxTraceV(TfxTraceSink* sink, FILE* fallback, const char* fmt, va_list args)
+{
+    if (sink && sink->out) {
+        char buf[2048];
+        va_list args2;
+        va_copy(args2, args);
+        int n = std::vsnprintf(buf, sizeof(buf), fmt, args2);
+        va_end(args2);
+        if (n > 0) sink->out->append(buf, buf + (n < (int)sizeof(buf) ? n : (int)sizeof(buf) - 1));
+    } else {
+        std::vfprintf(fallback, fmt, args);
+    }
+}
+
+inline void TfxTrace(TfxTraceSink* sink, FILE* fallback, const char* fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    TfxTraceV(sink, fallback, fmt, args);
+    va_end(args);
+}
+
 namespace tfx_eval_detail {
 
     Vec4 GetCameraFloatTfx();
@@ -190,6 +218,7 @@ namespace tfx_eval_detail {
 
 
 
+
 } 
 #endif 
 
@@ -301,6 +330,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
     std::vector<std::shared_ptr<EntropyAssets::Texture2DRes>> texs,
     uint32_t technique_id,
     ShaderBindingState* outBindings,
+    TfxTraceSink* traceSink = nullptr,
     bool trace = true)
 {
     using namespace tfx_eval_detail;
@@ -309,7 +339,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
     auto push = [&](const Vec4& v) { stack.push_back(v); };
     auto pop1 = [&](size_t ip, const char* opname) -> Vec4 {
         if (stack.empty()) {
-            if (trace) std::fprintf(stderr, "[eval] stack underflow before %s at ip=%zu, returning 0\n", opname, ip);
+            if (trace) TfxTrace(traceSink, stderr, "[eval] stack underflow before %s at ip=%zu, returning 0\n", opname, ip);
             return Vec4::zero();
         }
         auto v = stack.back(); stack.pop_back(); return v;
@@ -323,13 +353,19 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
         };
     auto push_u32 = [&](uint32_t u) { push(Vec4::splat((float)u)); };
 
+    auto popN_discard = [&](size_t ip, const char* opname, size_t n) {
+        for (size_t k = 0; k < n; ++k) {
+            (void)pop1(ip, opname);
+        }
+        };
+
     Mat4 cachedM{};
     std::vector<std::shared_ptr<EntropyAssets::Texture2DRes>> texs_eval;
     for (size_t ip = 0; ip < ops.size(); ++ip) {
         const auto& i = ops[ip];
         if (trace) {
             const auto payload = DescribePayload(i);
-            std::printf("ip=%04zu %-22s %s  (stack=%zu)\n",
+            TfxTrace(traceSink, stdout,"ip=%04zu %-22s %s  (stack=%zu)\n",
                 ip, OpName(i.op), payload.empty() ? "" : payload.c_str(), stack.size());
         }
 
@@ -344,7 +380,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
         case TfxBytecode::Min: { auto b = pop1(ip, "Min"), a = pop1(ip, "Min"); push(min4(a, b)); break; }
         case TfxBytecode::Max: { auto b = pop1(ip, "Max"), a = pop1(ip, "Max"); push(max4(a, b)); break; }
         case TfxBytecode::IsZero: { auto a = pop1(ip, "IsZero"); push(is_zero_mask(a)); break; }
-        case TfxBytecode::LessThan: { auto b = pop1(ip, "LT"), a = pop1(ip, "LT"); push(less_than_mask(a, b)); break; }
+        case TfxBytecode::LessThan: { auto b = pop1(ip, "LT"), a = pop1(ip, "LT"); push(less_than_mask(b, a)); break; }
         case TfxBytecode::Dot: { auto b = pop1(ip, "Dot"), a = pop1(ip, "Dot"); push(dot_splat(a, b)); break; }
 
         case TfxBytecode::Frac: { auto a = pop1(ip, "Frac");       push(frac4(a));     break; }
@@ -401,7 +437,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             auto d = std::get<PushExternInputFloatData>(i.data);
             float f = externs.getFloat(d.ext, size_t(d.offset) * 4);
             if (trace) {
-                std::printf("    PushExternInputFloat: ext=%u offset=%u -> %g\n", (unsigned)d.ext, d.offset, f);
+                TfxTrace(traceSink, stdout,"    PushExternInputFloat: ext=%u offset=%u -> %g\n", (unsigned)d.ext, d.offset, f);
             }
             push(Vec4::splat(f)); break;
         }
@@ -414,32 +450,34 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
 
         case TfxBytecode::PushExternInputMat4: {
             auto d = std::get<PushExternInputMat4Data>(i.data);
+            
             Mat4 m = externs.getMat4(d.ext, size_t(d.offset) * 16);
-            
+
             if (trace) {
-                PrintMat4("PushExternInputMat4",m, size_t(d.offset) * 16);
+                PrintMat4("PushExternInputMat4", m, size_t(d.offset) * 16);
             }
 
-            cachedM = m;
-            temp[0] = m.x_axis;
-            temp[1] = m.y_axis;
-            temp[2] = m.z_axis;
-            temp[3] = m.w_axis;
+            push(m.x_axis);
+            push(m.y_axis);
+            push(m.z_axis);
+            push(m.w_axis);
 
-
-            if (ip + 1 < ops.size() && ops[ip + 1].op == TfxBytecode::PopOutputMat4) {
-                push(m.x_axis);
-                push(m.y_axis);
-                push(m.z_axis);
-                push(m.w_axis);
-            }
-            
             break;
         }
-
         case TfxBytecode::TransformVec4: {
-            auto v = pop1(ip, "Xform vec");
-            push(mul_vec4_mat(v, cachedM));
+            Vec4 value = pop1(ip, "TransformVec4 value");
+            Vec4 w_axis = pop1(ip, "TransformVec4 w");
+            Vec4 z_axis = pop1(ip, "TransformVec4 z");
+            Vec4 y_axis = pop1(ip, "TransformVec4 y");
+            Vec4 x_axis = pop1(ip, "TransformVec4 x");
+
+            Mat4 mat{};
+            mat.x_axis = x_axis;
+            mat.y_axis = y_axis;
+            mat.z_axis = z_axis;
+            mat.w_axis = w_axis;
+
+            push(mul_vec4_mat(value, mat));
             break;
         }
 
@@ -450,7 +488,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             tfx::MarkGlobalChannelUsed(d.unk1);
 
             if (trace) {
-                std::printf("    PushGlobalChannelVector: channel_id=%u\n", d.unk1);
+                TfxTrace(traceSink, stdout,"    PushGlobalChannelVector: channel_id=%u\n", d.unk1);
 			}
             Vec4 v = externs.getVec4(TfxExtern::Generic, size_t(d.unk1) * 16);
             push(v);
@@ -470,7 +508,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
                 push(Vec4::splat(1.0f));
             }
             if (trace) {
-                std::printf("    PushObjectChannelVector: hash_be=0x%08X\n", d->hash_be);
+                TfxTrace(traceSink, stdout,"    PushObjectChannelVector: hash_be=0x%08X\n", d->hash_be);
 			}
 
 
@@ -488,7 +526,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             
 
             if (trace) {
-                std::printf("    PushTexDimensions: idx=%u fields=0x%02X -> %s\n",
+                TfxTrace(traceSink, stdout,"    PushTexDimensions: idx=%u fields=0x%02X -> %s\n",
                     d.index, d.fields, to_str(v).c_str());
 			}
             push(v);
@@ -506,7 +544,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             auto d = std::get<PopOutputData>(i.data);
             if (d.element >= cb.size()) cb.resize(d.element + 1, Vec4::zero());
             Vec4 v = pop1(ip, "PopOutput");
-            if (trace) std::printf("    -> cb[%u] = %s\n", d.element, to_str(v).c_str());
+            if (trace) TfxTrace(traceSink, stdout,"    -> cb[%u] = %s\n", d.element, to_str(v).c_str());
             cb[d.element] = v; break;
         }
 
@@ -555,7 +593,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             Vec4 result = Vec4::splat(spline);
 
             if (trace) {
-                std::printf("    Spline8: Csum=%g Dsum=%g use=%s\n",
+                TfxTrace(traceSink, stdout,"    Spline8: Csum=%g Dsum=%g use=%s\n",
                     Csum, Dsum, (Dmask.x > 0.f ? "D" : "C"));
             }
 
@@ -585,7 +623,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             Vec4 chan = Vec4(xorm.x, xorm.y, xorm.z, tmask.w);
 
             float sum = hsum4(eval * chan);
-            if (trace) std::printf("    Spline4: sum=%g\n", sum);
+            if (trace) TfxTrace(traceSink, stdout,"    Spline4: sum=%g\n", sum);
             push(Vec4::splat(sum));
             break;
         }
@@ -633,7 +671,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             float spline = (Dmask.x > 0.f) ? Dsum : inter;
 
             if (trace) {
-                std::printf("    Spline8Chain: Csum=%g Dsum=%g inter=%g use=%s\n",
+                TfxTrace(traceSink, stdout,"    Spline8Chain: Csum=%g Dsum=%g inter=%g use=%s\n",
                     Csum, Dsum, inter, (Dmask.x > 0.f ? "D" : (Cmask.x > 0.f ? "C" : "Rec")));
             }
 
@@ -760,7 +798,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             if (d.element + 3 >= cb.size()) cb.resize(d.element + 4, Vec4::zero());
             Vec4 r3 = pop1(ip, "PopMat"), r2 = pop1(ip, "PopMat"), r1 = pop1(ip, "PopMat"), r0 = pop1(ip, "PopMat");
             if (trace) {
-                std::printf("    -> cb[%u..%u] = %s, %s, %s, %s\n",
+                TfxTrace(traceSink, stdout,"    -> cb[%u..%u] = %s, %s, %s, %s\n",
                     d.element, d.element + 3, to_str(r0).c_str(), to_str(r1).c_str(), to_str(r2).c_str(), to_str(r3).c_str());
             }
             cb[d.element + 0] = r0; cb[d.element + 1] = r1; cb[d.element + 2] = r2; cb[d.element + 3] = r3;
@@ -773,7 +811,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             
             const auto d = std::get<PushSamplerData>(i.data);
             push_u32(d.index);
-            if (trace) std::printf("    PushSampler idx=%u\n", d.index);
+            if (trace) TfxTrace(traceSink, stdout,"    PushSampler idx=%u\n", d.index);
             break;
         }
 
@@ -781,7 +819,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             const auto d = std::get<SetShaderBindingData>(i.data);
             const uint32_t idx = pop_u32(ip, "SetShaderSampler");
             if (outBindings) outBindings->setSampler(d.stage, d.slot, idx);
-            if (trace) std::printf("    SetShaderSampler stage=%u slot=%u idx=%u\n", d.stage, d.slot, idx);
+            if (trace) TfxTrace(traceSink, stdout,"    SetShaderSampler stage=%u slot=%u idx=%u\n", d.stage, d.slot, idx);
             break;
         }
 
@@ -795,7 +833,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             if (outBindings) outBindings->setTexture(d.stage, d.slot, tex);
 
             if (trace) {
-                std::printf("    SetShaderTexture stage=%u slot=%u idx=%u (%s)\n",
+                TfxTrace(traceSink, stdout,"    SetShaderTexture stage=%u slot=%u idx=%u (%s)\n",
                     d.stage, d.slot, idx, tex ? "ok" : "null");
             }
             break;
@@ -806,7 +844,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             const auto d = std::get<SetShaderBindingData>(i.data);
             const uint32_t idx = pop_u32(ip, "SetShaderUav");
             if (outBindings) outBindings->setUav(d.stage, d.slot, idx);
-            if (trace) std::printf("    SetShaderUav stage=%u slot=%u idx=%u\n", d.stage, d.slot, idx);
+            if (trace) TfxTrace(traceSink, stdout,"    SetShaderUav stage=%u slot=%u idx=%u\n", d.stage, d.slot, idx);
             break;
         }
 
@@ -838,7 +876,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
 
             push_u32(idx);
             if (trace) {
-                std::printf("    PushExternInputTextureView ext=%u off=%zu -> srv=%p idx=%u (%s)\n",
+                TfxTrace(traceSink, stdout,"    PushExternInputTextureView ext=%u off=%zu -> srv=%p idx=%u (%s)\n",
                     (unsigned)d.ext, byte_off, (void*)srv, idx, found ? "mapped" : "unmapped");
             }
             break;
@@ -858,7 +896,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
         {
             const auto* d = std::get_if<PushTexParamData>(&i.data);
             if (!d) {
-                if (trace) std::fprintf(stderr,
+                if (trace) TfxTrace(traceSink, stderr,
                     "[eval] bad payload for PushTexTileParams\n");
                 push(Vec4::zero());
                 break;
@@ -870,7 +908,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
             Vec4 v = tfx_eval_detail::swizzle_fields(base, d->fields);
 
             if (trace) {
-                std::printf("    PushTexTileParams: idx=%u fields=0x%02X -> %s\n",
+                TfxTrace(traceSink, stdout,"    PushTexTileParams: idx=%u fields=0x%02X -> %s\n",
                     d->index, d->fields, tfx_eval_detail::to_str(v).c_str());
             }
 
@@ -900,7 +938,7 @@ inline void EvaluateExpressionEoF(const std::vector<TfxData>& ops,
 
         default:
             if (OpName(i.op) == "Unknown") {
-                std::fprintf(stderr, "[eval] unhandled opcode %s at ip=%zu in tech %08X\n", OpName(i.op), ip, technique_id);
+                TfxTrace(traceSink, stderr, "[eval] unhandled opcode %s at ip=%zu in tech %08X\n", OpName(i.op), ip, technique_id);
             }
 
             break;

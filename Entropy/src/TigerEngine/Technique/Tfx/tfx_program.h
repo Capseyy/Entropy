@@ -28,12 +28,20 @@ public:
         bool trace = false) const
     {
         std::array<Vec4, 16> temp{};
-        EvaluateExpressionEoF(ops, externs, cb, constants, temp, {}, std::move(texs), id, outBindings, trace);
+        EvaluateExpressionEoF(ops, externs, cb, constants, temp, {}, std::move(texs), id, outBindings, nullptr, trace);
     }
 
-    void Evaluate_Trace(const ExternStorage& externs, std::vector<Vec4>& cb, std::vector<std::shared_ptr<EntropyAssets::Texture2DRes>> texs) const {
+    void Evaluate_Trace(const ExternStorage& externs, std::vector<Vec4>& cb, std::vector<std::shared_ptr<EntropyAssets::Texture2DRes>> texs, ShaderBindingState* outBindings = nullptr) const {
         std::array<Vec4, 16> temp{};
-        EvaluateExpressionEoF(ops, externs, cb, constants, temp, {}, std::move(texs), id, nullptr, true);
+        EvaluateExpressionEoF(ops, externs, cb, constants, temp, {}, std::move(texs), id, nullptr, nullptr, true);
+    }
+
+    std::string Evaluate_TraceText(const ExternStorage& externs, std::vector<Vec4>& cb, std::vector<std::shared_ptr<EntropyAssets::Texture2DRes>> texs) const {
+        std::string traceOut;
+        TfxTraceSink sink{ &traceOut };
+        std::array<Vec4, 16> temp{};
+        EvaluateExpressionEoF(ops, externs, cb, constants, temp, {}, std::move(texs), id, nullptr, &sink, true);
+        return traceOut;
     }
 
     void Evaluate_With_Channels(
@@ -45,7 +53,7 @@ public:
         bool trace = false) const
     {
         std::array<Vec4, 16> temp{};
-        EvaluateExpressionEoF(ops, externs, cb, constants, temp, std::move(channels), std::move(texs), id, outBindings, trace);
+        EvaluateExpressionEoF(ops, externs, cb, constants, temp, std::move(channels), std::move(texs), id, outBindings, nullptr, trace);
     }
 
     std::string DecompilePretty() const {

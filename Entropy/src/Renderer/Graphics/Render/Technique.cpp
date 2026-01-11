@@ -90,7 +90,13 @@ bool EntropyAssets::Technique::Bind(Microsoft::WRL::ComPtr<ID3D11Device> pDevice
 
     
     ShaderBindingState binds{};
-    prog.Evaluate(externs, cb0, this->Textures, &binds, false);
+    if (this->id == 0x810A3BE1) {
+        prog.Evaluate_Trace(externs, cb0, this->Textures, &binds);
+    }
+    else {
+        prog.Evaluate(externs, cb0, this->Textures, &binds, false);
+    }
+    
  
     if (this->CBuffers.empty() && this->CBuffers_fallback != nullptr)  {
         ID3D11Buffer* buf = this->CBuffers_fallback->buffer.Get();
@@ -422,6 +428,14 @@ bool EntropyAssets::Technique::Bind_With_Channels(
 		if (trace)
 		    printf("Binding TFX Program ID 0x%08X to %s stage\n", this->id, (stage == Stage::PS) ? "PS" : "VS");
         prog.Evaluate_With_Channels(externs, cb0, channels, textures2D, &binds, trace);
+
+        /*if (this->id == 0x810A3BE0) {
+            prog.Evaluate_With_Channels(externs, cb0, channels, textures2D, &binds, true);
+        }
+        else */
+        {
+            prog.Evaluate_With_Channels(externs, cb0, channels, textures2D, &binds, trace);
+        }
 
         // --- Constant buffers ---
         if (cbuffers.empty() && fallbackCB) {

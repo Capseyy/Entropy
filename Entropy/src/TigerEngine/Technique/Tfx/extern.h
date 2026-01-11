@@ -21,8 +21,6 @@ inline float qNaN() { return std::numeric_limits<float>::quiet_NaN(); }
 #pragma pack(push, 1)
 struct TransparentExtern
 {
-    
-    
     ID3D11ShaderResourceView* atmos_ss_far_lookup = nullptr; 
     ID3D11ShaderResourceView* atmos_ss_far_lookup_downsampled = nullptr; 
     ID3D11ShaderResourceView* atmos_ss_near_lookup = nullptr; 

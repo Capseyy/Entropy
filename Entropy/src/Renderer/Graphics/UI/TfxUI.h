@@ -67,6 +67,8 @@ static bool ParseHexBytes(const char* text, std::vector<uint8_t>& outBytes, std:
 
 static bool g_analyze_ok = true;
 static std::string g_analyze_err;
+static std::string g_decomp;
+static std::string g_trace;
 
 void DrawTfxBytecodeInspectorUI()
 {
@@ -92,6 +94,8 @@ void DrawTfxBytecodeInspectorUI()
     if (ImGui::Button("Clear")) {
         g_tfxHexBuf[0] = 0;
         g_tfxOutBuf[0] = 0;
+        g_decomp.clear();
+        g_trace.clear();
         bytes.clear();
     }
 
@@ -104,6 +108,8 @@ void DrawTfxBytecodeInspectorUI()
     if (ImGui::Button("Analyze")) {
         g_analyze_ok = true;
         g_analyze_err.clear();
+        g_decomp.clear();
+        g_trace.clear();
 
         std::string err;
         if (!ParseHexBytes(g_tfxHexBuf, bytes, err)) {
@@ -117,10 +123,7 @@ void DrawTfxBytecodeInspectorUI()
 
                 TfxProgram prog = TfxProgram::FromBytecode(bytes, constants, 0);
 
-          
-                ExternStorage externs{};
-                std::vector<Vec4> regs(16);
-                prog.Evaluate_Trace(externs, regs, {});
+                g_decomp = prog.DecompilePretty();
 
                 std::ostringstream oss;
                 oss << "Bytes: " << bytes.size() << "\n";
@@ -153,11 +156,68 @@ void DrawTfxBytecodeInspectorUI()
             }
         }
     }
+    ImGui::SameLine();
+    if (ImGui::Button("Trace")) {
+        g_analyze_ok = true;
+        g_analyze_err.clear();
+        g_trace.clear();
+
+        std::string err;
+        if (!ParseHexBytes(g_tfxHexBuf, bytes, err)) {
+            g_analyze_ok = false;
+            g_analyze_err = "Parse error: " + err;
+            g_trace = g_analyze_err;
+        } else {
+            try {
+                constants.clear();
+                TfxProgram prog = TfxProgram::FromBytecode(bytes, constants, 0);
+
+                ExternStorage externs;
+                std::vector<Vec4> cb(256);
+                std::vector<std::shared_ptr<EntropyAssets::Texture2DRes>> texs;
+
+                g_trace = prog.Evaluate_TraceText(externs, cb, std::move(texs));
+            } catch (const std::exception& e) {
+                g_analyze_ok = false;
+                g_trace = std::string("Trace failed: ") + e.what();
+            } catch (...) {
+                g_analyze_ok = false;
+                g_trace = "Trace failed: unknown exception";
+            }
+        }
+    }
 
     ImGui::Separator();
     ImGui::TextUnformatted("Output:");
     ImGui::BeginChild("##tfxout", ImVec2(-1.0f, 260.0f), true);
     ImGui::TextUnformatted(g_tfxOutBuf);
+    ImGui::EndChild();
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Decompiled:");
+    if (ImGui::Button("Copy Decompiled")) {
+        ImGui::SetClipboardText(g_decomp.c_str());
+    }
+    ImGui::BeginChild("##tfxdecomp", ImVec2(-1.0f, 320.0f), true, ImGuiWindowFlags_HorizontalScrollbar);
+    if (g_decomp.empty()) {
+        ImGui::TextUnformatted("(no decompile output yet — click Analyze)");
+    } else {
+        ImGui::TextUnformatted(g_decomp.c_str());
+    }
+    ImGui::EndChild();
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Trace (Evaluate_Trace):");
+    if (ImGui::Button("Copy Trace")) {
+        ImGui::SetClipboardText(g_trace.c_str());
+    }
+    ImGui::BeginChild("##tfxtrace", ImVec2(-1.0f, 320.0f), true, ImGuiWindowFlags_HorizontalScrollbar);
+    if (g_trace.empty()) {
+        ImGui::TextUnformatted("(no trace output yet — click Trace)");
+    } else {
+        ImGui::TextUnformatted(g_trace.c_str());
+    }
+
     ImGui::EndChild();
 
     ImGui::End();

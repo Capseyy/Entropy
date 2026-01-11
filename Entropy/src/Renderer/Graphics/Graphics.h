@@ -124,7 +124,7 @@ static inline const wchar_t* StageName(TfxRenderStage s) {
 
 struct ResolvedDynamicPart {
 	std::shared_ptr<ID3D11Buffer> ib, vb0, vb1, vb2;
-	std::shared_ptr<EntropyAssets::BufferSRVRes> vCol; 
+	std::shared_ptr<EntropyAssets::BufferSRVRes> vCol, skin; 
 	UINT stride0 = 0, stride1 = 0, stride2 = 0;
 	DXGI_FORMAT idxFmt = DXGI_FORMAT_R16_UINT;
 	uint32_t indexStart = 0, indexCount = 0;
